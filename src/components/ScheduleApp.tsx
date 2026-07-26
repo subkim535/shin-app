@@ -1,0 +1,643 @@
+'use client';
+
+import { useEffect, useMemo, useRef, useState } from 'react';
+import GanttChart from '@/components/GanttChart';
+import HistoryPanel from '@/components/HistoryPanel';
+import SettingsPanel from '@/components/SettingsPanel';
+import { addDays, addMonths, diffDays, endOfMonth, ISODate, mondayOfWeek, todayISO } from '@/lib/domain/dateUtils';
+import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
+import {
+  collidingProcesses,
+  generateBaseFloorSequence,
+  generateFromTemplate,
+  isKnownType,
+  moveMainProcess,
+  moveSubProcess,
+  previewMainMove,
+  processLabel,
+  recomputeConflicts,
+  shiftAllFrom,
+  swapCellOrder,
+} from '@/lib/domain/schedule';
+import { AppState, Block, ChangeRecord, DateShiftRecord, FacilityType, Holiday, ProcessInstance, ProcessTemplate, SiteInfo } from '@/lib/domain/types';
+import { loadState, saveState, SITE_KEY, stableStringify, subscribeState } from '@/lib/supabase/state';
+
+const INITIAL_BLOCKS: Block[] = [
+  { id: 'b1', name: '11동', sortOrder: 1, facilityType: 'building' },
+  { id: 'b2', name: '12동', sortOrder: 2, facilityType: 'building' },
+  { id: 'b3', name: '13동', sortOrder: 3, facilityType: 'building' },
+  { id: 'b4', name: '14동', sortOrder: 4, facilityType: 'building' },
+];
+
+function computeDayCount(viewStartDate: ISODate): number {
+  // 오늘이 포함된 주의 월요일부터 다음 달 말일까지 기본으로 보여준다.
+  return diffDays(viewStartDate, endOfMonth(addMonths(todayISO(), 1))) + 1;
+}
+
+function buildInitialProcesses(holidays: Holiday[]): ProcessInstance[] {
+  const start = todayISO();
+  return INITIAL_BLOCKS.flatMap((block, idx) =>
+    generateBaseFloorSequence(block.id, `${16 + idx}F`, addDays(start, idx), holidays),
+  );
+}
+
+interface PendingDrop {
+  processId: string;
+  blockId: string;
+  date: ISODate;
+  kind: 'main' | 'sub';
+  collisionCount: number;
+}
+
+interface PendingHeaderShift {
+  fromDate: ISODate;
+  toDate: ISODate;
+  deltaDays: number;
+}
+
+function Modal({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+      <div className="bg-white rounded-lg shadow-lg p-4 w-full max-w-sm flex flex-col gap-3">{children}</div>
+    </div>
+  );
+}
+
+export default function ScheduleApp() {
+  const [siteInfo, setSiteInfo] = useState<SiteInfo>({ name: 'OO현장', overview: '' });
+  const [blocks, setBlocks] = useState<Block[]>([]);
+  const [templates, setTemplates] = useState<ProcessTemplate[]>([]);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
+  // 공정/일정 데이터는 Supabase에서 비동기로 불러오므로 마운트 이후(useEffect)에만 채운다.
+  // 그래야 서버 렌더링 결과와 클라이언트 첫 렌더링 결과가 항상 동일해 하이드레이션 불일치가 나지 않는다.
+  const [processes, setProcesses] = useState<ProcessInstance[]>([]);
+  const [changeHistory, setChangeHistory] = useState<ChangeRecord[]>([]);
+  const [dateShiftHistory, setDateShiftHistory] = useState<DateShiftRecord[]>([]);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [viewStartDate, setViewStartDate] = useState<ISODate>(() => mondayOfWeek(todayISO()));
+  // 오늘이 포함된 주의 월요일부터 다음 달 말일까지를 기본 범위로 고정 (이후 이전주/다음주로 더 이동 가능)
+  const [dayCount] = useState<number>(() => computeDayCount(mondayOfWeek(todayISO())));
+
+  const [loaded, setLoaded] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const lastSyncedJsonRef = useRef<string>('');
+
+  function applyRemoteState(remote: AppState) {
+    setSiteInfo(remote.siteInfo);
+    setBlocks(remote.blocks);
+    setTemplates(remote.templates);
+    setHolidays(remote.holidays);
+    setProcesses(remote.processes);
+    setChangeHistory(remote.changeHistory);
+    setDateShiftHistory(remote.dateShiftHistory);
+    setNotes(remote.notes);
+  }
+
+  // 최초 로드: Supabase에 저장된 데이터가 있으면 불러오고, 없으면(첫 실행) 샘플 데이터를 만들어 저장한다.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const remote = await loadState(SITE_KEY);
+        if (cancelled) return;
+        if (remote) {
+          applyRemoteState(remote);
+          lastSyncedJsonRef.current = stableStringify(remote);
+        } else {
+          const initialHolidays: Holiday[] = [{ date: addDays(todayISO(), 12), kind: 'public_holiday' }];
+          const initial: AppState = {
+            siteInfo: { name: 'OO현장', overview: '' },
+            blocks: INITIAL_BLOCKS,
+            templates: [],
+            holidays: initialHolidays,
+            processes: recomputeConflicts(buildInitialProcesses(initialHolidays)),
+            changeHistory: [],
+            dateShiftHistory: [],
+            notes: {},
+          };
+          applyRemoteState(initial);
+          await saveState(SITE_KEY, initial);
+          lastSyncedJsonRef.current = stableStringify(initial);
+        }
+      } catch (e) {
+        setSyncError(e instanceof Error ? e.message : 'Supabase 연결에 실패했습니다.');
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 다른 사용자가 저장한 변경사항을 실시간으로 받아온다. 우리가 방금 저장한 내용의 에코는 건너뛴다.
+  useEffect(() => {
+    const unsubscribe = subscribeState(SITE_KEY, (remote) => {
+      const json = stableStringify(remote);
+      if (json === lastSyncedJsonRef.current) return;
+      lastSyncedJsonRef.current = json;
+      applyRemoteState(remote);
+    });
+    return unsubscribe;
+  }, []);
+
+  // 로컬 상태가 바뀌면 잠시 후 Supabase에 반영한다 (짧은 debounce로 타이핑 중 과도한 저장 방지).
+  useEffect(() => {
+    if (!loaded) return;
+    const state: AppState = { siteInfo, blocks, templates, holidays, processes, changeHistory, dateShiftHistory, notes };
+    const json = stableStringify(state);
+    if (json === lastSyncedJsonRef.current) return;
+    const handle = setTimeout(() => {
+      lastSyncedJsonRef.current = json;
+      saveState(SITE_KEY, state).catch((e) => setSyncError(e instanceof Error ? e.message : 'Supabase 저장에 실패했습니다.'));
+    }, 500);
+    return () => clearTimeout(handle);
+  }, [loaded, siteInfo, blocks, templates, holidays, processes, changeHistory, dateShiftHistory, notes]);
+
+  const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [genFloorForm, setGenFloorForm] = useState<{ blockId: string; floor: string; startDate: ISODate; templateId: string } | null>(
+    null,
+  );
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [noteModal, setNoteModal] = useState<{ blockId: string; date: ISODate } | null>(null);
+  const [reasonPopup, setReasonPopup] = useState<{ label: string; reason: string } | null>(null);
+
+  const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null);
+  const [dropStage, setDropStage] = useState<'idle' | 'threeplus-picker' | 'reason'>('idle');
+  const [reasonInput, setReasonInput] = useState('');
+
+  const [pendingHeaderShift, setPendingHeaderShift] = useState<PendingHeaderShift | null>(null);
+  const [headerShiftStage, setHeaderShiftStage] = useState<'idle' | 'confirm' | 'reason'>('idle');
+  const [headerReasonInput, setHeaderReasonInput] = useState('');
+
+  const selectedProcess = useMemo(
+    () => processes.find((p) => p.id === selectedProcessId) ?? null,
+    [processes, selectedProcessId],
+  );
+  const blockNames = useMemo(() => Object.fromEntries(blocks.map((b) => [b.id, b.name])), [blocks]);
+
+  function handleSelectProcess(id: string) {
+    setWarning(null);
+    setSelectedProcessId((cur) => (cur === id ? null : id));
+  }
+
+  function resetDropFlow() {
+    setPendingDrop(null);
+    setDropStage('idle');
+    setReasonInput('');
+  }
+
+  function handleDropProcess(processId: string, blockId: string, date: ISODate) {
+    const proc = processes.find((p) => p.id === processId);
+    if (!proc) return;
+    if (blockId !== proc.blockId) {
+      setWarning('주요공정/보조공정은 같은 행(동)에서 좌우로만 이동할 수 있습니다.');
+      return;
+    }
+    if (date === proc.date) return;
+
+    const def = PROCESS_TYPE_MAP[proc.typeCode];
+    const category = def?.category ?? (isKnownType(proc.typeCode) ? 'sub' : 'main');
+    setWarning(null);
+
+    if (category === 'sub') {
+      setPendingDrop({ processId, blockId, date, kind: 'sub', collisionCount: 0 });
+      setDropStage('reason');
+      return;
+    }
+
+    // 지상층 엔진의 주요공정만 불변규칙 검증 대상. 커스텀 템플릿 공정은 자유 이동.
+    if (!isKnownType(proc.typeCode)) {
+      setPendingDrop({ processId, blockId, date, kind: 'sub', collisionCount: 0 });
+      setDropStage('reason');
+      return;
+    }
+
+    const preview = previewMainMove(processes, processId, date);
+    if (preview.blockedReason) {
+      setWarning(preview.blockedReason);
+      return;
+    }
+    setPendingDrop({ processId, blockId, date, kind: 'main', collisionCount: preview.collisionCount });
+    setDropStage(preview.collisionCount >= 2 ? 'threeplus-picker' : 'reason');
+  }
+
+  function handleChangeNote(blockId: string, date: ISODate, text: string) {
+    setNotes((cur) => ({ ...cur, [`${blockId}__${date}`]: text }));
+  }
+
+  function proceedAnyway() {
+    setDropStage('reason');
+  }
+
+  function postponeExisting(existingId: string) {
+    resetDropFlow();
+    setSelectedProcessId(existingId);
+    setWarning('순연할 공정을 선택했습니다. 이제 이 공정을 드래그해서 다른 날짜로 옮겨주세요.');
+  }
+
+  function confirmReason() {
+    if (!pendingDrop) return;
+    const reason = reasonInput.trim() || '사유 미입력';
+    if (pendingDrop.kind === 'main') {
+      const result = moveMainProcess(processes, changeHistory, pendingDrop.processId, pendingDrop.date, reason, holidays);
+      if (result.blockedReason) {
+        setWarning(result.blockedReason);
+      } else {
+        setProcesses(recomputeConflicts(result.processes));
+        setChangeHistory(result.changeHistory);
+      }
+    } else {
+      const proc = processes.find((p) => p.id === pendingDrop.processId);
+      const next = moveSubProcess(processes, pendingDrop.processId, pendingDrop.date);
+      setProcesses(recomputeConflicts(next));
+      if (proc) {
+        setChangeHistory((h) => [
+          ...h,
+          { id: crypto.randomUUID(), processId: pendingDrop.processId, previousDate: proc.date, newDate: pendingDrop.date, reason },
+        ]);
+      }
+    }
+    resetDropFlow();
+  }
+
+  function handleReorderCellOrder(processId: string, direction: 'up' | 'down') {
+    setProcesses((cur) => swapCellOrder(cur, processId, direction));
+  }
+
+  function handleDropHeader(fromDate: ISODate, toDate: ISODate) {
+    const deltaDays = diffDays(fromDate, toDate);
+    if (deltaDays === 0) return;
+    setPendingHeaderShift({ fromDate, toDate, deltaDays });
+    setHeaderShiftStage('confirm');
+  }
+
+  function confirmHeaderShiftProceed() {
+    setHeaderShiftStage('reason');
+  }
+
+  function confirmHeaderShiftReason() {
+    if (!pendingHeaderShift) return;
+    const reason = headerReasonInput.trim() || '사유 미입력';
+    const next = shiftAllFrom(processes, pendingHeaderShift.fromDate, pendingHeaderShift.deltaDays, holidays);
+    setProcesses(recomputeConflicts(next));
+    setDateShiftHistory((h) => [
+      ...h,
+      {
+        id: crypto.randomUUID(),
+        fromDate: pendingHeaderShift.fromDate,
+        deltaDays: pendingHeaderShift.deltaDays,
+        reason,
+        at: new Date().toISOString(),
+      },
+    ]);
+    setPendingHeaderShift(null);
+    setHeaderShiftStage('idle');
+    setHeaderReasonInput('');
+  }
+
+  function submitGenFloor() {
+    if (!genFloorForm) return;
+    let generated: ProcessInstance[];
+    if (genFloorForm.templateId === 'ground') {
+      generated = generateBaseFloorSequence(genFloorForm.blockId, genFloorForm.floor, genFloorForm.startDate, holidays);
+    } else {
+      const template = templates.find((t) => t.id === genFloorForm.templateId);
+      if (!template) return;
+      generated = generateFromTemplate(template, genFloorForm.blockId, genFloorForm.startDate);
+    }
+    setProcesses((cur) => recomputeConflicts([...cur, ...generated]));
+    setGenFloorForm(null);
+  }
+
+  const pendingProcess = pendingDrop ? processes.find((p) => p.id === pendingDrop.processId) : null;
+  const collidingList =
+    pendingDrop && pendingProcess ? collidingProcesses(processes, pendingProcess, pendingDrop.date) : [];
+
+  return (
+    <div className="min-h-screen bg-zinc-50 p-6 flex flex-col gap-4">
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">{siteInfo.name} — 전체 공정표</h1>
+          {siteInfo.overview && <p className="text-xs text-zinc-500 mt-0.5">{siteInfo.overview}</p>}
+          {!loaded && !syncError && <p className="text-xs text-zinc-400 mt-0.5">불러오는 중…</p>}
+          {syncError && <p className="text-xs text-red-600 mt-0.5">동기화 오류: {syncError}</p>}
+        </div>
+        <div className="flex gap-2 text-sm">
+          <button
+            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+            onClick={() => setViewStartDate((d) => addDays(d, -7))}
+          >
+            이전 주
+          </button>
+          <button
+            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+            onClick={() => setViewStartDate(mondayOfWeek(todayISO()))}
+          >
+            오늘
+          </button>
+          <button
+            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+            onClick={() => setViewStartDate((d) => addDays(d, 7))}
+          >
+            다음 주
+          </button>
+          <button
+            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+            onClick={() => setHistoryOpen(true)}
+          >
+            변경이력
+          </button>
+          <button
+            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+            onClick={() => setSettingsOpen(true)}
+          >
+            설정
+          </button>
+        </div>
+      </header>
+
+      <div className="min-h-[36px] flex items-center gap-2 text-sm" data-testid="action-bar">
+        {warning && (
+          <span className="text-red-600" data-testid="warning">
+            {warning}
+          </span>
+        )}
+
+        {!warning && selectedProcess && (
+          <>
+            <span>
+              선택됨: <strong>{blockNames[selectedProcess.blockId] ?? ''}</strong> {processLabel(selectedProcess)} (
+              {selectedProcess.date})
+            </span>
+            <button className="px-3 py-1 rounded border border-zinc-300" onClick={() => setSelectedProcessId(null)}>
+              선택 취소
+            </button>
+            <button
+              className="px-3 py-1 rounded border border-zinc-300"
+              onClick={() =>
+                setGenFloorForm({ blockId: selectedProcess.blockId, floor: '16F', startDate: selectedProcess.date, templateId: 'ground' })
+              }
+            >
+              이 동에 기준층 생성
+            </button>
+          </>
+        )}
+
+        {!warning && !selectedProcess && (
+          <span className="text-zinc-400">공정 칩을 드래그해서 같은 행의 다른 날짜로, 날짜 헤더를 드래그해서 전체 일정을 옮기세요.</span>
+        )}
+      </div>
+
+      {genFloorForm && (
+        <div className="flex items-center gap-2 text-sm border border-zinc-300 bg-white rounded p-2 flex-wrap">
+          <span>기준층 생성 — 템플릿:</span>
+          <select
+            className="border border-zinc-300 rounded px-2 py-1"
+            value={genFloorForm.templateId}
+            onChange={(e) => setGenFloorForm({ ...genFloorForm, templateId: e.target.value })}
+          >
+            <option value="ground">지상층 기본 (갱폼~타설)</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+          {genFloorForm.templateId === 'ground' && (
+            <>
+              <span>층:</span>
+              <input
+                className="border border-zinc-300 rounded px-2 py-1 w-20"
+                value={genFloorForm.floor}
+                onChange={(e) => setGenFloorForm({ ...genFloorForm, floor: e.target.value })}
+              />
+            </>
+          )}
+          <span>시작일:</span>
+          <input
+            type="date"
+            className="border border-zinc-300 rounded px-2 py-1"
+            value={genFloorForm.startDate}
+            onChange={(e) => setGenFloorForm({ ...genFloorForm, startDate: e.target.value })}
+          />
+          <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={submitGenFloor}>
+            생성
+          </button>
+          <button className="px-3 py-1 rounded border border-zinc-300" onClick={() => setGenFloorForm(null)}>
+            취소
+          </button>
+        </div>
+      )}
+
+      <GanttChart
+        blocks={blocks}
+        processes={processes}
+        holidays={holidays}
+        changeHistory={changeHistory}
+        notes={notes}
+        onChangeNote={handleChangeNote}
+        onOpenNote={(blockId, date) => setNoteModal({ blockId, date })}
+        onShowReason={(label, reason) => setReasonPopup({ label, reason })}
+        viewStartDate={viewStartDate}
+        dayCount={dayCount}
+        selectedProcessId={selectedProcessId}
+        onSelectProcess={handleSelectProcess}
+        onDropProcess={handleDropProcess}
+        onDropHeader={handleDropHeader}
+        onReorderCellOrder={handleReorderCellOrder}
+      />
+
+      <p className="text-xs text-zinc-500">
+        공정 칩을 같은 행의 다른 날짜 셀로 드래그하면 이동합니다. 날짜 헤더를 드래그하면 그 날짜 이후 모든 동의
+        일정이 함께 순연됩니다.
+      </p>
+
+      {dropStage === 'threeplus-picker' && pendingDrop && pendingProcess && (
+        <Modal>
+          <p className="text-sm">
+            {pendingDrop.date}에 같은 공정이 이미 {collidingList.length}개 있어 총 {collidingList.length + 1}개가 됩니다.
+            3개 이상의 공정이 있습니다. 그냥 진행할까요? 아니면 어느 공정을 순연할까요?
+          </p>
+          <div className="flex flex-col gap-1 text-sm">
+            {collidingList.map((p) => (
+              <div key={p.id} className="flex items-center justify-between border border-zinc-200 rounded px-2 py-1">
+                <span>
+                  <strong>{blockNames[p.blockId] ?? ''}</strong>{' '}
+                  {p.cellOrder ? `${p.cellOrder}번 ` : ''}
+                  {processLabel(p)}
+                </span>
+                <button className="text-xs px-2 py-1 rounded border border-zinc-300" onClick={() => postponeExisting(p.id)}>
+                  이 공정 순연
+                </button>
+              </div>
+            ))}
+            <div className="flex items-center justify-between border border-indigo-200 rounded px-2 py-1 bg-indigo-50">
+              <span>(새로 이동해온) {processLabel(pendingProcess)}</span>
+              <button className="text-xs px-2 py-1 rounded border border-zinc-300" onClick={() => postponeExisting(pendingProcess.id)}>
+                이 공정 순연
+              </button>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 text-sm">
+            <button className="px-3 py-1 rounded border border-zinc-300" onClick={resetDropFlow}>
+              취소
+            </button>
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={proceedAnyway}>
+              그냥 진행
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {dropStage === 'reason' && pendingDrop && pendingProcess && (
+        <Modal>
+          <p className="text-sm">
+            <strong>{blockNames[pendingDrop.blockId]}</strong> {processLabel(pendingProcess)} ({pendingProcess.date}) →{' '}
+            {pendingDrop.date}로 이동
+          </p>
+          <input
+            autoFocus
+            className="border border-zinc-300 rounded px-2 py-1 text-sm"
+            value={reasonInput}
+            onChange={(e) => setReasonInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') confirmReason();
+            }}
+            placeholder="이동 사유를 간단히 적어주세요 (예: 우천으로 순연)"
+            data-testid="reason-input"
+          />
+          <div className="flex justify-end gap-2 text-sm">
+            <button className="px-3 py-1 rounded border border-zinc-300" onClick={resetDropFlow}>
+              취소
+            </button>
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={confirmReason} data-testid="confirm-move">
+              확인
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {headerShiftStage === 'confirm' && pendingHeaderShift && (
+        <Modal>
+          <p className="text-sm">
+            {pendingHeaderShift.fromDate} 이후 모든 동의 전체 일정을{' '}
+            {Math.abs(pendingHeaderShift.deltaDays)}일 {pendingHeaderShift.deltaDays > 0 ? '미룰까요' : '당길까요'}?
+          </p>
+          <div className="flex justify-end gap-2 text-sm">
+            <button
+              className="px-3 py-1 rounded border border-zinc-300"
+              onClick={() => {
+                setPendingHeaderShift(null);
+                setHeaderShiftStage('idle');
+              }}
+            >
+              취소
+            </button>
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={confirmHeaderShiftProceed}>
+              확인
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {headerShiftStage === 'reason' && pendingHeaderShift && (
+        <Modal>
+          <p className="text-sm">전체 일정 순연 사유</p>
+          <input
+            autoFocus
+            className="border border-zinc-300 rounded px-2 py-1 text-sm"
+            value={headerReasonInput}
+            onChange={(e) => setHeaderReasonInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') confirmHeaderShiftReason();
+            }}
+            placeholder="예: 우천·태풍으로 전체 순연"
+          />
+          <div className="flex justify-end gap-2 text-sm">
+            <button
+              className="px-3 py-1 rounded border border-zinc-300"
+              onClick={() => {
+                setPendingHeaderShift(null);
+                setHeaderShiftStage('idle');
+                setHeaderReasonInput('');
+              }}
+            >
+              취소
+            </button>
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={confirmHeaderShiftReason}>
+              확인
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {settingsOpen && (
+        <SettingsPanel
+          onClose={() => setSettingsOpen(false)}
+          siteInfo={siteInfo}
+          onChangeSiteInfo={setSiteInfo}
+          blocks={blocks}
+          onAddBlock={(name, facilityType) =>
+            setBlocks((cur) => [...cur, { id: crypto.randomUUID(), name, sortOrder: cur.length + 1, facilityType }])
+          }
+          onRemoveBlock={(id) => setBlocks((cur) => cur.filter((b) => b.id !== id))}
+          onChangeBlockType={(id, facilityType) =>
+            setBlocks((cur) => cur.map((b) => (b.id === id ? { ...b, facilityType } : b)))
+          }
+          templates={templates}
+          onAddTemplate={(t) => setTemplates((cur) => [...cur, t])}
+          onRemoveTemplate={(id) => setTemplates((cur) => cur.filter((t) => t.id !== id))}
+        />
+      )}
+
+      {historyOpen && (
+        <HistoryPanel
+          onClose={() => setHistoryOpen(false)}
+          changeHistory={changeHistory}
+          dateShiftHistory={dateShiftHistory}
+          processes={processes}
+          blocks={blocks}
+        />
+      )}
+
+      {noteModal && (
+        <Modal>
+          <p className="text-sm">
+            <strong>{blockNames[noteModal.blockId] ?? ''}</strong> {noteModal.date} 특이사항
+          </p>
+          <textarea
+            autoFocus
+            className="border border-zinc-300 rounded px-2 py-1 text-sm min-h-[120px]"
+            value={notes[`${noteModal.blockId}__${noteModal.date}`] ?? ''}
+            onChange={(e) => handleChangeNote(noteModal.blockId, noteModal.date, e.target.value)}
+            placeholder="특이사항을 입력하세요"
+          />
+          <div className="flex justify-end text-sm">
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={() => setNoteModal(null)}>
+              닫기
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {reasonPopup && (
+        <Modal>
+          <p className="text-sm">
+            <strong>{reasonPopup.label}</strong> 이동 사유
+          </p>
+          <p className="text-sm text-zinc-600">{reasonPopup.reason}</p>
+          <div className="flex justify-end text-sm">
+            <button className="px-3 py-1 rounded border border-zinc-300" onClick={() => setReasonPopup(null)}>
+              닫기
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
