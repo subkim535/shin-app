@@ -206,10 +206,14 @@ export default function GanttChart({
         }
         if (originCol !== undefined && destCol !== undefined) {
           const y = arrowYFor(rowIndex, rowType);
+          const originLeft = HEADER_W + originCol * CELL_W;
+          const destLeft = HEADER_W + destCol * CELL_W;
+          // 라벨과 겹치지 않도록, 두 셀의 텍스트를 지나지 않고 그 "사이 빈 공간"만 지나가게 그린다.
+          const [x1, x2] = destCol > originCol ? [originLeft + CELL_W, destLeft] : [originLeft, destLeft + CELL_W];
           arrows.push({
-            x1: HEADER_W + originCol * CELL_W + CELL_W / 2,
+            x1,
             y1: y,
-            x2: HEADER_W + destCol * CELL_W + CELL_W / 2,
+            x2,
             y2: y,
             label,
             reason: record.reason,
