@@ -178,8 +178,12 @@ export default function GanttChart({
     const blockTop = HEADER_H + rowIndex * ROW_H;
     return rowType === 'main' ? blockTop : blockTop + ROW_MAIN_H;
   }
-  function rowHeightFor(rowType: RowType): number {
-    return rowType === 'main' ? ROW_MAIN_H : ROW_SUB_H;
+  // 화살표는 셀 전체 높이의 중앙이 아니라, 맨 위 첫 줄 칩 텍스트 높이에 맞춰 그린다.
+  // 주요공정 행은 아래쪽에 여러 칩이 더 쌓일 수 있는 여유 공간이 있어서, 셀 중앙에 그리면
+  // 칩 밑 빈 공간을 지나가 "공정 아래에 화살표가 있다"처럼 보인다.
+  const CHIP_LINE_CENTER = 13;
+  function arrowYFor(rowIndex: number, rowType: RowType): number {
+    return rowTopFor(rowIndex, rowType) + CHIP_LINE_CENTER;
   }
 
   const visuals = useMemo(() => {
@@ -201,7 +205,7 @@ export default function GanttChart({
           ghosts.push({ date: record.previousDate, label, reason: record.reason, colIndex: originCol, rowIndex, rowType });
         }
         if (originCol !== undefined && destCol !== undefined) {
-          const y = rowTopFor(rowIndex, rowType) + rowHeightFor(rowType) / 2;
+          const y = arrowYFor(rowIndex, rowType);
           arrows.push({
             x1: HEADER_W + originCol * CELL_W + CELL_W / 2,
             y1: y,
