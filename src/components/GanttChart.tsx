@@ -212,45 +212,41 @@ export default function GanttChart({
       if (rowIndex === undefined) continue;
       const rowType: RowType = PROCESS_TYPE_MAP[proc.typeCode]?.category === 'sub' ? 'sub' : 'main';
       const label = processLabel(proc);
-      if (Math.abs(magnitude) >= 2) {
-        const originCol = dateIndex.get(record.previousDate);
-        const destCol = dateIndex.get(record.newDate);
-        if (originCol !== undefined) {
-          ghosts.push({ date: record.previousDate, label, reason: record.reason, colIndex: originCol, rowIndex, rowType });
-        }
-        if (originCol !== undefined && destCol !== undefined) {
-          const isBackward = destCol < originCol;
-          const laneKey = `${rowIndex}_${rowType}`;
-          const lane = laneCounts.get(laneKey) ?? 0;
-          laneCounts.set(laneKey, lane + 1);
+      const originCol = dateIndex.get(record.previousDate);
+      const destCol = dateIndex.get(record.newDate);
+      if (originCol !== undefined) {
+        ghosts.push({ date: record.previousDate, label, reason: record.reason, colIndex: originCol, rowIndex, rowType });
+      }
+      if (originCol !== undefined && destCol !== undefined) {
+        const isBackward = destCol < originCol;
+        const laneKey = `${rowIndex}_${rowType}`;
+        const lane = laneCounts.get(laneKey) ?? 0;
+        laneCounts.set(laneKey, lane + 1);
+        const originLeft = HEADER_W + originCol * CELL_W;
+        const destLeft = HEADER_W + destCol * CELL_W;
+        let x1: number;
+        let x2: number;
+        let baseY: number;
+        if (Math.abs(magnitude) === 1) {
+          // 바로 옆 칸으로 이동하면 두 셀 사이에 빈 공간이 없어서, 경계선을 가운데 두고
+          // 짧은 화살표를 행 아래쪽 여백에 그린다 (라벨 텍스트와 겹치지 않게).
+          const border = isBackward ? originLeft : originLeft + CELL_W;
+          x1 = isBackward ? border + 16 : border - 16;
+          x2 = isBackward ? border - 16 : border + 16;
+          baseY = rowTopFor(rowIndex, rowType) + rowHeightFor(rowType) - 6;
+        } else {
+          // 라벨과 겹치지 않도록, 두 셀의 텍스트를 지나지 않고 그 "사이 빈 공간"만 지나가게 그린다.
+          [x1, x2] = destCol > originCol ? [originLeft + CELL_W, destLeft] : [originLeft, destLeft + CELL_W];
           // 앞당겨진(왼쪽으로 향하는) 화살표는 칩 텍스트 줄과 같은 높이에 그리면 주공정
           // 행과 겹쳐 보인다. 이 경우만 행 아래쪽 여백으로 내려서 그린다.
-          const baseY = isBackward ? rowTopFor(rowIndex, rowType) + rowHeightFor(rowType) - 6 : arrowYFor(rowIndex, rowType);
-          const y = baseY + lane * 5; // 같은 행에 화살표가 여러 개면 살짝 어긋나게
-          const originLeft = HEADER_W + originCol * CELL_W;
-          const destLeft = HEADER_W + destCol * CELL_W;
-          // 라벨과 겹치지 않도록, 두 셀의 텍스트를 지나지 않고 그 "사이 빈 공간"만 지나가게 그린다.
-          const [x1, x2] = destCol > originCol ? [originLeft + CELL_W, destLeft] : [originLeft, destLeft + CELL_W];
-          arrows.push({ x1, y1: y, x2, y2: y, label, reason: record.reason });
+          baseY = isBackward ? rowTopFor(rowIndex, rowType) + rowHeightFor(rowType) - 6 : arrowYFor(rowIndex, rowType);
         }
+        const y = baseY + lane * 5; // 같은 행에 화살표가 여러 개면 살짝 어긋나게
+        arrows.push({ x1, y1: y, x2, y2: y, label, reason: record.reason });
       }
     }
     return { ghosts, arrows };
   }, [latestChangeByProcessId, processById, blockIndex, dateIndex]);
-
-  const oneDayMovedIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const record of latestChangeByProcessId.values()) {
-      if (Math.abs(diffDays(record.previousDate, record.newDate)) === 1) set.add(record.processId);
-    }
-    return set;
-  }, [latestChangeByProcessId]);
-
-  const reasonByProcessId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of latestChangeByProcessId.values()) map.set(c.processId, c.reason);
-    return map;
-  }, [latestChangeByProcessId]);
 
   const totalWidth = HEADER_W + dates.length * CELL_W + REMARK_W;
   const totalHeight = HEADER_H + blocks.length * ROW_H;
@@ -260,8 +256,6 @@ export default function GanttChart({
     const category = def?.category ?? 'main';
     const selected = p.id === selectedProcessId;
     const color = category === 'main' ? PROCESS_COLOR[p.typeCode] ?? FALLBACK_COLOR : undefined;
-    const oneDayMoved = oneDayMovedIds.has(p.id);
-    const reason = reasonByProcessId.get(p.id);
     const isDragSource = dragging?.type === 'process' && dragging.id === p.id;
     const label = processLabel(p);
     return (
@@ -333,21 +327,6 @@ export default function GanttChart({
             className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[9px] leading-none px-0.5"
           >
             👷
-          </button>
-        )}
-        {oneDayMoved && reason && (
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onShowReason(label, reason);
-            }}
-            title="이동 사유 보기"
-            data-testid="one-day-arrow"
-            className="shrink-0 text-zinc-400 hover:text-zinc-700 text-xs leading-none px-0.5"
-          >
-            ▷
           </button>
         )}
       </div>
