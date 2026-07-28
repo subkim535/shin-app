@@ -279,13 +279,14 @@ export default function GanttChart({
         const isBackward = magnitude < 0;
         const isOneDay = Math.abs(magnitude) === 1;
         if (originCol !== undefined) {
-          // 왼쪽(이전 날짜)으로 당겨진 이동은 그 칸에 다른 실제 공정이 남아있을 때만 겹쳐
-          // 보이므로, 그럴 때만 고스트를 행 아래쪽으로 내린다. 실제로 아무것도 없는 빈 칸이면
-          // 옆의 진짜 칩과 같은 높이(맨 위)에 그대로 둔다.
+          // 그 칸(원래 날짜)에 실제 공정이 남아있을 때만 겹쳐 보이므로, 그럴 때만 고스트를
+          // 행 아래쪽으로 내린다. 방향(정방향/역방향)과는 무관하다 — 같은 칸을 공유하는
+          // 고스트는 항상 같은 칸 내용을 보고 판단해야, ①②③ 순서로 정렬했을 때 실제로도
+          // 위에서 아래로 그 순서대로 보인다(방향이 섞이면 순서와 안 맞게 밀릴 수 있었다).
           const originHasRealContent = (rowType === 'main' ? byBlockDateMain : byBlockDateSub).has(
             `${proc.blockId}__${record.previousDate}`,
           );
-          const pushDown = isBackward && originHasRealContent;
+          const pushDown = originHasRealContent;
           // 하루 이동은 점선 화살표 대신 라벨 글자 앞/뒤에 작은 방향 표시를 붙인다
           // (SVG로 따로 그리면 라벨 텍스트 폭을 몰라서 겹치기 쉽다 — 같은 텍스트 줄에 넣으면
           // 브라우저가 알아서 겹치지 않게 배치해준다).
