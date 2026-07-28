@@ -208,9 +208,9 @@ export default function GanttChart({
       rowIndex: number;
       rowType: RowType;
       pushDown: boolean;
+      oneDayDirection?: 'left' | 'right';
     }[] = [];
     const arrows: { x1: number; y1: number; x2: number; y2: number; label: string; reason: string }[] = [];
-    const heads: { x: number; y: number; direction: 'left' | 'right'; label: string; reason: string }[] = [];
     const laneCounts = new Map<string, number>();
     for (const record of latestChangeByProcessId.values()) {
       const proc = processById.get(record.processId);
@@ -224,12 +224,25 @@ export default function GanttChart({
       const originCol = dateIndex.get(record.previousDate);
       const destCol = dateIndex.get(record.newDate);
       const isBackward = magnitude < 0;
+      const isOneDay = Math.abs(magnitude) === 1;
       if (originCol !== undefined) {
         // 왼쪽(이전 날짜)으로 당겨진 이동은 그 칸에 다른 실제 공정이 남아있는 경우가 많아
         // 고스트 라벨과 겹쳐 보인다. 이 경우만 고스트를 행 아래쪽으로 내린다.
-        ghosts.push({ date: record.previousDate, label, reason: record.reason, colIndex: originCol, rowIndex, rowType, pushDown: isBackward });
+        // 하루 이동은 점선 화살표 대신 라벨 글자 앞/뒤에 작은 방향 표시를 붙인다
+        // (SVG로 따로 그리면 라벨 텍스트 폭을 몰라서 겹치기 쉽다 — 같은 텍스트 줄에 넣으면
+        // 브라우저가 알아서 겹치지 않게 배치해준다).
+        ghosts.push({
+          date: record.previousDate,
+          label,
+          reason: record.reason,
+          colIndex: originCol,
+          rowIndex,
+          rowType,
+          pushDown: isBackward,
+          oneDayDirection: isOneDay ? (isBackward ? 'left' : 'right') : undefined,
+        });
       }
-      if (originCol !== undefined && destCol !== undefined) {
+      if (originCol !== undefined && destCol !== undefined && !isOneDay) {
         const laneKey = `${rowIndex}_${rowType}`;
         const lane = laneCounts.get(laneKey) ?? 0;
         laneCounts.set(laneKey, lane + 1);
@@ -239,19 +252,12 @@ export default function GanttChart({
         // 겹쳐 보인다. 이 경우만 행 아래쪽 여백으로 내려서 그린다.
         const baseY = isBackward ? rowTopFor(rowIndex, rowType) + rowHeightFor(rowType) - 6 : arrowYFor(rowIndex, rowType);
         const y = baseY + lane * 5; // 같은 행에 화살표가 여러 개면 살짝 어긋나게
-        if (Math.abs(magnitude) === 1) {
-          // 바로 옆 칸으로 이동하면 두 셀 사이에 빈 공간이 없다. 점선 화살표 대신 방향만
-          // 가리키는 작은 머리 표시 하나만, 다음 칸으로 삐져나가지 않게 이전 칸 안쪽에 그린다.
-          const x = isBackward ? originLeft + 10 : originLeft + CELL_W - 10;
-          heads.push({ x, y, direction: isBackward ? 'left' : 'right', label, reason: record.reason });
-        } else {
-          // 라벨과 겹치지 않도록, 두 셀의 텍스트를 지나지 않고 그 "사이 빈 공간"만 지나가게 그린다.
-          const [x1, x2] = destCol > originCol ? [originLeft + CELL_W, destLeft] : [originLeft, destLeft + CELL_W];
-          arrows.push({ x1, y1: y, x2, y2: y, label, reason: record.reason });
-        }
+        // 라벨과 겹치지 않도록, 두 셀의 텍스트를 지나지 않고 그 "사이 빈 공간"만 지나가게 그린다.
+        const [x1, x2] = destCol > originCol ? [originLeft + CELL_W, destLeft] : [originLeft, destLeft + CELL_W];
+        arrows.push({ x1, y1: y, x2, y2: y, label, reason: record.reason });
       }
     }
-    return { ghosts, arrows, heads };
+    return { ghosts, arrows };
   }, [latestChangeByProcessId, processById, blockIndex, dateIndex]);
 
   const totalWidth = HEADER_W + dates.length * CELL_W + REMARK_W;
@@ -507,9 +513,11 @@ export default function GanttChart({
               type="button"
               onClick={() => onShowReason(g.label, g.reason)}
               title="이동 사유 보기"
-              className="text-xs leading-tight text-zinc-400 bg-zinc-100/80 hover:bg-zinc-200 rounded px-1.5 py-0.5 text-left"
+              className="text-xs leading-tight text-zinc-400 bg-zinc-100/80 hover:bg-zinc-200 rounded px-1.5 py-0.5 text-left whitespace-nowrap"
             >
+              {g.oneDayDirection === 'left' && <span className="mr-0.5">◀</span>}
               {g.label}
+              {g.oneDayDirection === 'right' && <span className="ml-0.5">▶</span>}
             </button>
           </div>
         ))}
@@ -550,26 +558,6 @@ export default function GanttChart({
               />
             </g>
           ))}
-          {/* 1일 이동은 점선 없이 방향만 가리키는 작은 화살표 머리만 표시한다 */}
-          {visuals.heads.map((h, i) => {
-            const tipX = h.x;
-            const baseX = h.direction === 'right' ? h.x - 9 : h.x + 9;
-            return (
-              <g key={i}>
-                <circle
-                  cx={h.x}
-                  cy={h.y}
-                  r={8}
-                  fill="transparent"
-                  style={{ pointerEvents: 'all', cursor: 'pointer' }}
-                  onClick={() => onShowReason(h.label, h.reason)}
-                >
-                  <title>이동 사유: {h.reason}</title>
-                </circle>
-                <path d={`M${baseX},${h.y - 4} L${tipX},${h.y} L${baseX},${h.y + 4} Z`} fill="#a1a1aa" style={{ pointerEvents: 'none' }} />
-              </g>
-            );
-          })}
         </svg>
       </div>
     </div>
