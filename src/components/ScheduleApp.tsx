@@ -73,10 +73,44 @@ interface PendingHeaderShift {
   deltaDays: number;
 }
 
-function Modal({ children }: { children: React.ReactNode }) {
+function Modal({ children, draggable }: { children: React.ReactNode; draggable?: boolean }) {
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
+
+  function handlePointerMove(e: PointerEvent) {
+    if (!dragRef.current) return;
+    setOffset({ x: dragRef.current.baseX + (e.clientX - dragRef.current.startX), y: dragRef.current.baseY + (e.clientY - dragRef.current.startY) });
+  }
+
+  function handlePointerUp() {
+    dragRef.current = null;
+    window.removeEventListener('pointermove', handlePointerMove);
+    window.removeEventListener('pointerup', handlePointerUp);
+  }
+
+  function handlePointerDown(e: React.PointerEvent) {
+    dragRef.current = { startX: e.clientX, startY: e.clientY, baseX: offset.x, baseY: offset.y };
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="bg-white rounded-lg shadow-lg p-4 w-full max-w-sm flex flex-col gap-3">{children}</div>
+      <div
+        className="bg-white rounded-lg shadow-lg p-4 w-full max-w-sm flex flex-col gap-3"
+        style={draggable ? { transform: `translate(${offset.x}px, ${offset.y}px)` } : undefined}
+      >
+        {draggable && (
+          <div
+            onPointerDown={handlePointerDown}
+            className="-mx-4 -mt-4 px-4 py-1.5 rounded-t-lg bg-zinc-50 border-b border-zinc-200 text-xs text-zinc-400 cursor-move select-none"
+            title="드래그해서 창 이동"
+          >
+            ⠿⠿⠿ 드래그해서 이동
+          </div>
+        )}
+        {children}
+      </div>
     </div>
   );
 }
@@ -334,6 +368,22 @@ export default function ScheduleApp() {
 
   function handleChangeBlockRemark(blockId: string, text: string) {
     setBlocks((cur) => cur.map((b) => (b.id === blockId ? { ...b, remark: text } : b)));
+  }
+
+  // 동을 지우면 그 동에 딸린 공정/이동이력/직영작업까지 같이 지운다. 그냥 blocks에서만
+  // 빼면 processes에 그 blockId를 가진 "유령" 공정이 남아 충돌 집계 등을 조용히 틀어지게 한다.
+  function handleRemoveBlock(id: string) {
+    setBlocks((cur) => cur.filter((b) => b.id !== id));
+    const removedProcessIds = new Set(processes.filter((p) => p.blockId === id).map((p) => p.id));
+    setProcesses((cur) => cur.filter((p) => p.blockId !== id));
+    setChangeHistory((cur) => cur.filter((c) => !removedProcessIds.has(c.processId)));
+    setNotes((cur) => {
+      const next = { ...cur };
+      for (const key of Object.keys(next)) {
+        if (key.startsWith(`${id}__`)) delete next[key];
+      }
+      return next;
+    });
   }
 
   function handleAddDirectLabor(date: ISODate, category: string, workContent: string, headcount: number) {
@@ -608,7 +658,7 @@ export default function ScheduleApp() {
       </p>
 
       {dropStage === 'threeplus-picker' && pendingDrop && pendingProcess && (
-        <Modal>
+        <Modal draggable>
           <p className="text-sm">
             {pendingDrop.date}에 같은 공정이 이미 {collidingList.length}개 있어 총 {collidingList.length + 1}개가 됩니다.
             3개 이상의 공정이 있습니다. 그냥 진행할까요? 아니면 어느 공정을 순연할까요?
@@ -763,7 +813,7 @@ export default function ScheduleApp() {
               { id: crypto.randomUUID(), name, sortOrder: cur.length + 1, facilityType, info: info || undefined },
             ])
           }
-          onRemoveBlock={(id) => setBlocks((cur) => cur.filter((b) => b.id !== id))}
+          onRemoveBlock={handleRemoveBlock}
           onChangeBlockType={(id, facilityType) =>
             setBlocks((cur) => cur.map((b) => (b.id === id ? { ...b, facilityType } : b)))
           }

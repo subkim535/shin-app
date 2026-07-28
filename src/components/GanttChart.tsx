@@ -152,6 +152,22 @@ export default function GanttChart({
     setHoverHeaderDate(date);
   }
 
+  // 같은 날짜에 같은 공종 그룹(갱/철/AL — 타설은 제외)이 3개 이상 겹치는 날짜.
+  // 처음 겹친 날뿐 아니라 그 날짜 헤더 자체를 표시해서 뒤에서도 눈에 띄게 한다.
+  const heavyCollisionDates = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of processes) {
+      if (!p.conflictGroup) continue;
+      const key = `${p.date}__${p.conflictGroup}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const dates = new Set<string>();
+    for (const [key, count] of counts) {
+      if (count >= 3) dates.add(key.split('__')[0]);
+    }
+    return dates;
+  }, [processes]);
+
   const byBlockDateMain = useMemo(() => {
     const map = new Map<string, ProcessInstance[]>();
     for (const p of processes) {
@@ -390,6 +406,7 @@ export default function GanttChart({
         {dates.map((d, colIndex) => {
           const isToday = d === today;
           const holiday = isHoliday(d, holidays);
+          const heavyCollision = heavyCollisionDates.has(d);
           const isDragSource = dragging?.type === 'header' && dragging.date === d;
           const isHoverTarget = dragging?.type === 'header' && hoverHeaderDate === d;
           return (
@@ -398,11 +415,17 @@ export default function GanttChart({
               onPointerDown={() => startDragHeader(d)}
               onPointerEnter={() => updateHoverHeader(d)}
               data-header-date={d}
-              title="클릭: 작업일보/순연 선택 / 드래그: 전체 일정 순연"
+              title={
+                heavyCollision
+                  ? '같은 공종이 3개 이상 겹치는 날짜 / 클릭: 작업일보/순연 선택 / 드래그: 전체 일정 순연'
+                  : '클릭: 작업일보/순연 선택 / 드래그: 전체 일정 순연'
+              }
+              data-heavy-collision={heavyCollision || undefined}
               className={[
                 'sticky top-0 z-20 border-b border-l border-zinc-200 flex flex-col items-center justify-center text-xs cursor-grab active:cursor-grabbing',
-                isToday ? 'bg-indigo-50 border-b-2 border-b-indigo-900' : 'bg-zinc-50',
-                holiday && !isToday ? 'bg-zinc-100 text-zinc-500' : '',
+                heavyCollision ? 'bg-red-100 text-red-700' : isToday ? 'bg-indigo-50' : 'bg-zinc-50',
+                isToday ? 'border-b-2 border-b-indigo-900' : '',
+                holiday && !isToday && !heavyCollision ? 'bg-zinc-100 text-zinc-500' : '',
                 isDragSource ? 'opacity-50' : '',
                 isHoverTarget ? 'ring-2 ring-inset ring-indigo-600' : '',
               ].join(' ')}
