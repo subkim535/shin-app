@@ -512,7 +512,7 @@ export default function GanttChart({
             <button
               type="button"
               onClick={() => onShowReason(g.label, g.reason)}
-              title="이동 사유 보기"
+              title={`이동 사유: ${g.reason}`}
               className="text-xs leading-tight text-zinc-400 bg-zinc-100/80 hover:bg-zinc-200 rounded px-1.5 py-0.5 text-left whitespace-nowrap"
             >
               {g.oneDayDirection === 'left' && <span className="mr-0.5">◀</span>}
