@@ -211,6 +211,12 @@ export default function GanttChart({
   const GHOST_BOX_H = 20; // 고스트 한 줄이 실제로 차지하는 대략적인 높이
   const ARROW_LANE_STEP = 8; // 같은 행에서 화살표끼리 겹칠 때 갈라놓는 간격
 
+  // 고스트가 시작되는 기준 높이. 'bottom'은 화살표(항상 행 아래쪽에 그린다)와 같은 높이에서
+  // 이어져 나오는 것처럼 보이도록, 화살표 높이 바로 위에 고스트 박스가 오게 맞춘다.
+  function ghostBaseOffset(anchor: 'top' | 'bottom', base: number): number {
+    return anchor === 'top' ? 0 : base - 6 - GHOST_BOX_H;
+  }
+
   // 두 구간이 겹치지 않는 첫 번째 레인을 찾아 배정한다(겹치는 화살표만 갈라놓고,
   // 안 겹치는 화살표는 그냥 같은 레인을 써서 불필요하게 어긋나지 않게 한다).
   function assignLane(laneEnds: number[], start: number, end: number): number {
@@ -235,7 +241,7 @@ export default function GanttChart({
       colIndex: number;
       rowIndex: number;
       rowType: RowType;
-      pushDown: boolean;
+      anchor: 'top' | 'bottom';
       oneDayDirection?: 'left' | 'right';
       seq: number;
       lane: number;
@@ -281,7 +287,10 @@ export default function GanttChart({
           const originHasRealContent = (rowType === 'main' ? byBlockDateMain : byBlockDateSub).has(
             `${proc.blockId}__${record.previousDate}`,
           );
-          const pushDown = originHasRealContent;
+          // 2일 이상 이동은 화살표가 같이 그려지는데, 화살표는 항상 행 아래쪽에 그리므로
+          // 고스트도 같은 높이로 맞춰야 화살표가 고스트에서 이어져 나오는 것처럼 보인다.
+          // 하루 이동(화살표 없음)은 그 칸에 실제 공정이 남아있을 때만 아래로 내린다.
+          const anchor: 'top' | 'bottom' = !isOneDay || originHasRealContent ? 'bottom' : 'top';
           // 하루 이동은 점선 화살표 대신 라벨 글자 앞/뒤에 작은 방향 표시를 붙인다
           // (SVG로 따로 그리면 라벨 텍스트 폭을 몰라서 겹치기 쉽다 — 같은 텍스트 줄에 넣으면
           // 브라우저가 알아서 겹치지 않게 배치해준다).
@@ -293,7 +302,7 @@ export default function GanttChart({
             colIndex: originCol,
             rowIndex,
             rowType,
-            pushDown,
+            anchor,
             oneDayDirection: isOneDay ? (isBackward ? 'left' : 'right') : undefined,
             seq,
             lane: 0, // 아래에서 같은 칸끼리 seq 오름차순(①이 위)으로 다시 배정한다
@@ -332,7 +341,7 @@ export default function GanttChart({
     const extra = new Map<string, number>(); // key: `${rowIndex}_${rowType}` -> 기본 높이를 넘어서는 만큼(px)
     for (const g of rawVisuals.ghosts) {
       const base = g.rowType === 'main' ? ROW_MAIN_H : ROW_SUB_H;
-      const topOffset = (g.pushDown ? base / 2 : 0) + g.lane * LANE_STEP;
+      const topOffset = ghostBaseOffset(g.anchor, base) + g.lane * LANE_STEP;
       const neededBottom = topOffset + GHOST_BOX_H;
       const key = `${g.rowIndex}_${g.rowType}`;
       extra.set(key, Math.max(extra.get(key) ?? 0, neededBottom - base));
@@ -370,7 +379,7 @@ export default function GanttChart({
   const visuals = useMemo(() => {
     const ghosts = rawVisuals.ghosts.map((g) => {
       const base = g.rowType === 'main' ? ROW_MAIN_H : ROW_SUB_H;
-      const topOffset = (g.pushDown ? base / 2 : 0) + g.lane * LANE_STEP;
+      const topOffset = ghostBaseOffset(g.anchor, base) + g.lane * LANE_STEP;
       return { ...g, top: rowTopFor(g.rowIndex, g.rowType) + topOffset };
     });
     const arrows = rawVisuals.arrows.map((a) => {
