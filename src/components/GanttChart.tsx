@@ -26,7 +26,7 @@ interface GanttChartProps {
   notes: Record<string, string>;
   onChangeNote: (blockId: string, date: ISODate, text: string) => void;
   onOpenNote: (blockId: string, date: ISODate) => void;
-  onShowReason: (label: string, reason: string) => void;
+  onShowReason: (label: string, reason: string, path?: string) => void;
   onEditCrew: (processId: string) => void;
   onChangeBlockRemark: (blockId: string, text: string) => void;
   onClickHeaderDate: (date: ISODate) => void;
@@ -229,6 +229,7 @@ export default function GanttChart({
       date: ISODate;
       label: string;
       reason: string;
+      path: string;
       colIndex: number;
       rowIndex: number;
       rowType: RowType;
@@ -237,9 +238,8 @@ export default function GanttChart({
       seq: number;
       lane: number;
     }[] = [];
-    const arrows: { x1: number; y1: number; x2: number; y2: number; label: string; reason: string }[] = [];
+    const arrows: { x1: number; y1: number; x2: number; y2: number; label: string; reason: string; path: string }[] = [];
     const laneCounts = new Map<string, number>();
-    const ghostLaneCounts = new Map<string, number>();
     for (const records of movesByProcessId.values()) {
       const proc = processById.get(records[0].processId);
       if (!proc) continue;
@@ -247,6 +247,9 @@ export default function GanttChart({
       if (rowIndex === undefined) continue;
       const rowType: RowType = PROCESS_TYPE_MAP[proc.typeCode]?.category === 'sub' ? 'sub' : 'main';
       const label = processLabel(proc);
+      // 그리드에는 최근 3번만 표시하지만, 클릭했을 때 보여줄 전체 이동 경로는 처음부터
+      // 끝까지 다 모아둔다 (예: "7/27 → 7/28 → 7/27 → 7/29").
+      const path = [records[0].previousDate, ...records.map((r) => r.newDate)].join(' → ');
       // 이동 이력을 전부 다 표시하면 여러 번 옮긴 공정은 고스트가 겹겹이 쌓여 지저분해진다.
       // 최근 3번만 남기고, 가장 최근 이동이 항상 ①이 되도록 최신순으로 번호를 매긴다
       // (계속 옮기면 ①이던 게 ②, ③으로 밀려나다가 4번째부터는 화면에서 사라진다).
@@ -265,20 +268,18 @@ export default function GanttChart({
           // 하루 이동은 점선 화살표 대신 라벨 글자 앞/뒤에 작은 방향 표시를 붙인다
           // (SVG로 따로 그리면 라벨 텍스트 폭을 몰라서 겹치기 쉽다 — 같은 텍스트 줄에 넣으면
           // 브라우저가 알아서 겹치지 않게 배치해준다).
-          const ghostLaneKey = `${rowIndex}_${rowType}_${originCol}`;
-          const ghostLane = ghostLaneCounts.get(ghostLaneKey) ?? 0;
-          ghostLaneCounts.set(ghostLaneKey, ghostLane + 1);
           ghosts.push({
             date: record.previousDate,
             label,
             reason: record.reason,
+            path,
             colIndex: originCol,
             rowIndex,
             rowType,
             pushDown: isBackward,
             oneDayDirection: isOneDay ? (isBackward ? 'left' : 'right') : undefined,
             seq,
-            lane: ghostLane,
+            lane: 0, // 아래에서 같은 칸끼리 seq 오름차순(①이 위)으로 다시 배정한다
           });
         }
         if (originCol !== undefined && destCol !== undefined && !isOneDay) {
@@ -293,8 +294,21 @@ export default function GanttChart({
           const y = baseY + lane * 5; // 같은 행에 화살표가 여러 개면 살짝 어긋나게
           // 라벨과 겹치지 않도록, 두 셀의 텍스트를 지나지 않고 그 "사이 빈 공간"만 지나가게 그린다.
           const [x1, x2] = destCol > originCol ? [originLeft + CELL_W, destLeft] : [originLeft, destLeft + CELL_W];
-          arrows.push({ x1, y1: y, x2, y2: y, label, reason: record.reason });
+          arrows.push({ x1, y1: y, x2, y2: y, label, reason: record.reason, path });
         }
+      });
+    }
+    // 같은 칸에 고스트가 여러 개 겹치면 seq가 작을수록(=최근일수록) 위쪽에 오도록 정렬한다.
+    const cellGroups = new Map<string, typeof ghosts>();
+    for (const g of ghosts) {
+      const key = `${g.rowIndex}_${g.rowType}_${g.colIndex}`;
+      if (!cellGroups.has(key)) cellGroups.set(key, []);
+      cellGroups.get(key)!.push(g);
+    }
+    for (const group of cellGroups.values()) {
+      group.sort((a, b) => a.seq - b.seq);
+      group.forEach((g, lane) => {
+        g.lane = lane;
       });
     }
     return { ghosts, arrows };
@@ -558,7 +572,7 @@ export default function GanttChart({
           >
             <button
               type="button"
-              onClick={() => onShowReason(g.label, g.reason)}
+              onClick={() => onShowReason(g.label, g.reason, g.path)}
               title={`이동 사유: ${g.reason}`}
               className="text-xs leading-tight text-zinc-400 bg-zinc-100/80 hover:bg-zinc-200 rounded px-1.5 py-0.5 text-left whitespace-nowrap"
             >
@@ -589,7 +603,7 @@ export default function GanttChart({
                 stroke="transparent"
                 strokeWidth={10}
                 style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
-                onClick={() => onShowReason(a.label, a.reason)}
+                onClick={() => onShowReason(a.label, a.reason, a.path)}
               >
                 <title>이동 사유: {a.reason}</title>
               </line>

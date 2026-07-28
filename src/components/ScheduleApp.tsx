@@ -279,7 +279,7 @@ export default function ScheduleApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [noteModal, setNoteModal] = useState<{ blockId: string; date: ISODate } | null>(null);
-  const [reasonPopup, setReasonPopup] = useState<{ label: string; reason: string } | null>(null);
+  const [reasonPopup, setReasonPopup] = useState<{ label: string; reason: string; path?: string } | null>(null);
   const [crewModal, setCrewModal] = useState<{ processId: string; team: string; headcount: string } | null>(null);
   const [reportDate, setReportDate] = useState<ISODate | null>(null);
   const [dateChoice, setDateChoice] = useState<ISODate | null>(null);
@@ -644,7 +644,7 @@ export default function ScheduleApp() {
         notes={notes}
         onChangeNote={handleChangeNote}
         onOpenNote={(blockId, date) => setNoteModal({ blockId, date })}
-        onShowReason={(label, reason) => setReasonPopup({ label, reason })}
+        onShowReason={(label, reason, path) => setReasonPopup({ label, reason, path })}
         onEditCrew={handleOpenCrew}
         onChangeBlockRemark={handleChangeBlockRemark}
         onClickHeaderDate={(date) => setDateChoice(date)}
@@ -870,6 +870,11 @@ export default function ScheduleApp() {
             <strong>{reasonPopup.label}</strong> 이동 사유
           </p>
           <p className="text-sm text-zinc-600">{reasonPopup.reason}</p>
+          {reasonPopup.path && (
+            <p className="text-xs text-zinc-500">
+              이동 경로: <span className="font-mono">{reasonPopup.path}</span>
+            </p>
+          )}
           <div className="flex justify-end text-sm">
             <button className="px-3 py-1 rounded border border-zinc-300" onClick={() => setReasonPopup(null)}>
               닫기
