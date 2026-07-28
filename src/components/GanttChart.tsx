@@ -13,7 +13,6 @@ const HEADER_H = 48;
 const ROW_MAIN_H = 52;
 const ROW_SUB_H = 28;
 const ROW_NOTE_H = 36;
-const ROW_H = ROW_MAIN_H + ROW_SUB_H + ROW_NOTE_H;
 const FALLBACK_COLOR = { bg: 'bg-slate-300', text: 'text-slate-900' };
 
 type RowType = 'main' | 'sub';
@@ -208,23 +207,16 @@ export default function GanttChart({
 
   const processById = useMemo(() => new Map(processes.map((p) => [p.id, p])), [processes]);
 
-  function rowHeightFor(rowType: RowType): number {
-    return rowType === 'main' ? ROW_MAIN_H : ROW_SUB_H;
-  }
-
-  function rowTopFor(rowIndex: number, rowType: RowType): number {
-    const blockTop = HEADER_H + rowIndex * ROW_H;
-    return rowType === 'main' ? blockTop : blockTop + ROW_MAIN_H;
-  }
   // 화살표는 셀 전체 높이의 중앙이 아니라, 맨 위 첫 줄 칩 텍스트 높이에 맞춰 그린다.
   // 주요공정 행은 아래쪽에 여러 칩이 더 쌓일 수 있는 여유 공간이 있어서, 셀 중앙에 그리면
   // 칩 밑 빈 공간을 지나가 "공정 아래에 화살표가 있다"처럼 보인다.
   const CHIP_LINE_CENTER = 13;
-  function arrowYFor(rowIndex: number, rowType: RowType): number {
-    return rowTopFor(rowIndex, rowType) + CHIP_LINE_CENTER;
-  }
+  const LANE_STEP = 15; // 같은 칸에 고스트가 여러 개 쌓일 때 한 줄씩 내려가는 간격
+  const GHOST_BOX_H = 20; // 고스트 한 줄이 실제로 차지하는 대략적인 높이
 
-  const visuals = useMemo(() => {
+  // 1단계: 좌표 계산 없이 순수 논리(어느 행/칸, 몇 번, 위/아래 밀림 여부, 몇 번째로 쌓였는지)만 모은다.
+  // 행 높이가 몇 번 쌓였는지에 따라 달라지므로, 좌표를 계산하려면 이 정보가 먼저 다 모여야 한다.
+  const rawVisuals = useMemo(() => {
     const ghosts: {
       date: ISODate;
       label: string;
@@ -238,7 +230,17 @@ export default function GanttChart({
       seq: number;
       lane: number;
     }[] = [];
-    const arrows: { x1: number; y1: number; x2: number; y2: number; label: string; reason: string; path: string }[] = [];
+    const arrows: {
+      originCol: number;
+      destCol: number;
+      rowIndex: number;
+      rowType: RowType;
+      isBackward: boolean;
+      lane: number;
+      label: string;
+      reason: string;
+      path: string;
+    }[] = [];
     const laneCounts = new Map<string, number>();
     for (const records of movesByProcessId.values()) {
       const proc = processById.get(records[0].processId);
@@ -286,15 +288,7 @@ export default function GanttChart({
           const laneKey = `${rowIndex}_${rowType}`;
           const lane = laneCounts.get(laneKey) ?? 0;
           laneCounts.set(laneKey, lane + 1);
-          const originLeft = HEADER_W + originCol * CELL_W;
-          const destLeft = HEADER_W + destCol * CELL_W;
-          // 앞당겨진(왼쪽으로 향하는) 이동은 칩 텍스트 줄과 같은 높이에 그리면 주공정 행과
-          // 겹쳐 보인다. 이 경우만 행 아래쪽 여백으로 내려서 그린다.
-          const baseY = isBackward ? rowTopFor(rowIndex, rowType) + rowHeightFor(rowType) - 6 : arrowYFor(rowIndex, rowType);
-          const y = baseY + lane * 5; // 같은 행에 화살표가 여러 개면 살짝 어긋나게
-          // 라벨과 겹치지 않도록, 두 셀의 텍스트를 지나지 않고 그 "사이 빈 공간"만 지나가게 그린다.
-          const [x1, x2] = destCol > originCol ? [originLeft + CELL_W, destLeft] : [originLeft, destLeft + CELL_W];
-          arrows.push({ x1, y1: y, x2, y2: y, label, reason: record.reason, path });
+          arrows.push({ originCol, destCol, rowIndex, rowType, isBackward, lane, label, reason: record.reason, path });
         }
       });
     }
@@ -314,8 +308,66 @@ export default function GanttChart({
     return { ghosts, arrows };
   }, [movesByProcessId, processById, blockIndex, dateIndex]);
 
+  // 2단계: 한 칸에 고스트가 여러 개 쌓이면 그만큼 그 행(주공정/보조공정 행 각각)의 높이를 늘린다.
+  const rowMetrics = useMemo(() => {
+    const extra = new Map<string, number>(); // key: `${rowIndex}_${rowType}` -> 기본 높이를 넘어서는 만큼(px)
+    for (const g of rawVisuals.ghosts) {
+      const base = g.rowType === 'main' ? ROW_MAIN_H : ROW_SUB_H;
+      const topOffset = (g.pushDown ? base / 2 : 0) + g.lane * LANE_STEP;
+      const neededBottom = topOffset + GHOST_BOX_H;
+      const key = `${g.rowIndex}_${g.rowType}`;
+      extra.set(key, Math.max(extra.get(key) ?? 0, neededBottom - base));
+    }
+    const mainH: number[] = [];
+    const subH: number[] = [];
+    const blockTop: number[] = [];
+    let cursor = HEADER_H;
+    for (let i = 0; i < blocks.length; i++) {
+      blockTop.push(cursor);
+      const mh = ROW_MAIN_H + (extra.get(`${i}_main`) ?? 0);
+      const sh = ROW_SUB_H + (extra.get(`${i}_sub`) ?? 0);
+      mainH.push(mh);
+      subH.push(sh);
+      cursor += mh + sh + ROW_NOTE_H;
+    }
+    return { mainH, subH, blockTop, totalHeight: cursor };
+  }, [rawVisuals, blocks.length]);
+
+  function rowTopFor(rowIndex: number, rowType: RowType): number {
+    return rowMetrics.blockTop[rowIndex] + (rowType === 'sub' ? rowMetrics.mainH[rowIndex] : 0);
+  }
+  function rowHeightFor(rowIndex: number, rowType: RowType): number {
+    return rowType === 'main' ? rowMetrics.mainH[rowIndex] : rowMetrics.subH[rowIndex];
+  }
+  function arrowYFor(rowIndex: number, rowType: RowType): number {
+    return rowTopFor(rowIndex, rowType) + CHIP_LINE_CENTER;
+  }
+
+  // 3단계: 이제 행 높이가 확정됐으니 실제 픽셀 좌표를 계산한다.
+  const visuals = useMemo(() => {
+    const ghosts = rawVisuals.ghosts.map((g) => {
+      const base = g.rowType === 'main' ? ROW_MAIN_H : ROW_SUB_H;
+      const topOffset = (g.pushDown ? base / 2 : 0) + g.lane * LANE_STEP;
+      return { ...g, top: rowTopFor(g.rowIndex, g.rowType) + topOffset };
+    });
+    const arrows = rawVisuals.arrows.map((a) => {
+      const originLeft = HEADER_W + a.originCol * CELL_W;
+      const destLeft = HEADER_W + a.destCol * CELL_W;
+      // 라벨과 겹치지 않도록, 두 셀의 텍스트를 지나지 않고 그 "사이 빈 공간"만 지나가게 그린다.
+      // (1일 이동은 애초에 arrows에 안 들어오고 고스트 라벨 옆 ◀/▶ 표시로 대신한다.)
+      const [x1, x2] = a.destCol > a.originCol ? [originLeft + CELL_W, destLeft] : [originLeft, destLeft + CELL_W];
+      // 앞당겨진(왼쪽으로 향하는) 이동은 칩 텍스트 줄과 같은 높이에 그리면 주공정 행과
+      // 겹쳐 보인다. 이 경우만 행 아래쪽 여백으로 내려서 그린다.
+      const baseY = a.isBackward ? rowTopFor(a.rowIndex, a.rowType) + rowHeightFor(a.rowIndex, a.rowType) - 6 : arrowYFor(a.rowIndex, a.rowType);
+      const y = baseY + a.lane * 5; // 같은 행에 화살표가 여러 개면 살짝 어긋나게
+      return { x1, y1: y, x2, y2: y, label: a.label, reason: a.reason, path: a.path };
+    });
+    return { ghosts, arrows };
+  }, [rawVisuals, rowMetrics]);
+
   const totalWidth = HEADER_W + dates.length * CELL_W + REMARK_W;
-  const totalHeight = HEADER_H + blocks.length * ROW_H;
+  const totalHeight = rowMetrics.totalHeight;
+  const gridTemplateRows = `${HEADER_H}px ` + blocks.map((_, i) => `${rowMetrics.mainH[i]}px ${rowMetrics.subH[i]}px ${ROW_NOTE_H}px`).join(' ');
 
   function renderChip(p: ProcessInstance, rowType: RowType, blockId: string, date: ISODate) {
     const def = PROCESS_TYPE_MAP[p.typeCode];
@@ -407,7 +459,7 @@ export default function GanttChart({
           position: 'relative',
           display: 'grid',
           gridTemplateColumns: `${HEADER_W}px repeat(${dates.length}, ${CELL_W}px) ${REMARK_W}px`,
-          gridTemplateRows: `${HEADER_H}px repeat(${blocks.length}, ${ROW_MAIN_H}px ${ROW_SUB_H}px ${ROW_NOTE_H}px)`,
+          gridTemplateRows,
           width: totalWidth,
           height: totalHeight,
         }}
@@ -565,7 +617,7 @@ export default function GanttChart({
             style={{
               position: 'absolute',
               left: HEADER_W + g.colIndex * CELL_W,
-              top: rowTopFor(g.rowIndex, g.rowType) + (g.pushDown ? rowHeightFor(g.rowType) / 2 : 0) + g.lane * 15,
+              top: g.top,
               width: CELL_W,
               zIndex: 5,
             }}
