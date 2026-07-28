@@ -233,6 +233,61 @@ export default function GanttChart({
   // 1단계: 좌표 계산 없이 순수 논리(어느 행/칸, 몇 번, 위/아래 밀림 여부, 몇 번째로 쌓였는지)만 모은다.
   // 행 높이가 몇 번 쌓였는지에 따라 달라지므로, 좌표를 계산하려면 이 정보가 먼저 다 모여야 한다.
   const rawVisuals = useMemo(() => {
+    type Info = {
+      proc: ProcessInstance;
+      record: ChangeRecord;
+      rowIndex: number;
+      rowType: RowType;
+      label: string;
+      path: string;
+      seq: number;
+      originCol?: number;
+      destCol?: number;
+      isBackward: boolean;
+      isOneDay: boolean;
+    };
+    const infos: Info[] = [];
+    for (const records of movesByProcessId.values()) {
+      const proc = processById.get(records[0].processId);
+      if (!proc) continue;
+      const rowIndex = blockIndex.get(proc.blockId);
+      if (rowIndex === undefined) continue;
+      const rowType: RowType = PROCESS_TYPE_MAP[proc.typeCode]?.category === 'sub' ? 'sub' : 'main';
+      const label = processLabel(proc);
+      // 그리드에는 최근 3번만 표시하지만, 클릭했을 때 보여줄 전체 이동 경로는 처음부터
+      // 끝까지 다 모아둔다 (예: "7/27 → 7/28 → 7/27 → 7/29").
+      const path = [records[0].previousDate, ...records.map((r) => r.newDate)].join(' → ');
+      // 이동 이력을 전부 다 표시하면 여러 번 옮긴 공정은 고스트가 겹겹이 쌓여 지저분해진다.
+      // 최근 3번만 남기고, 가장 최근 이동이 항상 ①이 되도록 최신순으로 번호를 매긴다
+      // (계속 옮기면 ①이던 게 ②, ③으로 밀려나다가 4번째부터는 화면에서 사라진다).
+      const recent = records.slice(-3);
+      recent.forEach((record, i) => {
+        const magnitude = diffDays(record.previousDate, record.newDate);
+        if (magnitude === 0) return;
+        infos.push({
+          proc,
+          record,
+          rowIndex,
+          rowType,
+          label,
+          path,
+          seq: recent.length - i, // 최신이 1번
+          originCol: dateIndex.get(record.previousDate),
+          destCol: dateIndex.get(record.newDate),
+          isBackward: magnitude < 0,
+          isOneDay: Math.abs(magnitude) === 1,
+        });
+      });
+    }
+
+    // 고스트와 그 화살표는 "한 세트"이므로 같은 레인을 함께 써야 항상 붙어 보인다. 그러려면
+    // 레인 배정 자체를 하나로 합쳐야 한다 — 고스트는 원래 칸(점) 하나, 화살표는 원래~새
+    // 날짜 구간을 "차지"한다고 보고, 같은 행(주공정/보조공정 행)에서 그 구간이 겹치는
+    // 것끼리만 다른 레인으로 갈라놓는다. 번호가 작을수록(최신일수록) 먼저 자리를 배정받게
+    // 정렬해두면, 같은 칸을 공유하는 고스트들 중 ①이 자연스럽게 가장 앞 레인을 차지한다.
+    infos.sort((a, b) => a.seq - b.seq);
+
+    const laneEndsByRow = new Map<string, number[]>();
     const ghosts: {
       date: ISODate;
       label: string;
@@ -256,82 +311,51 @@ export default function GanttChart({
       reason: string;
       path: string;
     }[] = [];
-    const arrowLaneEnds = new Map<string, number[]>();
-    for (const records of movesByProcessId.values()) {
-      const proc = processById.get(records[0].processId);
-      if (!proc) continue;
-      const rowIndex = blockIndex.get(proc.blockId);
-      if (rowIndex === undefined) continue;
-      const rowType: RowType = PROCESS_TYPE_MAP[proc.typeCode]?.category === 'sub' ? 'sub' : 'main';
-      const label = processLabel(proc);
-      // 그리드에는 최근 3번만 표시하지만, 클릭했을 때 보여줄 전체 이동 경로는 처음부터
-      // 끝까지 다 모아둔다 (예: "7/27 → 7/28 → 7/27 → 7/29").
-      const path = [records[0].previousDate, ...records.map((r) => r.newDate)].join(' → ');
-      // 이동 이력을 전부 다 표시하면 여러 번 옮긴 공정은 고스트가 겹겹이 쌓여 지저분해진다.
-      // 최근 3번만 남기고, 가장 최근 이동이 항상 ①이 되도록 최신순으로 번호를 매긴다
-      // (계속 옮기면 ①이던 게 ②, ③으로 밀려나다가 4번째부터는 화면에서 사라진다).
-      const recent = records.slice(-3);
-      recent.forEach((record, i) => {
-        const magnitude = diffDays(record.previousDate, record.newDate);
-        if (magnitude === 0) return;
-        const seq = recent.length - i; // 최신이 1번
-        const originCol = dateIndex.get(record.previousDate);
-        const destCol = dateIndex.get(record.newDate);
-        const isBackward = magnitude < 0;
-        const isOneDay = Math.abs(magnitude) === 1;
-        if (originCol !== undefined) {
-          // 그 칸(원래 날짜)에 실제 공정이 남아있을 때만 겹쳐 보이므로, 그럴 때만 고스트를
-          // 행 아래쪽으로 내린다. 방향(정방향/역방향)과는 무관하다 — 같은 칸을 공유하는
-          // 고스트는 항상 같은 칸 내용을 보고 판단해야, ①②③ 순서로 정렬했을 때 실제로도
-          // 위에서 아래로 그 순서대로 보인다(방향이 섞이면 순서와 안 맞게 밀릴 수 있었다).
-          const originHasRealContent = (rowType === 'main' ? byBlockDateMain : byBlockDateSub).has(
-            `${proc.blockId}__${record.previousDate}`,
-          );
-          // 2일 이상 이동은 화살표가 같이 그려지는데, 화살표는 항상 행 아래쪽에 그리므로
-          // 고스트도 같은 높이로 맞춰야 화살표가 고스트에서 이어져 나오는 것처럼 보인다.
-          // 하루 이동(화살표 없음)은 그 칸에 실제 공정이 남아있을 때만 아래로 내린다.
-          const anchor: 'top' | 'bottom' = !isOneDay || originHasRealContent ? 'bottom' : 'top';
-          // 하루 이동은 점선 화살표 대신 라벨 글자 앞/뒤에 작은 방향 표시를 붙인다
-          // (SVG로 따로 그리면 라벨 텍스트 폭을 몰라서 겹치기 쉽다 — 같은 텍스트 줄에 넣으면
-          // 브라우저가 알아서 겹치지 않게 배치해준다).
-          ghosts.push({
-            date: record.previousDate,
-            label,
-            reason: record.reason,
-            path,
-            colIndex: originCol,
-            rowIndex,
-            rowType,
-            anchor,
-            oneDayDirection: isOneDay ? (isBackward ? 'left' : 'right') : undefined,
-            seq,
-            lane: 0, // 아래에서 같은 칸끼리 seq 오름차순(①이 위)으로 다시 배정한다
-          });
-        }
-        if (originCol !== undefined && destCol !== undefined && !isOneDay) {
-          // 화살표끼리 날짜 구간이 실제로 겹칠 때만 레인을 갈라서, 안 겹치는 화살표까지
-          // 괜히 어긋나게 그리지 않는다. 정방향/역방향 모두 같은 높이(행 아래쪽)에 그리므로
-          // 방향과 무관하게 하나의 레인 그룹을 같이 쓴다.
-          const laneKey = `${rowIndex}_${rowType}`;
-          const ends = arrowLaneEnds.get(laneKey) ?? [];
-          arrowLaneEnds.set(laneKey, ends);
-          const lane = assignLane(ends, Math.min(originCol, destCol), Math.max(originCol, destCol));
-          arrows.push({ originCol, destCol, rowIndex, rowType, lane, label, reason: record.reason, path });
-        }
+    for (const info of infos) {
+      if (info.originCol === undefined) continue;
+      const hasArrow = info.destCol !== undefined && !info.isOneDay;
+      const footprintStart = hasArrow ? Math.min(info.originCol, info.destCol!) : info.originCol;
+      const footprintEnd = hasArrow ? Math.max(info.originCol, info.destCol!) : info.originCol;
+      const laneKey = `${info.rowIndex}_${info.rowType}`;
+      const ends = laneEndsByRow.get(laneKey) ?? [];
+      laneEndsByRow.set(laneKey, ends);
+      const lane = assignLane(ends, footprintStart, footprintEnd);
+
+      // 그 칸(원래 날짜)에 실제 공정이 남아있을 때만 겹쳐 보이므로, 그럴 때만 고스트를 행
+      // 아래쪽으로 내린다. 2일 이상 이동은 화살표가 항상 행 아래쪽에 그려지므로, 고스트도
+      // 같은 높이로 맞춰야 화살표가 고스트에서 이어져 나오는 것처럼 보인다.
+      const originHasRealContent = (info.rowType === 'main' ? byBlockDateMain : byBlockDateSub).has(
+        `${info.proc.blockId}__${info.record.previousDate}`,
+      );
+      const anchor: 'top' | 'bottom' = hasArrow || originHasRealContent ? 'bottom' : 'top';
+      ghosts.push({
+        date: info.record.previousDate,
+        label: info.label,
+        reason: info.record.reason,
+        path: info.path,
+        colIndex: info.originCol,
+        rowIndex: info.rowIndex,
+        rowType: info.rowType,
+        anchor,
+        // 하루 이동은 점선 화살표 대신 라벨 글자 앞/뒤에 작은 방향 표시를 붙인다 (SVG로 따로
+        // 그리면 라벨 텍스트 폭을 몰라서 겹치기 쉽다 — 같은 텍스트 줄에 넣으면 브라우저가
+        // 알아서 겹치지 않게 배치해준다).
+        oneDayDirection: info.isOneDay ? (info.isBackward ? 'left' : 'right') : undefined,
+        seq: info.seq,
+        lane,
       });
-    }
-    // 같은 칸에 고스트가 여러 개 겹치면 seq가 작을수록(=최근일수록) 위쪽에 오도록 정렬한다.
-    const cellGroups = new Map<string, typeof ghosts>();
-    for (const g of ghosts) {
-      const key = `${g.rowIndex}_${g.rowType}_${g.colIndex}`;
-      if (!cellGroups.has(key)) cellGroups.set(key, []);
-      cellGroups.get(key)!.push(g);
-    }
-    for (const group of cellGroups.values()) {
-      group.sort((a, b) => a.seq - b.seq);
-      group.forEach((g, lane) => {
-        g.lane = lane;
-      });
+      if (hasArrow) {
+        arrows.push({
+          originCol: info.originCol,
+          destCol: info.destCol!,
+          rowIndex: info.rowIndex,
+          rowType: info.rowType,
+          lane,
+          label: info.label,
+          reason: info.record.reason,
+          path: info.path,
+        });
+      }
     }
     return { ghosts, arrows };
   }, [movesByProcessId, processById, blockIndex, dateIndex, byBlockDateMain, byBlockDateSub]);
