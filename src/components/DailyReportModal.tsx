@@ -54,16 +54,24 @@ export default function DailyReportModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-xl max-h-[85vh] overflow-y-auto p-4 flex flex-col gap-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 print:bg-white print:p-0">
+      <div
+        id="daily-report-printable"
+        className="bg-white rounded-lg shadow-lg w-full max-w-xl max-h-[85vh] overflow-y-auto p-4 flex flex-col gap-4 print:max-w-none print:shadow-none print:rounded-none print:text-black"
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">작업일보</h2>
-          <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={onClose}>
-            닫기
-          </button>
+          <div className="flex gap-2 print:hidden">
+            <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={() => window.print()} data-testid="print-report">
+              인쇄 / PDF 저장
+            </button>
+            <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={onClose}>
+              닫기
+            </button>
+          </div>
         </div>
 
-        <div className="text-sm grid grid-cols-2 gap-1">
+        <div className="text-sm grid grid-cols-2 gap-1 print:text-base">
           <div>
             <span className="text-zinc-500">현장명</span> {siteInfo.name}
           </div>
@@ -77,36 +85,42 @@ export default function DailyReportModal({
         </div>
 
         <section className="flex flex-col gap-1">
-          <h3 className="text-sm font-semibold text-zinc-700">작업내용</h3>
+          <h3 className="text-sm font-semibold text-zinc-700 print:text-base">작업내용</h3>
           {dayProcesses.length === 0 && <p className="text-xs text-zinc-400">이 날짜에 예정된 공정이 없습니다.</p>}
           <div className="flex flex-col gap-1">
             {dayProcesses.map((p) => (
-              <div key={p.id} className="text-sm border border-zinc-200 rounded px-2 py-1 flex items-center justify-between">
+              <div
+                key={p.id}
+                className="text-sm border border-zinc-200 rounded px-2 py-1 flex items-center justify-between print:text-base print:border-zinc-400"
+              >
                 <span>
                   <strong>{blockNames[p.blockId] ?? ''}</strong> {processLabel(p)}
                 </span>
-                <span className="text-xs text-zinc-500">{p.crew ? `${p.crew.team} · ${p.crew.headcount}명` : '작업팀 미배정'}</span>
+                <span className="text-xs text-zinc-500 print:text-sm">{p.crew ? `${p.crew.team} · ${p.crew.headcount}명` : '작업팀 미배정'}</span>
               </div>
             ))}
           </div>
         </section>
 
         <section className="flex flex-col gap-1">
-          <h3 className="text-sm font-semibold text-zinc-700">직영 작업</h3>
-          <p className="text-xs text-zinc-500">공정표에 없는 직영(자체) 인력 작업을 이 날짜에 자유롭게 추가합니다.</p>
+          <h3 className="text-sm font-semibold text-zinc-700 print:text-base">직영 작업</h3>
+          <p className="text-xs text-zinc-500 print:hidden">공정표에 없는 직영(자체) 인력 작업을 이 날짜에 자유롭게 추가합니다.</p>
           <div className="flex flex-col gap-1">
             {dayDirectLabor.map((d) => (
-              <div key={d.id} className="text-sm border border-zinc-200 rounded px-2 py-1 flex items-center justify-between">
+              <div
+                key={d.id}
+                className="text-sm border border-zinc-200 rounded px-2 py-1 flex items-center justify-between print:text-base print:border-zinc-400"
+              >
                 <span>
                   {d.workContent} · {d.headcount}명
                 </span>
-                <button className="text-xs text-red-600" onClick={() => onRemoveDirectLabor(d.id)}>
+                <button className="text-xs text-red-600 print:hidden" onClick={() => onRemoveDirectLabor(d.id)}>
                   삭제
                 </button>
               </div>
             ))}
           </div>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1 print:hidden">
             <input
               className="border border-zinc-300 rounded px-2 py-1 text-sm flex-1"
               value={newContent}

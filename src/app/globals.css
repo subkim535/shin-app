@@ -24,3 +24,20 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* 작업일보 인쇄: 화면의 다른 요소는 다 숨기고 인쇄용 영역만 출력한다. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #daily-report-printable,
+  #daily-report-printable * {
+    visibility: visible;
+  }
+  #daily-report-printable {
+    position: fixed;
+    inset: 0;
+    max-height: none;
+    overflow: visible;
+  }
+}
