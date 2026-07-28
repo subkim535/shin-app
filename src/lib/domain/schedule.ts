@@ -1,4 +1,4 @@
-import { addDays, dayOfWeek, diffDays, ISODate } from './dateUtils';
+import { addDays, dayOfWeek, ISODate } from './dateUtils';
 import { CONFLICT_GROUP, MAIN_SEQUENCE_CODES, PROCESS_TYPE_MAP } from './processTypes';
 import { ChangeRecord, Holiday, ProcessInstance, ProcessTemplate } from './types';
 
@@ -43,16 +43,11 @@ function makeProcess(
     blockId,
     typeCode,
     date,
-    timeSlot: 'am',
     cycleId,
     floorLabel: opts.floorLabel,
     linkedMainProcessId: opts.linkedMainProcessId,
     customLabel: opts.customLabel,
   };
-}
-
-export function toggleTimeSlot(processes: ProcessInstance[], processId: string): ProcessInstance[] {
-  return processes.map((p) => (p.id === processId ? { ...p, timeSlot: p.timeSlot === 'am' ? 'pm' : 'am' } : p));
 }
 
 export function setCrew(processes: ProcessInstance[], processId: string, team: string, headcount: number): ProcessInstance[] {
@@ -101,7 +96,6 @@ export function generateBaseFloorSequence(
     result.push(...attachSubProcesses(blockId, code, date, main.id, cycleId));
     cursor = addDays(date, 1);
   }
-  markArrivals(result.map((p) => p.id));
   return result;
 }
 
@@ -120,7 +114,6 @@ export function generateFromTemplate(template: ProcessTemplate, blockId: string,
     result.push(main);
     cursor = addDays(cursor, 1);
   }
-  markArrivals(result.map((p) => p.id));
   return result;
 }
 
@@ -399,12 +392,4 @@ export function swapCellOrder(processes: ProcessInstance[], processId: string, d
     if (p.id === neighbor.id) return { ...p, cellOrder: moved.cellOrder };
     return p;
   });
-}
-
-export function markArrivals(ids: string[]) {
-  withArrivals([], ids);
-}
-
-export function moveMagnitudeDays(previousDate: ISODate, newDate: ISODate): number {
-  return diffDays(previousDate, newDate);
 }

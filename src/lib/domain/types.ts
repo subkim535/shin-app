@@ -61,8 +61,6 @@ export interface DirectLaborEntry {
   headcount: number;
 }
 
-export type TimeSlot = 'am' | 'pm';
-
 // Supabase에 JSONB 하나로 저장/동기화하는 전체 상태.
 export interface AppState {
   siteInfo: SiteInfo;
@@ -81,7 +79,6 @@ export interface ProcessInstance {
   blockId: string;
   typeCode: string;
   date: ISODate;
-  timeSlot: TimeSlot; // 오전/오후 반일 구분 (주요공정 행에만 적용)
   floorLabel?: string;
   linkedMainProcessId?: string; // sub -> owning main process
   cycleId: string; // 하나의 기준층 생성 호출로 만들어진 주요/보조공정 묶음 (같은 동에 여러 층 사이클이 동시에 흐를 수 있음)

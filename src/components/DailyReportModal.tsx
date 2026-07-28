@@ -83,8 +83,7 @@ export default function DailyReportModal({
             {dayProcesses.map((p) => (
               <div key={p.id} className="text-sm border border-zinc-200 rounded px-2 py-1 flex items-center justify-between">
                 <span>
-                  <strong>{blockNames[p.blockId] ?? ''}</strong> {processLabel(p)}{' '}
-                  <span className="text-xs text-zinc-400">{p.timeSlot === 'am' ? '오전' : p.timeSlot === 'pm' ? '오후' : ''}</span>
+                  <strong>{blockNames[p.blockId] ?? ''}</strong> {processLabel(p)}
                 </span>
                 <span className="text-xs text-zinc-500">{p.crew ? `${p.crew.team} · ${p.crew.headcount}명` : '작업팀 미배정'}</span>
               </div>

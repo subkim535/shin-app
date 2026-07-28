@@ -20,7 +20,6 @@ import {
   setCrew,
   shiftAllFrom,
   swapCellOrder,
-  toggleTimeSlot,
 } from '@/lib/domain/schedule';
 import {
   AppState,
@@ -101,13 +100,12 @@ export default function ScheduleApp() {
   // 것을 막을 수 없어서, DB의 updated_at 시각을 기준으로 이보다 오래된 이벤트는 무시한다.
   const lastAppliedAtRef = useRef<string>('');
 
-  // DB의 예전 데이터는 그 이후 추가된 필드(timeSlot, directLabor 등)가 아예 없을 수 있다.
+  // DB의 예전 데이터는 그 이후 추가된 필드(directLabor 등)가 아예 없을 수 있다.
   // 매번 이 함수를 거쳐서 기본값을 채운 "정규화된" 상태만 다루면, 로컬 상태와 마지막으로
   // 동기화한 문자열이 항상 같은 모양이 되어 필드 유무 차이로 인한 무한 저장 루프를 막는다.
   function normalizeAppState(remote: AppState): AppState {
     return {
       ...remote,
-      processes: remote.processes.map((p) => ({ ...p, timeSlot: p.timeSlot ?? 'am' })),
       directLabor: remote.directLabor ?? [],
     };
   }
@@ -298,10 +296,6 @@ export default function ScheduleApp() {
 
   function handleChangeNote(blockId: string, date: ISODate, text: string) {
     setNotes((cur) => ({ ...cur, [`${blockId}__${date}`]: text }));
-  }
-
-  function handleToggleTimeSlot(processId: string) {
-    setProcesses((cur) => toggleTimeSlot(cur, processId));
   }
 
   function handleOpenCrew(processId: string) {
@@ -542,7 +536,6 @@ export default function ScheduleApp() {
         onChangeNote={handleChangeNote}
         onOpenNote={(blockId, date) => setNoteModal({ blockId, date })}
         onShowReason={(label, reason) => setReasonPopup({ label, reason })}
-        onToggleTimeSlot={handleToggleTimeSlot}
         onEditCrew={handleOpenCrew}
         onChangeBlockRemark={handleChangeBlockRemark}
         onClickHeaderDate={(date) => setReportDate(date)}
