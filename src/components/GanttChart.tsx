@@ -211,8 +211,22 @@ export default function GanttChart({
   // 주요공정 행은 아래쪽에 여러 칩이 더 쌓일 수 있는 여유 공간이 있어서, 셀 중앙에 그리면
   // 칩 밑 빈 공간을 지나가 "공정 아래에 화살표가 있다"처럼 보인다.
   const CHIP_LINE_CENTER = 13;
-  const LANE_STEP = 15; // 같은 칸에 고스트가 여러 개 쌓일 때 한 줄씩 내려가는 간격
+  const LANE_STEP = 20; // 같은 칸에 고스트가 여러 개 쌓일 때 한 줄씩 내려가는 간격(고스트 한 줄 높이 이상이어야 안 겹친다)
   const GHOST_BOX_H = 20; // 고스트 한 줄이 실제로 차지하는 대략적인 높이
+  const ARROW_LANE_STEP = 8; // 같은 행에서 화살표끼리 겹칠 때 갈라놓는 간격
+
+  // 두 구간이 겹치지 않는 첫 번째 레인을 찾아 배정한다(겹치는 화살표만 갈라놓고,
+  // 안 겹치는 화살표는 그냥 같은 레인을 써서 불필요하게 어긋나지 않게 한다).
+  function assignLane(laneEnds: number[], start: number, end: number): number {
+    for (let i = 0; i < laneEnds.length; i++) {
+      if (laneEnds[i] < start) {
+        laneEnds[i] = end;
+        return i;
+      }
+    }
+    laneEnds.push(end);
+    return laneEnds.length - 1;
+  }
 
   // 1단계: 좌표 계산 없이 순수 논리(어느 행/칸, 몇 번, 위/아래 밀림 여부, 몇 번째로 쌓였는지)만 모은다.
   // 행 높이가 몇 번 쌓였는지에 따라 달라지므로, 좌표를 계산하려면 이 정보가 먼저 다 모여야 한다.
@@ -241,7 +255,7 @@ export default function GanttChart({
       reason: string;
       path: string;
     }[] = [];
-    const laneCounts = new Map<string, number>();
+    const arrowLaneEnds = new Map<string, number[]>();
     for (const records of movesByProcessId.values()) {
       const proc = processById.get(records[0].processId);
       if (!proc) continue;
@@ -265,8 +279,13 @@ export default function GanttChart({
         const isBackward = magnitude < 0;
         const isOneDay = Math.abs(magnitude) === 1;
         if (originCol !== undefined) {
-          // 왼쪽(이전 날짜)으로 당겨진 이동은 그 칸에 다른 실제 공정이 남아있는 경우가 많아
-          // 고스트 라벨과 겹쳐 보인다. 이 경우만 고스트를 행 아래쪽으로 내린다.
+          // 왼쪽(이전 날짜)으로 당겨진 이동은 그 칸에 다른 실제 공정이 남아있을 때만 겹쳐
+          // 보이므로, 그럴 때만 고스트를 행 아래쪽으로 내린다. 실제로 아무것도 없는 빈 칸이면
+          // 옆의 진짜 칩과 같은 높이(맨 위)에 그대로 둔다.
+          const originHasRealContent = (rowType === 'main' ? byBlockDateMain : byBlockDateSub).has(
+            `${proc.blockId}__${record.previousDate}`,
+          );
+          const pushDown = isBackward && originHasRealContent;
           // 하루 이동은 점선 화살표 대신 라벨 글자 앞/뒤에 작은 방향 표시를 붙인다
           // (SVG로 따로 그리면 라벨 텍스트 폭을 몰라서 겹치기 쉽다 — 같은 텍스트 줄에 넣으면
           // 브라우저가 알아서 겹치지 않게 배치해준다).
@@ -278,16 +297,20 @@ export default function GanttChart({
             colIndex: originCol,
             rowIndex,
             rowType,
-            pushDown: isBackward,
+            pushDown,
             oneDayDirection: isOneDay ? (isBackward ? 'left' : 'right') : undefined,
             seq,
             lane: 0, // 아래에서 같은 칸끼리 seq 오름차순(①이 위)으로 다시 배정한다
           });
         }
         if (originCol !== undefined && destCol !== undefined && !isOneDay) {
-          const laneKey = `${rowIndex}_${rowType}`;
-          const lane = laneCounts.get(laneKey) ?? 0;
-          laneCounts.set(laneKey, lane + 1);
+          // 화살표끼리 날짜 구간이 실제로 겹칠 때만 레인을 갈라서, 안 겹치는 화살표까지
+          // 괜히 어긋나게 그리지 않는다. 방향(위/아래로 향하는 방향)이 다르면 애초에 다른
+          // 높이에 그려지므로 방향별로 따로 레인을 관리한다.
+          const laneKey = `${rowIndex}_${rowType}_${isBackward}`;
+          const ends = arrowLaneEnds.get(laneKey) ?? [];
+          arrowLaneEnds.set(laneKey, ends);
+          const lane = assignLane(ends, Math.min(originCol, destCol), Math.max(originCol, destCol));
           arrows.push({ originCol, destCol, rowIndex, rowType, isBackward, lane, label, reason: record.reason, path });
         }
       });
@@ -306,9 +329,9 @@ export default function GanttChart({
       });
     }
     return { ghosts, arrows };
-  }, [movesByProcessId, processById, blockIndex, dateIndex]);
+  }, [movesByProcessId, processById, blockIndex, dateIndex, byBlockDateMain, byBlockDateSub]);
 
-  // 2단계: 한 칸에 고스트가 여러 개 쌓이면 그만큼 그 행(주공정/보조공정 행 각각)의 높이를 늘린다.
+  // 2단계: 한 칸에 고스트/화살표가 여러 개 쌓이면 그만큼 그 행(주공정/보조공정 행 각각)의 높이를 늘린다.
   const rowMetrics = useMemo(() => {
     const extra = new Map<string, number>(); // key: `${rowIndex}_${rowType}` -> 기본 높이를 넘어서는 만큼(px)
     for (const g of rawVisuals.ghosts) {
@@ -316,6 +339,13 @@ export default function GanttChart({
       const topOffset = (g.pushDown ? base / 2 : 0) + g.lane * LANE_STEP;
       const neededBottom = topOffset + GHOST_BOX_H;
       const key = `${g.rowIndex}_${g.rowType}`;
+      extra.set(key, Math.max(extra.get(key) ?? 0, neededBottom - base));
+    }
+    for (const a of rawVisuals.arrows) {
+      const base = a.rowType === 'main' ? ROW_MAIN_H : ROW_SUB_H;
+      const anchor = a.isBackward ? base - 6 : CHIP_LINE_CENTER;
+      const neededBottom = anchor + a.lane * ARROW_LANE_STEP + 6;
+      const key = `${a.rowIndex}_${a.rowType}`;
       extra.set(key, Math.max(extra.get(key) ?? 0, neededBottom - base));
     }
     const mainH: number[] = [];
@@ -334,10 +364,11 @@ export default function GanttChart({
   }, [rawVisuals, blocks.length]);
 
   function rowTopFor(rowIndex: number, rowType: RowType): number {
-    return rowMetrics.blockTop[rowIndex] + (rowType === 'sub' ? rowMetrics.mainH[rowIndex] : 0);
-  }
-  function rowHeightFor(rowIndex: number, rowType: RowType): number {
-    return rowType === 'main' ? rowMetrics.mainH[rowIndex] : rowMetrics.subH[rowIndex];
+    // rawVisuals/rowMetrics는 같은 blocks 값에서 계산되지만, 다른 사용자가 동에서 실시간으로
+    // 동을 추가/삭제하는 순간과 겹치면 한 렌더 동안 rowIndex가 잠깐 범위를 벗어날 수 있다.
+    // 그 경우 NaN 스타일이 나가지 않도록 0으로 안전하게 대체한다(다음 렌더에서 바로 정상화된다).
+    const top = rowMetrics.blockTop[rowIndex] ?? 0;
+    return top + (rowType === 'sub' ? (rowMetrics.mainH[rowIndex] ?? ROW_MAIN_H) : 0);
   }
   function arrowYFor(rowIndex: number, rowType: RowType): number {
     return rowTopFor(rowIndex, rowType) + CHIP_LINE_CENTER;
@@ -357,9 +388,12 @@ export default function GanttChart({
       // (1일 이동은 애초에 arrows에 안 들어오고 고스트 라벨 옆 ◀/▶ 표시로 대신한다.)
       const [x1, x2] = a.destCol > a.originCol ? [originLeft + CELL_W, destLeft] : [originLeft, destLeft + CELL_W];
       // 앞당겨진(왼쪽으로 향하는) 이동은 칩 텍스트 줄과 같은 높이에 그리면 주공정 행과
-      // 겹쳐 보인다. 이 경우만 행 아래쪽 여백으로 내려서 그린다.
-      const baseY = a.isBackward ? rowTopFor(a.rowIndex, a.rowType) + rowHeightFor(a.rowIndex, a.rowType) - 6 : arrowYFor(a.rowIndex, a.rowType);
-      const y = baseY + a.lane * 5; // 같은 행에 화살표가 여러 개면 살짝 어긋나게
+      // 겹쳐 보인다. 이 경우만 행 아래쪽 여백으로 내려서 그린다. 행이 다른 이유로(고스트
+      // 누적 등) 늘어나도 화살표 위치가 같이 딸려 내려가지 않도록, 늘어나기 전 기본 높이를
+      // 기준으로 삼는다.
+      const base = a.rowType === 'main' ? ROW_MAIN_H : ROW_SUB_H;
+      const baseY = a.isBackward ? rowTopFor(a.rowIndex, a.rowType) + base - 6 : arrowYFor(a.rowIndex, a.rowType);
+      const y = baseY + a.lane * ARROW_LANE_STEP; // 같은 행에서 겹치는 화살표끼리 살짝 어긋나게
       return { x1, y1: y, x2, y2: y, label: a.label, reason: a.reason, path: a.path };
     });
     return { ghosts, arrows };
