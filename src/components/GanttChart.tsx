@@ -228,12 +228,16 @@ export default function GanttChart({
         let x2: number;
         let baseY: number;
         if (Math.abs(magnitude) === 1) {
-          // 바로 옆 칸으로 이동하면 두 셀 사이에 빈 공간이 없어서, 경계선을 가운데 두고
-          // 짧은 화살표를 그린다. 앞당겨진(왼쪽) 이동만 라벨과 겹치지 않도록 행 아래쪽
-          // 여백으로 내리고, 뒤로 미룬(오른쪽) 이동은 원래처럼 칩 텍스트 줄 높이에 그린다.
-          const border = isBackward ? originLeft : originLeft + CELL_W;
-          x1 = isBackward ? border + 16 : border - 16;
-          x2 = isBackward ? border - 16 : border + 16;
+          // 바로 옆 칸으로 이동하면 두 셀 사이에 빈 공간이 없다. 다음 칸(새 위치) 쪽으로
+          // 삐져나가지 않도록, 화살표는 이전 위치(회색 칸) 안쪽에만 짧게 그려서 이동 방향만
+          // 가리키게 한다. 앞당겨진(왼쪽) 이동만 라벨과 안 겹치게 행 아래쪽 여백으로 내린다.
+          if (isBackward) {
+            x1 = originLeft + 32;
+            x2 = originLeft + 4;
+          } else {
+            x1 = originLeft + CELL_W - 32;
+            x2 = originLeft + CELL_W - 4;
+          }
           baseY = isBackward ? rowTopFor(rowIndex, rowType) + rowHeightFor(rowType) - 6 : arrowYFor(rowIndex, rowType);
         } else {
           // 라벨과 겹치지 않도록, 두 셀의 텍스트를 지나지 않고 그 "사이 빈 공간"만 지나가게 그린다.
