@@ -237,6 +237,8 @@ export default function ScheduleApp() {
   const [reasonPopup, setReasonPopup] = useState<{ label: string; reason: string } | null>(null);
   const [crewModal, setCrewModal] = useState<{ processId: string; team: string; headcount: string } | null>(null);
   const [reportDate, setReportDate] = useState<ISODate | null>(null);
+  const [dateChoice, setDateChoice] = useState<ISODate | null>(null);
+  const [postponePrompt, setPostponePrompt] = useState<{ date: ISODate; days: string } | null>(null);
 
   const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null);
   const [dropStage, setDropStage] = useState<'idle' | 'threeplus-picker' | 'reason'>('idle');
@@ -371,6 +373,14 @@ export default function ScheduleApp() {
     if (deltaDays === 0) return;
     setPendingHeaderShift({ fromDate, toDate, deltaDays });
     setHeaderShiftStage('confirm');
+  }
+
+  function submitPostponePrompt() {
+    if (!postponePrompt) return;
+    const days = Number(postponePrompt.days);
+    if (!Number.isFinite(days) || days === 0) return;
+    handleDropHeader(postponePrompt.date, addDays(postponePrompt.date, days));
+    setPostponePrompt(null);
   }
 
   function confirmHeaderShiftProceed() {
@@ -566,7 +576,7 @@ export default function ScheduleApp() {
         onShowReason={(label, reason) => setReasonPopup({ label, reason })}
         onEditCrew={handleOpenCrew}
         onChangeBlockRemark={handleChangeBlockRemark}
-        onClickHeaderDate={(date) => setReportDate(date)}
+        onClickHeaderDate={(date) => setDateChoice(date)}
         viewStartDate={viewStartDate}
         dayCount={dayCount}
         selectedProcessId={selectedProcessId}
@@ -577,8 +587,8 @@ export default function ScheduleApp() {
       />
 
       <p className="text-xs text-zinc-500">
-        공정 칩을 같은 행의 다른 날짜 셀로 드래그하면 이동합니다. 날짜 헤더를 드래그하면 그 날짜 이후 모든 동의
-        일정이 함께 순연됩니다.
+        공정 칩을 같은 행의 다른 날짜 셀로 드래그하면 이동합니다. 날짜 헤더를 클릭하면 작업일보 보기/전체 일정
+        순연을 선택할 수 있고, 드래그하면 바로 그 날짜 이후 모든 동의 일정이 함께 순연됩니다.
       </p>
 
       {dropStage === 'threeplus-picker' && pendingDrop && pendingProcess && (
@@ -819,6 +829,65 @@ export default function ScheduleApp() {
             </button>
             <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={handleSaveCrew}>
               저장
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {dateChoice && (
+        <Modal>
+          <p className="text-sm">
+            <strong>{dateChoice}</strong> 무엇을 하시겠습니까?
+          </p>
+          <div className="flex flex-col gap-2 text-sm">
+            <button
+              className="px-3 py-2 rounded border border-zinc-300 text-left"
+              onClick={() => {
+                setReportDate(dateChoice);
+                setDateChoice(null);
+              }}
+            >
+              작업일보 보기
+            </button>
+            <button
+              className="px-3 py-2 rounded border border-zinc-300 text-left"
+              onClick={() => {
+                setPostponePrompt({ date: dateChoice, days: '1' });
+                setDateChoice(null);
+              }}
+            >
+              전체 일정 순연
+            </button>
+          </div>
+          <div className="flex justify-end text-sm">
+            <button className="px-3 py-1 rounded border border-zinc-300" onClick={() => setDateChoice(null)}>
+              취소
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {postponePrompt && (
+        <Modal>
+          <p className="text-sm">
+            <strong>{postponePrompt.date}</strong> 이후 전체 일정을 며칠 순연하시겠습니까? (당기려면 음수 입력)
+          </p>
+          <input
+            autoFocus
+            type="number"
+            className="border border-zinc-300 rounded px-2 py-1 text-sm"
+            value={postponePrompt.days}
+            onChange={(e) => setPostponePrompt((cur) => (cur ? { ...cur, days: e.target.value } : cur))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submitPostponePrompt();
+            }}
+          />
+          <div className="flex justify-end gap-2 text-sm">
+            <button className="px-3 py-1 rounded border border-zinc-300" onClick={() => setPostponePrompt(null)}>
+              취소
+            </button>
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={submitPostponePrompt}>
+              확인
             </button>
           </div>
         </Modal>

@@ -398,7 +398,7 @@ export default function GanttChart({
               onPointerDown={() => startDragHeader(d)}
               onPointerEnter={() => updateHoverHeader(d)}
               data-header-date={d}
-              title="클릭: 작업일보 / 드래그: 전체 일정 순연"
+              title="클릭: 작업일보/순연 선택 / 드래그: 전체 일정 순연"
               className={[
                 'sticky top-0 z-20 border-b border-l border-zinc-200 flex flex-col items-center justify-center text-xs cursor-grab active:cursor-grabbing',
                 isToday ? 'bg-indigo-50 border-b-2 border-b-indigo-900' : 'bg-zinc-50',
