@@ -110,7 +110,7 @@ export default function ScheduleApp() {
   function normalizeAppState(remote: AppState): AppState {
     return {
       ...remote,
-      directLabor: remote.directLabor ?? [],
+      directLabor: (remote.directLabor ?? []).map((d) => ({ ...d, category: d.category ?? '기타' })),
     };
   }
 
@@ -318,8 +318,8 @@ export default function ScheduleApp() {
     setBlocks((cur) => cur.map((b) => (b.id === blockId ? { ...b, remark: text } : b)));
   }
 
-  function handleAddDirectLabor(date: ISODate, workContent: string, headcount: number) {
-    const entry: DirectLaborEntry = { id: crypto.randomUUID(), date, workContent, headcount };
+  function handleAddDirectLabor(date: ISODate, category: string, workContent: string, headcount: number) {
+    const entry: DirectLaborEntry = { id: crypto.randomUUID(), date, category, workContent, headcount };
     setDirectLabor((cur) => [...cur, entry]);
   }
 

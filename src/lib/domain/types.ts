@@ -57,6 +57,7 @@ export interface CrewAssignment {
 export interface DirectLaborEntry {
   id: string;
   date: ISODate;
+  category: string; // 구분 (예: 공사, 안전, 견출 등 — DailyReportModal의 프리셋 목록에서 선택)
   workContent: string;
   headcount: number;
 }

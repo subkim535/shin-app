@@ -5,15 +5,33 @@ import { ISODate } from '@/lib/domain/dateUtils';
 import { processLabel } from '@/lib/domain/schedule';
 import { Block, DirectLaborEntry, ProcessInstance, SiteInfo } from '@/lib/domain/types';
 
+// 직영 작업 구분 프리셋 — 매번 타이핑하지 않고 목록에서 고르게 한다.
+const DIRECT_LABOR_CATEGORIES = [
+  '공사',
+  '직영/용역',
+  '안전',
+  '안전시설',
+  '할석·미장',
+  '견출',
+  '바닥미장',
+  '해체·정리',
+  '세대청소',
+  '기타',
+];
+
 interface DailyReportModalProps {
   date: ISODate;
   siteInfo: SiteInfo;
   blocks: Block[];
   processes: ProcessInstance[];
   directLabor: DirectLaborEntry[];
-  onAddDirectLabor: (date: ISODate, workContent: string, headcount: number) => void;
+  onAddDirectLabor: (date: ISODate, category: string, workContent: string, headcount: number) => void;
   onRemoveDirectLabor: (id: string) => void;
   onClose: () => void;
+}
+
+function csvEscape(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
 export default function DailyReportModal({
@@ -41,6 +59,7 @@ export default function DailyReportModal({
   const directHeadcount = dayDirectLabor.reduce((sum, d) => sum + d.headcount, 0);
   const totalHeadcount = crewHeadcount + directHeadcount;
 
+  const [newCategory, setNewCategory] = useState(DIRECT_LABOR_CATEGORIES[0]);
   const [newContent, setNewContent] = useState('');
   const [newHeadcount, setNewHeadcount] = useState('');
 
@@ -48,9 +67,43 @@ export default function DailyReportModal({
     const content = newContent.trim();
     const count = Number(newHeadcount);
     if (!content || !Number.isFinite(count) || count <= 0) return;
-    onAddDirectLabor(date, content, count);
+    onAddDirectLabor(date, newCategory, content, count);
     setNewContent('');
     setNewHeadcount('');
+  }
+
+  function downloadExcel() {
+    const rows: string[] = [];
+    rows.push(['현장명', siteInfo.name].map(csvEscape).join(','));
+    rows.push(['일자', date].map(csvEscape).join(','));
+    rows.push(
+      ['총 출력인원', `${totalHeadcount}명 (협력사 ${crewHeadcount}명 + 직영 ${directHeadcount}명)`].map(csvEscape).join(','),
+    );
+    rows.push('');
+    rows.push(['작업내용'].map(csvEscape).join(','));
+    rows.push(['동', '공정', '작업팀', '인원'].map(csvEscape).join(','));
+    for (const p of dayProcesses) {
+      rows.push(
+        [blockNames[p.blockId] ?? '', processLabel(p), p.crew?.team ?? '', p.crew ? String(p.crew.headcount) : '']
+          .map(csvEscape)
+          .join(','),
+      );
+    }
+    rows.push('');
+    rows.push(['직영 작업'].map(csvEscape).join(','));
+    rows.push(['구분', '작업내용', '인원'].map(csvEscape).join(','));
+    for (const d of dayDirectLabor) {
+      rows.push([d.category, d.workContent, String(d.headcount)].map(csvEscape).join(','));
+    }
+    // 엑셀이 UTF-8 CSV의 한글을 깨뜨리지 않도록 BOM을 붙인다.
+    const csv = '﻿' + rows.join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `작업일보_${date}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -62,6 +115,9 @@ export default function DailyReportModal({
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">작업일보</h2>
           <div className="flex gap-2 print:hidden">
+            <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={downloadExcel} data-testid="download-excel">
+              엑셀 다운로드
+            </button>
             <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={() => window.print()} data-testid="print-report">
               인쇄 / PDF 저장
             </button>
@@ -112,7 +168,7 @@ export default function DailyReportModal({
                 className="text-sm border border-zinc-200 rounded px-2 py-1 flex items-center justify-between print:text-base print:border-zinc-400"
               >
                 <span>
-                  {d.workContent} · {d.headcount}명
+                  <span className="text-xs text-zinc-500 print:text-sm">[{d.category}]</span> {d.workContent} · {d.headcount}명
                 </span>
                 <button className="text-xs text-red-600 print:hidden" onClick={() => onRemoveDirectLabor(d.id)}>
                   삭제
@@ -121,6 +177,17 @@ export default function DailyReportModal({
             ))}
           </div>
           <div className="flex items-center gap-2 mt-1 print:hidden">
+            <select
+              className="border border-zinc-300 rounded px-2 py-1 text-sm w-28 shrink-0"
+              value={newCategory}
+              onChange={(e) => setNewCategory(e.target.value)}
+            >
+              {DIRECT_LABOR_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
             <input
               className="border border-zinc-300 rounded px-2 py-1 text-sm flex-1"
               value={newContent}
