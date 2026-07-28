@@ -200,8 +200,17 @@ export default function GanttChart({
   }
 
   const visuals = useMemo(() => {
-    const ghosts: { date: ISODate; label: string; reason: string; colIndex: number; rowIndex: number; rowType: RowType }[] = [];
+    const ghosts: {
+      date: ISODate;
+      label: string;
+      reason: string;
+      colIndex: number;
+      rowIndex: number;
+      rowType: RowType;
+      pushDown: boolean;
+    }[] = [];
     const arrows: { x1: number; y1: number; x2: number; y2: number; label: string; reason: string }[] = [];
+    const heads: { x: number; y: number; direction: 'left' | 'right'; label: string; reason: string }[] = [];
     const laneCounts = new Map<string, number>();
     for (const record of latestChangeByProcessId.values()) {
       const proc = processById.get(record.processId);
@@ -214,43 +223,35 @@ export default function GanttChart({
       const label = processLabel(proc);
       const originCol = dateIndex.get(record.previousDate);
       const destCol = dateIndex.get(record.newDate);
+      const isBackward = magnitude < 0;
       if (originCol !== undefined) {
-        ghosts.push({ date: record.previousDate, label, reason: record.reason, colIndex: originCol, rowIndex, rowType });
+        // 왼쪽(이전 날짜)으로 당겨진 이동은 그 칸에 다른 실제 공정이 남아있는 경우가 많아
+        // 고스트 라벨과 겹쳐 보인다. 이 경우만 고스트를 행 아래쪽으로 내린다.
+        ghosts.push({ date: record.previousDate, label, reason: record.reason, colIndex: originCol, rowIndex, rowType, pushDown: isBackward });
       }
       if (originCol !== undefined && destCol !== undefined) {
-        const isBackward = destCol < originCol;
         const laneKey = `${rowIndex}_${rowType}`;
         const lane = laneCounts.get(laneKey) ?? 0;
         laneCounts.set(laneKey, lane + 1);
         const originLeft = HEADER_W + originCol * CELL_W;
         const destLeft = HEADER_W + destCol * CELL_W;
-        let x1: number;
-        let x2: number;
-        let baseY: number;
+        // 앞당겨진(왼쪽으로 향하는) 이동은 칩 텍스트 줄과 같은 높이에 그리면 주공정 행과
+        // 겹쳐 보인다. 이 경우만 행 아래쪽 여백으로 내려서 그린다.
+        const baseY = isBackward ? rowTopFor(rowIndex, rowType) + rowHeightFor(rowType) - 6 : arrowYFor(rowIndex, rowType);
+        const y = baseY + lane * 5; // 같은 행에 화살표가 여러 개면 살짝 어긋나게
         if (Math.abs(magnitude) === 1) {
-          // 바로 옆 칸으로 이동하면 두 셀 사이에 빈 공간이 없다. 다음 칸(새 위치) 쪽으로
-          // 삐져나가지 않도록, 화살표는 이전 위치(회색 칸) 안쪽에만 짧게 그려서 이동 방향만
-          // 가리키게 한다. 앞당겨진(왼쪽) 이동만 라벨과 안 겹치게 행 아래쪽 여백으로 내린다.
-          if (isBackward) {
-            x1 = originLeft + 32;
-            x2 = originLeft + 4;
-          } else {
-            x1 = originLeft + CELL_W - 32;
-            x2 = originLeft + CELL_W - 4;
-          }
-          baseY = isBackward ? rowTopFor(rowIndex, rowType) + rowHeightFor(rowType) - 6 : arrowYFor(rowIndex, rowType);
+          // 바로 옆 칸으로 이동하면 두 셀 사이에 빈 공간이 없다. 점선 화살표 대신 방향만
+          // 가리키는 작은 머리 표시 하나만, 다음 칸으로 삐져나가지 않게 이전 칸 안쪽에 그린다.
+          const x = isBackward ? originLeft + 10 : originLeft + CELL_W - 10;
+          heads.push({ x, y, direction: isBackward ? 'left' : 'right', label, reason: record.reason });
         } else {
           // 라벨과 겹치지 않도록, 두 셀의 텍스트를 지나지 않고 그 "사이 빈 공간"만 지나가게 그린다.
-          [x1, x2] = destCol > originCol ? [originLeft + CELL_W, destLeft] : [originLeft, destLeft + CELL_W];
-          // 앞당겨진(왼쪽으로 향하는) 화살표는 칩 텍스트 줄과 같은 높이에 그리면 주공정
-          // 행과 겹쳐 보인다. 이 경우만 행 아래쪽 여백으로 내려서 그린다.
-          baseY = isBackward ? rowTopFor(rowIndex, rowType) + rowHeightFor(rowType) - 6 : arrowYFor(rowIndex, rowType);
+          const [x1, x2] = destCol > originCol ? [originLeft + CELL_W, destLeft] : [originLeft, destLeft + CELL_W];
+          arrows.push({ x1, y1: y, x2, y2: y, label, reason: record.reason });
         }
-        const y = baseY + lane * 5; // 같은 행에 화살표가 여러 개면 살짝 어긋나게
-        arrows.push({ x1, y1: y, x2, y2: y, label, reason: record.reason });
       }
     }
-    return { ghosts, arrows };
+    return { ghosts, arrows, heads };
   }, [latestChangeByProcessId, processById, blockIndex, dateIndex]);
 
   const totalWidth = HEADER_W + dates.length * CELL_W + REMARK_W;
@@ -497,7 +498,7 @@ export default function GanttChart({
             style={{
               position: 'absolute',
               left: HEADER_W + g.colIndex * CELL_W,
-              top: rowTopFor(g.rowIndex, g.rowType),
+              top: rowTopFor(g.rowIndex, g.rowType) + (g.pushDown ? rowHeightFor(g.rowType) / 2 : 0),
               width: CELL_W,
               zIndex: 5,
             }}
@@ -549,6 +550,26 @@ export default function GanttChart({
               />
             </g>
           ))}
+          {/* 1일 이동은 점선 없이 방향만 가리키는 작은 화살표 머리만 표시한다 */}
+          {visuals.heads.map((h, i) => {
+            const tipX = h.x;
+            const baseX = h.direction === 'right' ? h.x - 9 : h.x + 9;
+            return (
+              <g key={i}>
+                <circle
+                  cx={h.x}
+                  cy={h.y}
+                  r={8}
+                  fill="transparent"
+                  style={{ pointerEvents: 'all', cursor: 'pointer' }}
+                  onClick={() => onShowReason(h.label, h.reason)}
+                >
+                  <title>이동 사유: {h.reason}</title>
+                </circle>
+                <path d={`M${baseX},${h.y - 4} L${tipX},${h.y} L${baseX},${h.y + 4} Z`} fill="#a1a1aa" style={{ pointerEvents: 'none' }} />
+              </g>
+            );
+          })}
         </svg>
       </div>
     </div>
