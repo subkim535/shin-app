@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Block, FacilityType, ProcessTemplate, SiteInfo } from '@/lib/domain/types';
+import { Block, CrewTeam, FacilityType, ProcessTemplate, SiteInfo } from '@/lib/domain/types';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -15,6 +15,9 @@ interface SettingsPanelProps {
   templates: ProcessTemplate[];
   onAddTemplate: (template: ProcessTemplate) => void;
   onRemoveTemplate: (id: string) => void;
+  crewTeams: CrewTeam[];
+  onAddCrewTeam: (name: string) => void;
+  onRemoveCrewTeam: (id: string) => void;
 }
 
 export default function SettingsPanel({
@@ -29,6 +32,9 @@ export default function SettingsPanel({
   templates,
   onAddTemplate,
   onRemoveTemplate,
+  crewTeams,
+  onAddCrewTeam,
+  onRemoveCrewTeam,
 }: SettingsPanelProps) {
   const [newBlockName, setNewBlockName] = useState('');
   const [newBlockType, setNewBlockType] = useState<FacilityType>('building');
@@ -37,6 +43,15 @@ export default function SettingsPanel({
   const [templateName, setTemplateName] = useState('');
   const [templateSteps, setTemplateSteps] = useState<string[]>([]);
   const [stepInput, setStepInput] = useState('');
+
+  const [newTeamName, setNewTeamName] = useState('');
+
+  function addTeam() {
+    const name = newTeamName.trim();
+    if (!name) return;
+    onAddCrewTeam(name);
+    setNewTeamName('');
+  }
 
   function addBlock() {
     const name = newBlockName.trim();
@@ -155,6 +170,37 @@ export default function SettingsPanel({
               <option value="auxiliary">부속시설</option>
             </select>
             <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm" onClick={addBlock}>
+              추가
+            </button>
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <h3 className="text-sm font-semibold text-zinc-700">작업팀 관리</h3>
+          <p className="text-xs text-zinc-500">
+            여기서 미리 등록해두면, 공정에 작업팀을 배정할 때 직접 입력하지 않고 목록에서 고를 수 있습니다.
+          </p>
+          <div className="flex flex-col gap-1">
+            {crewTeams.map((t) => (
+              <div key={t.id} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1">
+                <span className="flex-1">{t.name}</span>
+                <button className="text-xs text-red-600" onClick={() => onRemoveCrewTeam(t.id)}>
+                  삭제
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              className="border border-zinc-300 rounded px-2 py-1 text-sm flex-1"
+              value={newTeamName}
+              onChange={(e) => setNewTeamName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') addTeam();
+              }}
+              placeholder="예: 형틀목공팀"
+            />
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm" onClick={addTeam}>
               추가
             </button>
           </div>

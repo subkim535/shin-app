@@ -26,6 +26,7 @@ import {
   AppState,
   Block,
   ChangeRecord,
+  CrewTeam,
   DateShiftRecord,
   DirectLaborEntry,
   FacilityType,
@@ -92,6 +93,7 @@ export default function ScheduleApp() {
   const [dateShiftHistory, setDateShiftHistory] = useState<DateShiftRecord[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [directLabor, setDirectLabor] = useState<DirectLaborEntry[]>([]);
+  const [crewTeams, setCrewTeams] = useState<CrewTeam[]>([]);
   const [viewStartDate, setViewStartDate] = useState<ISODate>(() => mondayOfWeek(todayISO()));
   // 오늘이 포함된 주의 월요일부터 다음 달 말일까지를 기본 범위로 고정 (이후 이전주/다음주로 더 이동 가능)
   const [dayCount] = useState<number>(() => computeDayCount(mondayOfWeek(todayISO())));
@@ -111,6 +113,7 @@ export default function ScheduleApp() {
     return {
       ...remote,
       directLabor: (remote.directLabor ?? []).map((d) => ({ ...d, category: d.category ?? '기타' })),
+      crewTeams: remote.crewTeams ?? [],
     };
   }
 
@@ -125,6 +128,7 @@ export default function ScheduleApp() {
     setDateShiftHistory(state.dateShiftHistory);
     setNotes(state.notes);
     setDirectLabor(state.directLabor);
+    setCrewTeams(state.crewTeams);
   }
 
   // 최초 로드: Supabase에 저장된 데이터가 있으면 불러오고, 없으면(첫 실행) 샘플 데이터를 만들어 저장한다.
@@ -150,6 +154,7 @@ export default function ScheduleApp() {
             dateShiftHistory: [],
             notes: {},
             directLabor: [],
+            crewTeams: [],
           };
           applyRemoteState(initial);
           const updatedAt = await saveState(SITE_KEY, initial);
@@ -215,6 +220,7 @@ export default function ScheduleApp() {
       dateShiftHistory,
       notes,
       directLabor,
+      crewTeams,
     };
     const json = stableStringify(state);
     if (json === lastSyncedJsonRef.current) return;
@@ -223,7 +229,7 @@ export default function ScheduleApp() {
       flushPendingSave();
     }, 500);
     return () => clearTimeout(handle);
-  }, [loaded, siteInfo, blocks, templates, holidays, processes, changeHistory, dateShiftHistory, notes, directLabor]);
+  }, [loaded, siteInfo, blocks, templates, holidays, processes, changeHistory, dateShiftHistory, notes, directLabor, crewTeams]);
 
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -306,7 +312,9 @@ export default function ScheduleApp() {
 
   function handleOpenCrew(processId: string) {
     const proc = processes.find((p) => p.id === processId);
-    setCrewModal({ processId, team: proc?.crew?.team ?? '', headcount: proc?.crew ? String(proc.crew.headcount) : '' });
+    const currentTeam = proc?.crew?.team;
+    const team = currentTeam && crewTeams.some((t) => t.name === currentTeam) ? currentTeam : crewTeams[0]?.name ?? '';
+    setCrewModal({ processId, team, headcount: proc?.crew ? String(proc.crew.headcount) : '' });
   }
 
   function handleSaveCrew() {
@@ -314,6 +322,14 @@ export default function ScheduleApp() {
     const count = Number(crewModal.headcount) || 0;
     setProcesses((cur) => setCrew(cur, crewModal.processId, crewModal.team, count));
     setCrewModal(null);
+  }
+
+  function handleAddCrewTeam(name: string) {
+    setCrewTeams((cur) => [...cur, { id: crypto.randomUUID(), name }]);
+  }
+
+  function handleRemoveCrewTeam(id: string) {
+    setCrewTeams((cur) => cur.filter((t) => t.id !== id));
   }
 
   function handleChangeBlockRemark(blockId: string, text: string) {
@@ -755,6 +771,9 @@ export default function ScheduleApp() {
           templates={templates}
           onAddTemplate={(t) => setTemplates((cur) => [...cur, t])}
           onRemoveTemplate={(id) => setTemplates((cur) => cur.filter((t) => t.id !== id))}
+          crewTeams={crewTeams}
+          onAddCrewTeam={handleAddCrewTeam}
+          onRemoveCrewTeam={handleRemoveCrewTeam}
         />
       )}
 
@@ -805,13 +824,24 @@ export default function ScheduleApp() {
       {crewModal && (
         <Modal>
           <p className="text-sm">작업팀 · 투입인원</p>
-          <input
-            autoFocus
-            className="border border-zinc-300 rounded px-2 py-1 text-sm"
-            value={crewModal.team}
-            onChange={(e) => setCrewModal((cur) => (cur ? { ...cur, team: e.target.value } : cur))}
-            placeholder="작업팀 (예: 형틀목공팀)"
-          />
+          {crewTeams.length === 0 ? (
+            <p className="text-xs text-zinc-500">
+              등록된 작업팀이 없습니다. 설정 → 작업팀 관리에서 먼저 팀을 등록해주세요.
+            </p>
+          ) : (
+            <select
+              autoFocus
+              className="border border-zinc-300 rounded px-2 py-1 text-sm"
+              value={crewModal.team}
+              onChange={(e) => setCrewModal((cur) => (cur ? { ...cur, team: e.target.value } : cur))}
+            >
+              {crewTeams.map((t) => (
+                <option key={t.id} value={t.name}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          )}
           <input
             className="border border-zinc-300 rounded px-2 py-1 text-sm"
             value={crewModal.headcount}

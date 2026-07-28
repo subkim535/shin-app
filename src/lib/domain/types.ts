@@ -53,6 +53,12 @@ export interface CrewAssignment {
   headcount: number;
 }
 
+// 설정에서 미리 등록해두는 작업팀 목록 — 공정에 배정할 때 매번 입력하지 않고 여기서 고른다.
+export interface CrewTeam {
+  id: string;
+  name: string;
+}
+
 // 공정표에 안 묶이는 직영(자체) 인력 작업 — 날짜 단위로 자유롭게 추가/삭제한다.
 export interface DirectLaborEntry {
   id: string;
@@ -73,6 +79,7 @@ export interface AppState {
   dateShiftHistory: DateShiftRecord[];
   notes: Record<string, string>;
   directLabor: DirectLaborEntry[];
+  crewTeams: CrewTeam[];
 }
 
 export interface ProcessInstance {
