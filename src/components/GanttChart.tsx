@@ -418,9 +418,11 @@ export default function GanttChart({
       // 다른 실제 공정들의 텍스트를 그대로 가로질러 지나가게 된다. 정방향/역방향 모두 행
       // 아래쪽 여백(칩이 잘 안 쌓이는 자리)에 그려서 이런 충돌을 피한다. 행이 다른 이유로
       // (고스트 누적 등) 늘어나도 화살표 위치가 같이 딸려 내려가지 않도록, 늘어나기 전
-      // 기본 높이를 기준으로 삼는다.
+      // 기본 높이를 기준으로 삼는다. 고스트 박스의 맨 아래가 아니라 그 박스의 세로 중앙
+      // (글자가 있는 높이)을 지나가게 살짝 위로 올려서, 고스트 글자에서 바로 이어지는
+      // 것처럼 보이게 한다.
       const base = a.rowType === 'main' ? ROW_MAIN_H : ROW_SUB_H;
-      const baseY = rowTopFor(a.rowIndex, a.rowType) + base - 6;
+      const baseY = rowTopFor(a.rowIndex, a.rowType) + base - 6 - GHOST_BOX_H / 2;
       const y = baseY + a.lane * LANE_STEP; // 같은 행에서 겹치는 화살표끼리 살짝 어긋나게 (고스트와 같은 간격을 써야 레인이 맞는다)
       return { x1, y1: y, x2, y2: y, label: a.label, reason: a.reason, path: a.path };
     });
