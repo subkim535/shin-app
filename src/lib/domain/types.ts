@@ -17,6 +17,8 @@ export interface Block {
   name: string;
   sortOrder: number;
   facilityType?: FacilityType; // 본동(building, 기본) / 부속시설(auxiliary)
+  info?: string; // 세대/층수 등 자유텍스트 (예: "5세대/22층")
+  remark?: string; // 동 단위 비고 (날짜와 무관, 오른쪽 고정 열에 표시)
 }
 
 export interface SiteInfo {
@@ -45,6 +47,22 @@ export interface DateShiftRecord {
   at: string; // ISO datetime
 }
 
+// 특정 공정에 딸린 협력사 작업팀 배정 (작업일보의 "작업내용" 항목에 쓰인다).
+export interface CrewAssignment {
+  team: string;
+  headcount: number;
+}
+
+// 공정표에 안 묶이는 직영(자체) 인력 작업 — 날짜 단위로 자유롭게 추가/삭제한다.
+export interface DirectLaborEntry {
+  id: string;
+  date: ISODate;
+  workContent: string;
+  headcount: number;
+}
+
+export type TimeSlot = 'am' | 'pm';
+
 // Supabase에 JSONB 하나로 저장/동기화하는 전체 상태.
 export interface AppState {
   siteInfo: SiteInfo;
@@ -55,6 +73,7 @@ export interface AppState {
   changeHistory: ChangeRecord[];
   dateShiftHistory: DateShiftRecord[];
   notes: Record<string, string>;
+  directLabor: DirectLaborEntry[];
 }
 
 export interface ProcessInstance {
@@ -62,6 +81,7 @@ export interface ProcessInstance {
   blockId: string;
   typeCode: string;
   date: ISODate;
+  timeSlot: TimeSlot; // 오전/오후 반일 구분 (주요공정 행에만 적용)
   floorLabel?: string;
   linkedMainProcessId?: string; // sub -> owning main process
   cycleId: string; // 하나의 기준층 생성 호출로 만들어진 주요/보조공정 묶음 (같은 동에 여러 층 사이클이 동시에 흐를 수 있음)
@@ -69,6 +89,7 @@ export interface ProcessInstance {
   conflictGroup?: string; // 같은 날짜·같은 공종이 여러 동에서 겹칠 때의 그룹 (기존 충돌순번용)
   conflictSeq?: number;
   cellOrder?: number; // 같은 동·같은 날짜에 서로 다른 주요공정이 함께 놓였을 때의 수동 작업 순서
+  crew?: CrewAssignment; // 작업팀 + 투입인원
 }
 
 export interface ChangeRecord {

@@ -43,11 +43,22 @@ function makeProcess(
     blockId,
     typeCode,
     date,
+    timeSlot: 'am',
     cycleId,
     floorLabel: opts.floorLabel,
     linkedMainProcessId: opts.linkedMainProcessId,
     customLabel: opts.customLabel,
   };
+}
+
+export function toggleTimeSlot(processes: ProcessInstance[], processId: string): ProcessInstance[] {
+  return processes.map((p) => (p.id === processId ? { ...p, timeSlot: p.timeSlot === 'am' ? 'pm' : 'am' } : p));
+}
+
+export function setCrew(processes: ProcessInstance[], processId: string, team: string, headcount: number): ProcessInstance[] {
+  return processes.map((p) =>
+    p.id === processId ? { ...p, crew: team.trim() ? { team: team.trim(), headcount } : undefined } : p,
+  );
 }
 
 function attachSubProcesses(

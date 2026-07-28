@@ -23,28 +23,44 @@ function sortKeysDeep(value: unknown): unknown {
   return value;
 }
 
-export async function loadState(siteKey: string): Promise<AppState | null> {
-  const { data, error } = await supabase.from('schedule_state').select('data').eq('site_key', siteKey).maybeSingle();
-  if (error) throw error;
-  return (data?.data as AppState | undefined) ?? null;
+export interface LoadedState {
+  state: AppState;
+  updatedAt: string;
 }
 
-export async function saveState(siteKey: string, state: AppState): Promise<void> {
+export async function loadState(siteKey: string): Promise<LoadedState | null> {
+  const { data, error } = await supabase
+    .from('schedule_state')
+    .select('data, updated_at')
+    .eq('site_key', siteKey)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return { state: data.data as AppState, updatedAt: data.updated_at as string };
+}
+
+/** 저장에 사용한 updated_at을 반환한다 — 실시간으로 되돌아오는 이벤트가 이보다 오래됐으면 무시하기 위함. */
+export async function saveState(siteKey: string, state: AppState): Promise<string> {
+  const updatedAt = new Date().toISOString();
   const { error } = await supabase
     .from('schedule_state')
-    .upsert({ site_key: siteKey, data: state, updated_at: new Date().toISOString() }, { onConflict: 'site_key' });
+    .upsert({ site_key: siteKey, data: state, updated_at: updatedAt }, { onConflict: 'site_key' });
   if (error) throw error;
+  return updatedAt;
 }
 
-export function subscribeState(siteKey: string, onChange: (state: AppState) => void): () => void {
+export function subscribeState(
+  siteKey: string,
+  onChange: (state: AppState, updatedAt: string) => void,
+): () => void {
   const channel = supabase
     .channel(`schedule_state:${siteKey}`)
     .on(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'schedule_state', filter: `site_key=eq.${siteKey}` },
       (payload) => {
-        const next = payload.new as { data: AppState } | undefined;
-        if (next?.data) onChange(next.data);
+        const next = payload.new as { data: AppState; updated_at: string } | undefined;
+        if (next?.data) onChange(next.data, next.updated_at);
       },
     )
     .subscribe();

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import DailyReportModal from '@/components/DailyReportModal';
 import GanttChart from '@/components/GanttChart';
 import HistoryPanel from '@/components/HistoryPanel';
 import SettingsPanel from '@/components/SettingsPanel';
@@ -16,10 +17,23 @@ import {
   previewMainMove,
   processLabel,
   recomputeConflicts,
+  setCrew,
   shiftAllFrom,
   swapCellOrder,
+  toggleTimeSlot,
 } from '@/lib/domain/schedule';
-import { AppState, Block, ChangeRecord, DateShiftRecord, FacilityType, Holiday, ProcessInstance, ProcessTemplate, SiteInfo } from '@/lib/domain/types';
+import {
+  AppState,
+  Block,
+  ChangeRecord,
+  DateShiftRecord,
+  DirectLaborEntry,
+  FacilityType,
+  Holiday,
+  ProcessInstance,
+  ProcessTemplate,
+  SiteInfo,
+} from '@/lib/domain/types';
 import { loadState, saveState, SITE_KEY, stableStringify, subscribeState } from '@/lib/supabase/state';
 
 const INITIAL_BLOCKS: Block[] = [
@@ -74,6 +88,7 @@ export default function ScheduleApp() {
   const [changeHistory, setChangeHistory] = useState<ChangeRecord[]>([]);
   const [dateShiftHistory, setDateShiftHistory] = useState<DateShiftRecord[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [directLabor, setDirectLabor] = useState<DirectLaborEntry[]>([]);
   const [viewStartDate, setViewStartDate] = useState<ISODate>(() => mondayOfWeek(todayISO()));
   // 오늘이 포함된 주의 월요일부터 다음 달 말일까지를 기본 범위로 고정 (이후 이전주/다음주로 더 이동 가능)
   const [dayCount] = useState<number>(() => computeDayCount(mondayOfWeek(todayISO())));
@@ -81,16 +96,33 @@ export default function ScheduleApp() {
   const [loaded, setLoaded] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const lastSyncedJsonRef = useRef<string>('');
+  // 실시간 이벤트는 네트워크 사정으로 순서가 뒤바뀌어 도착할 수 있다 (특히 저장이 여러 번
+  // 빠르게 겹칠 때). 내용 비교만으로는 "오래된 이벤트가 방금 반영한 내용을 다시 덮어쓰는"
+  // 것을 막을 수 없어서, DB의 updated_at 시각을 기준으로 이보다 오래된 이벤트는 무시한다.
+  const lastAppliedAtRef = useRef<string>('');
+
+  // DB의 예전 데이터는 그 이후 추가된 필드(timeSlot, directLabor 등)가 아예 없을 수 있다.
+  // 매번 이 함수를 거쳐서 기본값을 채운 "정규화된" 상태만 다루면, 로컬 상태와 마지막으로
+  // 동기화한 문자열이 항상 같은 모양이 되어 필드 유무 차이로 인한 무한 저장 루프를 막는다.
+  function normalizeAppState(remote: AppState): AppState {
+    return {
+      ...remote,
+      processes: remote.processes.map((p) => ({ ...p, timeSlot: p.timeSlot ?? 'am' })),
+      directLabor: remote.directLabor ?? [],
+    };
+  }
 
   function applyRemoteState(remote: AppState) {
-    setSiteInfo(remote.siteInfo);
-    setBlocks(remote.blocks);
-    setTemplates(remote.templates);
-    setHolidays(remote.holidays);
-    setProcesses(remote.processes);
-    setChangeHistory(remote.changeHistory);
-    setDateShiftHistory(remote.dateShiftHistory);
-    setNotes(remote.notes);
+    const state = normalizeAppState(remote);
+    setSiteInfo(state.siteInfo);
+    setBlocks(state.blocks);
+    setTemplates(state.templates);
+    setHolidays(state.holidays);
+    setProcesses(state.processes);
+    setChangeHistory(state.changeHistory);
+    setDateShiftHistory(state.dateShiftHistory);
+    setNotes(state.notes);
+    setDirectLabor(state.directLabor);
   }
 
   // 최초 로드: Supabase에 저장된 데이터가 있으면 불러오고, 없으면(첫 실행) 샘플 데이터를 만들어 저장한다.
@@ -98,11 +130,12 @@ export default function ScheduleApp() {
     let cancelled = false;
     (async () => {
       try {
-        const remote = await loadState(SITE_KEY);
+        const loadedRow = await loadState(SITE_KEY);
         if (cancelled) return;
-        if (remote) {
-          applyRemoteState(remote);
-          lastSyncedJsonRef.current = stableStringify(remote);
+        if (loadedRow) {
+          applyRemoteState(loadedRow.state);
+          lastSyncedJsonRef.current = stableStringify(normalizeAppState(loadedRow.state));
+          lastAppliedAtRef.current = loadedRow.updatedAt;
         } else {
           const initialHolidays: Holiday[] = [{ date: addDays(todayISO(), 12), kind: 'public_holiday' }];
           const initial: AppState = {
@@ -114,10 +147,12 @@ export default function ScheduleApp() {
             changeHistory: [],
             dateShiftHistory: [],
             notes: {},
+            directLabor: [],
           };
           applyRemoteState(initial);
-          await saveState(SITE_KEY, initial);
+          const updatedAt = await saveState(SITE_KEY, initial);
           lastSyncedJsonRef.current = stableStringify(initial);
+          lastAppliedAtRef.current = updatedAt;
         }
       } catch (e) {
         setSyncError(e instanceof Error ? e.message : 'Supabase 연결에 실패했습니다.');
@@ -131,29 +166,62 @@ export default function ScheduleApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 다른 사용자가 저장한 변경사항을 실시간으로 받아온다. 우리가 방금 저장한 내용의 에코는 건너뛴다.
+  // 다른 사용자가 저장한 변경사항을 실시간으로 받아온다. updated_at이 우리가 마지막으로
+  // 반영/저장한 시각보다 오래된 이벤트(지연 도착한 echo 포함)는 무시한다.
   useEffect(() => {
-    const unsubscribe = subscribeState(SITE_KEY, (remote) => {
-      const json = stableStringify(remote);
-      if (json === lastSyncedJsonRef.current) return;
-      lastSyncedJsonRef.current = json;
+    const unsubscribe = subscribeState(SITE_KEY, (remote, updatedAt) => {
+      if (updatedAt <= lastAppliedAtRef.current) return;
+      lastAppliedAtRef.current = updatedAt;
+      lastSyncedJsonRef.current = stableStringify(normalizeAppState(remote));
       applyRemoteState(remote);
     });
     return unsubscribe;
   }, []);
 
+  // 저장 요청을 한 번에 하나씩만 순서대로 내보낸다. debounce만 걸면 저장이 겹칠 때
+  // 네트워크 도착 순서가 뒤바뀌어 최신 내용이 이전 내용에 덮어써질 수 있다.
+  const savingRef = useRef(false);
+  const pendingStateRef = useRef<AppState | null>(null);
+
+  async function flushPendingSave() {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    while (pendingStateRef.current) {
+      const toSave = pendingStateRef.current;
+      pendingStateRef.current = null;
+      lastSyncedJsonRef.current = stableStringify(toSave);
+      try {
+        const updatedAt = await saveState(SITE_KEY, toSave);
+        lastAppliedAtRef.current = updatedAt;
+      } catch (e) {
+        setSyncError(e instanceof Error ? e.message : 'Supabase 저장에 실패했습니다.');
+      }
+    }
+    savingRef.current = false;
+  }
+
   // 로컬 상태가 바뀌면 잠시 후 Supabase에 반영한다 (짧은 debounce로 타이핑 중 과도한 저장 방지).
   useEffect(() => {
     if (!loaded) return;
-    const state: AppState = { siteInfo, blocks, templates, holidays, processes, changeHistory, dateShiftHistory, notes };
+    const state: AppState = {
+      siteInfo,
+      blocks,
+      templates,
+      holidays,
+      processes,
+      changeHistory,
+      dateShiftHistory,
+      notes,
+      directLabor,
+    };
     const json = stableStringify(state);
     if (json === lastSyncedJsonRef.current) return;
     const handle = setTimeout(() => {
-      lastSyncedJsonRef.current = json;
-      saveState(SITE_KEY, state).catch((e) => setSyncError(e instanceof Error ? e.message : 'Supabase 저장에 실패했습니다.'));
+      pendingStateRef.current = state;
+      flushPendingSave();
     }, 500);
     return () => clearTimeout(handle);
-  }, [loaded, siteInfo, blocks, templates, holidays, processes, changeHistory, dateShiftHistory, notes]);
+  }, [loaded, siteInfo, blocks, templates, holidays, processes, changeHistory, dateShiftHistory, notes, directLabor]);
 
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -165,6 +233,8 @@ export default function ScheduleApp() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [noteModal, setNoteModal] = useState<{ blockId: string; date: ISODate } | null>(null);
   const [reasonPopup, setReasonPopup] = useState<{ label: string; reason: string } | null>(null);
+  const [crewModal, setCrewModal] = useState<{ processId: string; team: string; headcount: string } | null>(null);
+  const [reportDate, setReportDate] = useState<ISODate | null>(null);
 
   const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null);
   const [dropStage, setDropStage] = useState<'idle' | 'threeplus-picker' | 'reason'>('idle');
@@ -228,6 +298,35 @@ export default function ScheduleApp() {
 
   function handleChangeNote(blockId: string, date: ISODate, text: string) {
     setNotes((cur) => ({ ...cur, [`${blockId}__${date}`]: text }));
+  }
+
+  function handleToggleTimeSlot(processId: string) {
+    setProcesses((cur) => toggleTimeSlot(cur, processId));
+  }
+
+  function handleOpenCrew(processId: string) {
+    const proc = processes.find((p) => p.id === processId);
+    setCrewModal({ processId, team: proc?.crew?.team ?? '', headcount: proc?.crew ? String(proc.crew.headcount) : '' });
+  }
+
+  function handleSaveCrew() {
+    if (!crewModal) return;
+    const count = Number(crewModal.headcount) || 0;
+    setProcesses((cur) => setCrew(cur, crewModal.processId, crewModal.team, count));
+    setCrewModal(null);
+  }
+
+  function handleChangeBlockRemark(blockId: string, text: string) {
+    setBlocks((cur) => cur.map((b) => (b.id === blockId ? { ...b, remark: text } : b)));
+  }
+
+  function handleAddDirectLabor(date: ISODate, workContent: string, headcount: number) {
+    const entry: DirectLaborEntry = { id: crypto.randomUUID(), date, workContent, headcount };
+    setDirectLabor((cur) => [...cur, entry]);
+  }
+
+  function handleRemoveDirectLabor(id: string) {
+    setDirectLabor((cur) => cur.filter((d) => d.id !== id));
   }
 
   function proceedAnyway() {
@@ -399,7 +498,7 @@ export default function ScheduleApp() {
           <select
             className="border border-zinc-300 rounded px-2 py-1"
             value={genFloorForm.templateId}
-            onChange={(e) => setGenFloorForm({ ...genFloorForm, templateId: e.target.value })}
+            onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, templateId: e.target.value } : cur))}
           >
             <option value="ground">지상층 기본 (갱폼~타설)</option>
             {templates.map((t) => (
@@ -414,7 +513,7 @@ export default function ScheduleApp() {
               <input
                 className="border border-zinc-300 rounded px-2 py-1 w-20"
                 value={genFloorForm.floor}
-                onChange={(e) => setGenFloorForm({ ...genFloorForm, floor: e.target.value })}
+                onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, floor: e.target.value } : cur))}
               />
             </>
           )}
@@ -423,7 +522,7 @@ export default function ScheduleApp() {
             type="date"
             className="border border-zinc-300 rounded px-2 py-1"
             value={genFloorForm.startDate}
-            onChange={(e) => setGenFloorForm({ ...genFloorForm, startDate: e.target.value })}
+            onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, startDate: e.target.value } : cur))}
           />
           <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={submitGenFloor}>
             생성
@@ -443,6 +542,10 @@ export default function ScheduleApp() {
         onChangeNote={handleChangeNote}
         onOpenNote={(blockId, date) => setNoteModal({ blockId, date })}
         onShowReason={(label, reason) => setReasonPopup({ label, reason })}
+        onToggleTimeSlot={handleToggleTimeSlot}
+        onEditCrew={handleOpenCrew}
+        onChangeBlockRemark={handleChangeBlockRemark}
+        onClickHeaderDate={(date) => setReportDate(date)}
         viewStartDate={viewStartDate}
         dayCount={dayCount}
         selectedProcessId={selectedProcessId}
@@ -582,13 +685,17 @@ export default function ScheduleApp() {
           siteInfo={siteInfo}
           onChangeSiteInfo={setSiteInfo}
           blocks={blocks}
-          onAddBlock={(name, facilityType) =>
-            setBlocks((cur) => [...cur, { id: crypto.randomUUID(), name, sortOrder: cur.length + 1, facilityType }])
+          onAddBlock={(name, facilityType, info) =>
+            setBlocks((cur) => [
+              ...cur,
+              { id: crypto.randomUUID(), name, sortOrder: cur.length + 1, facilityType, info: info || undefined },
+            ])
           }
           onRemoveBlock={(id) => setBlocks((cur) => cur.filter((b) => b.id !== id))}
           onChangeBlockType={(id, facilityType) =>
             setBlocks((cur) => cur.map((b) => (b.id === id ? { ...b, facilityType } : b)))
           }
+          onChangeBlockInfo={(id, info) => setBlocks((cur) => cur.map((b) => (b.id === id ? { ...b, info } : b)))}
           templates={templates}
           onAddTemplate={(t) => setTemplates((cur) => [...cur, t])}
           onRemoveTemplate={(id) => setTemplates((cur) => cur.filter((t) => t.id !== id))}
@@ -637,6 +744,51 @@ export default function ScheduleApp() {
             </button>
           </div>
         </Modal>
+      )}
+
+      {crewModal && (
+        <Modal>
+          <p className="text-sm">작업팀 · 투입인원</p>
+          <input
+            autoFocus
+            className="border border-zinc-300 rounded px-2 py-1 text-sm"
+            value={crewModal.team}
+            onChange={(e) => setCrewModal((cur) => (cur ? { ...cur, team: e.target.value } : cur))}
+            placeholder="작업팀 (예: 형틀목공팀)"
+          />
+          <input
+            className="border border-zinc-300 rounded px-2 py-1 text-sm"
+            value={crewModal.headcount}
+            onChange={(e) => setCrewModal((cur) => (cur ? { ...cur, headcount: e.target.value } : cur))}
+            placeholder="투입인원"
+            type="number"
+            min="0"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSaveCrew();
+            }}
+          />
+          <div className="flex justify-end gap-2 text-sm">
+            <button className="px-3 py-1 rounded border border-zinc-300" onClick={() => setCrewModal(null)}>
+              취소
+            </button>
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={handleSaveCrew}>
+              저장
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {reportDate && (
+        <DailyReportModal
+          date={reportDate}
+          siteInfo={siteInfo}
+          blocks={blocks}
+          processes={processes}
+          directLabor={directLabor}
+          onAddDirectLabor={handleAddDirectLabor}
+          onRemoveDirectLabor={handleRemoveDirectLabor}
+          onClose={() => setReportDate(null)}
+        />
       )}
     </div>
   );

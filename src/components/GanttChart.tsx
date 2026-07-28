@@ -8,14 +8,17 @@ import { Block, ChangeRecord, Holiday, ProcessInstance } from '@/lib/domain/type
 
 const HEADER_W = 96;
 const CELL_W = 96;
+const REMARK_W = 140;
 const HEADER_H = 48;
-const ROW_MAIN_H = 52;
+const ROW_AM_H = 36;
+const ROW_PM_H = 36;
 const ROW_SUB_H = 28;
 const ROW_NOTE_H = 36;
-const ROW_H = ROW_MAIN_H + ROW_SUB_H + ROW_NOTE_H;
+const ROW_H = ROW_AM_H + ROW_PM_H + ROW_SUB_H + ROW_NOTE_H;
 const FALLBACK_COLOR = { bg: 'bg-slate-300', text: 'text-slate-900' };
 
-type RowType = 'main' | 'sub';
+type RowType = 'main' | 'sub'; // 드래그 제약(같은 종류 행끼리만 이동)에만 쓰인다. 오전/오후는 둘 다 'main'.
+type VisualSlot = 'am' | 'pm' | 'sub' | 'note';
 
 interface GanttChartProps {
   blocks: Block[];
@@ -26,6 +29,10 @@ interface GanttChartProps {
   onChangeNote: (blockId: string, date: ISODate, text: string) => void;
   onOpenNote: (blockId: string, date: ISODate) => void;
   onShowReason: (label: string, reason: string) => void;
+  onToggleTimeSlot: (processId: string) => void;
+  onEditCrew: (processId: string) => void;
+  onChangeBlockRemark: (blockId: string, text: string) => void;
+  onClickHeaderDate: (date: ISODate) => void;
   viewStartDate: ISODate;
   dayCount: number;
   selectedProcessId: string | null;
@@ -56,6 +63,10 @@ export default function GanttChart({
   onChangeNote,
   onOpenNote,
   onShowReason,
+  onToggleTimeSlot,
+  onEditCrew,
+  onChangeBlockRemark,
+  onClickHeaderDate,
   viewStartDate,
   dayCount,
   selectedProcessId,
@@ -95,6 +106,8 @@ export default function GanttChart({
       const hd = hoverHeaderDateRef.current;
       if (hd && hd !== d.date) {
         onDropHeader(d.date, hd);
+      } else {
+        onClickHeaderDate(d.date);
       }
     }
     dragRef.current = null;
@@ -125,7 +138,7 @@ export default function GanttChart({
   }
 
   // rowType이 드래그 중인 항목과 일치하는 셀에서만 hover를 갱신한다.
-  // 이렇게 하면 보조공정은 보조공정 행끼리만, 주요공정은 주요공정 행끼리만 드롭된다.
+  // 이렇게 하면 보조공정은 보조공정 행끼리만, 주요공정은 오전/오후 상관없이 주요공정 행끼리만 드롭된다.
   function updateHoverCell(blockId: string, date: ISODate, rowType: RowType) {
     if (dragRef.current?.type !== 'process' || dragRef.current.rowType !== rowType) return;
     hoverCellRef.current = { blockId, date };
@@ -138,18 +151,8 @@ export default function GanttChart({
     setHoverHeaderDate(date);
   }
 
-  const byBlockDateMain = useMemo(() => {
-    const map = new Map<string, ProcessInstance[]>();
-    for (const p of processes) {
-      const category = PROCESS_TYPE_MAP[p.typeCode]?.category ?? 'main';
-      if (category !== 'main') continue;
-      const key = `${p.blockId}__${p.date}`;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(p);
-    }
-    for (const list of map.values()) list.sort((a, b) => (a.cellOrder ?? 0) - (b.cellOrder ?? 0));
-    return map;
-  }, [processes]);
+  const byBlockDateAm = useMemo(() => byBlockDateSlot(processes, 'am'), [processes]);
+  const byBlockDatePm = useMemo(() => byBlockDateSlot(processes, 'pm'), [processes]);
 
   const byBlockDateSub = useMemo(() => {
     const map = new Map<string, ProcessInstance[]>();
@@ -174,21 +177,23 @@ export default function GanttChart({
 
   const processById = useMemo(() => new Map(processes.map((p) => [p.id, p])), [processes]);
 
-  function rowTopFor(rowIndex: number, rowType: RowType): number {
+  function rowTopFor(rowIndex: number, slot: VisualSlot): number {
     const blockTop = HEADER_H + rowIndex * ROW_H;
-    return rowType === 'main' ? blockTop : blockTop + ROW_MAIN_H;
+    if (slot === 'am') return blockTop;
+    if (slot === 'pm') return blockTop + ROW_AM_H;
+    if (slot === 'sub') return blockTop + ROW_AM_H + ROW_PM_H;
+    return blockTop + ROW_AM_H + ROW_PM_H + ROW_SUB_H;
   }
   // 화살표는 셀 전체 높이의 중앙이 아니라, 맨 위 첫 줄 칩 텍스트 높이에 맞춰 그린다.
-  // 주요공정 행은 아래쪽에 여러 칩이 더 쌓일 수 있는 여유 공간이 있어서, 셀 중앙에 그리면
-  // 칩 밑 빈 공간을 지나가 "공정 아래에 화살표가 있다"처럼 보인다.
   const CHIP_LINE_CENTER = 13;
-  function arrowYFor(rowIndex: number, rowType: RowType): number {
-    return rowTopFor(rowIndex, rowType) + CHIP_LINE_CENTER;
+  function arrowYFor(rowIndex: number, slot: VisualSlot): number {
+    return rowTopFor(rowIndex, slot) + CHIP_LINE_CENTER;
   }
 
   const visuals = useMemo(() => {
-    const ghosts: { date: ISODate; label: string; reason: string; colIndex: number; rowIndex: number; rowType: RowType }[] = [];
+    const ghosts: { date: ISODate; label: string; reason: string; colIndex: number; rowIndex: number; slot: VisualSlot }[] = [];
     const arrows: { x1: number; y1: number; x2: number; y2: number; label: string; reason: string }[] = [];
+    const laneCounts = new Map<string, number>();
     for (const record of latestChangeByProcessId.values()) {
       const proc = processById.get(record.processId);
       if (!proc) continue;
@@ -196,28 +201,25 @@ export default function GanttChart({
       if (magnitude === 0) continue;
       const rowIndex = blockIndex.get(proc.blockId);
       if (rowIndex === undefined) continue;
-      const rowType: RowType = PROCESS_TYPE_MAP[proc.typeCode]?.category === 'sub' ? 'sub' : 'main';
+      const isSub = PROCESS_TYPE_MAP[proc.typeCode]?.category === 'sub';
+      const slot: VisualSlot = isSub ? 'sub' : proc.timeSlot;
       const label = processLabel(proc);
       if (Math.abs(magnitude) >= 2) {
         const originCol = dateIndex.get(record.previousDate);
         const destCol = dateIndex.get(record.newDate);
         if (originCol !== undefined) {
-          ghosts.push({ date: record.previousDate, label, reason: record.reason, colIndex: originCol, rowIndex, rowType });
+          ghosts.push({ date: record.previousDate, label, reason: record.reason, colIndex: originCol, rowIndex, slot });
         }
         if (originCol !== undefined && destCol !== undefined) {
-          const y = arrowYFor(rowIndex, rowType);
+          const laneKey = `${rowIndex}_${slot}`;
+          const lane = laneCounts.get(laneKey) ?? 0;
+          laneCounts.set(laneKey, lane + 1);
+          const y = arrowYFor(rowIndex, slot) + lane * 5; // 같은 행에 화살표가 여러 개면 살짝 아래로 어긋나게
           const originLeft = HEADER_W + originCol * CELL_W;
           const destLeft = HEADER_W + destCol * CELL_W;
           // 라벨과 겹치지 않도록, 두 셀의 텍스트를 지나지 않고 그 "사이 빈 공간"만 지나가게 그린다.
           const [x1, x2] = destCol > originCol ? [originLeft + CELL_W, destLeft] : [originLeft, destLeft + CELL_W];
-          arrows.push({
-            x1,
-            y1: y,
-            x2,
-            y2: y,
-            label,
-            reason: record.reason,
-          });
+          arrows.push({ x1, y1: y, x2, y2: y, label, reason: record.reason });
         }
       }
     }
@@ -238,10 +240,10 @@ export default function GanttChart({
     return map;
   }, [latestChangeByProcessId]);
 
-  const totalWidth = HEADER_W + dates.length * CELL_W;
+  const totalWidth = HEADER_W + dates.length * CELL_W + REMARK_W;
   const totalHeight = HEADER_H + blocks.length * ROW_H;
 
-  function renderChip(p: ProcessInstance, rowType: RowType, blockId: string, date: ISODate) {
+  function renderChip(p: ProcessInstance, rowType: RowType, blockId: string, date: ISODate, showTimeSlotToggle: boolean) {
     const def = PROCESS_TYPE_MAP[p.typeCode];
     const category = def?.category ?? 'main';
     const selected = p.id === selectedProcessId;
@@ -259,6 +261,7 @@ export default function GanttChart({
             startDragProcess(p.id, rowType, blockId, date);
           }}
           data-process-id={p.id}
+          title={p.crew ? `${p.crew.team} · ${p.crew.headcount}명` : undefined}
           className={[
             'text-left rounded px-1.5 py-0.5 text-xs leading-tight relative flex-1 min-w-0',
             category === 'main' ? `font-semibold ${color?.bg ?? ''} ${color?.text ?? ''}` : 'text-zinc-600 bg-zinc-50',
@@ -270,6 +273,7 @@ export default function GanttChart({
           {def?.showFloorLabel && p.floorLabel ? `${p.floorLabel} ` : ''}
           {label}
           {p.conflictSeq ? <sup className="ml-0.5">{p.conflictSeq}</sup> : null}
+          {p.crew ? <span className="ml-0.5 text-[9px] opacity-80">👷{p.crew.headcount}</span> : null}
           {p.cellOrder ? (
             <span className="ml-1 inline-flex items-center gap-0.5 align-middle">
               <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-white/70 text-[9px] text-zinc-800">
@@ -304,6 +308,36 @@ export default function GanttChart({
             </span>
           ) : null}
         </button>
+        {showTimeSlotToggle && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleTimeSlot(p.id);
+            }}
+            title="오전/오후 전환"
+            data-testid="timeslot-toggle"
+            className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[9px] leading-none px-0.5"
+          >
+            {p.timeSlot === 'am' ? '오전' : '오후'}
+          </button>
+        )}
+        {category === 'main' && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditCrew(p.id);
+            }}
+            title="작업팀·투입인원"
+            data-testid="crew-edit"
+            className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[9px] leading-none px-0.5"
+          >
+            👷
+          </button>
+        )}
         {oneDayMoved && reason && (
           <button
             type="button"
@@ -330,8 +364,8 @@ export default function GanttChart({
         style={{
           position: 'relative',
           display: 'grid',
-          gridTemplateColumns: `${HEADER_W}px repeat(${dates.length}, ${CELL_W}px)`,
-          gridTemplateRows: `${HEADER_H}px repeat(${blocks.length}, ${ROW_MAIN_H}px ${ROW_SUB_H}px ${ROW_NOTE_H}px)`,
+          gridTemplateColumns: `${HEADER_W}px repeat(${dates.length}, ${CELL_W}px) ${REMARK_W}px`,
+          gridTemplateRows: `${HEADER_H}px repeat(${blocks.length}, ${ROW_AM_H}px ${ROW_PM_H}px ${ROW_SUB_H}px ${ROW_NOTE_H}px)`,
           width: totalWidth,
           height: totalHeight,
         }}
@@ -344,7 +378,7 @@ export default function GanttChart({
           동/구간
         </div>
 
-        {/* 날짜 헤더: 드래그하면 전체 일정 순연 */}
+        {/* 날짜 헤더: 클릭하면 작업일보, 드래그하면 전체 일정 순연 */}
         {dates.map((d, colIndex) => {
           const isToday = d === today;
           const holiday = isHoliday(d, holidays);
@@ -356,6 +390,7 @@ export default function GanttChart({
               onPointerDown={() => startDragHeader(d)}
               onPointerEnter={() => updateHoverHeader(d)}
               data-header-date={d}
+              title="클릭: 작업일보 / 드래그: 전체 일정 순연"
               className={[
                 'sticky top-0 z-20 border-b border-l border-zinc-200 flex flex-col items-center justify-center text-xs cursor-grab active:cursor-grabbing',
                 isToday ? 'bg-indigo-50 border-b-2 border-b-indigo-900' : 'bg-zinc-50',
@@ -371,40 +406,77 @@ export default function GanttChart({
           );
         })}
 
-        {/* 행 헤더 (동 이름, 3행 전체에 걸쳐 표시) */}
+        {/* 비고 헤더 */}
+        <div
+          className="sticky top-0 right-0 z-30 bg-zinc-100 border-b border-l border-zinc-200 flex items-center justify-center font-medium text-sm"
+          style={{ gridColumn: dates.length + 2, gridRow: 1 }}
+        >
+          비고
+        </div>
+
+        {/* 행 헤더 (동 이름, 4행 전체에 걸쳐 표시) */}
         {blocks.map((block, rowIndex) => (
           <div
             key={`label-${block.id}`}
-            className="sticky left-0 z-20 bg-white border-b border-r border-zinc-200 flex items-center px-2 font-medium whitespace-nowrap"
-            style={{ gridColumn: 1, gridRow: `${rowIndex * 3 + 2} / span 3` }}
+            className="sticky left-0 z-20 bg-white border-b border-r border-zinc-200 flex flex-col justify-center px-2 font-medium whitespace-nowrap"
+            style={{ gridColumn: 1, gridRow: `${rowIndex * 4 + 2} / span 4` }}
           >
-            {block.name}
+            <span>{block.name}</span>
+            {block.info && <span className="text-[10px] text-zinc-400 font-normal">{block.info}</span>}
           </div>
         ))}
 
-        {/* 본문: 동마다 주요공정 / 보조공정 / 특이사항 3행 */}
+        {/* 비고 열 (동 단위, 날짜와 무관, 오른쪽 고정) */}
+        {blocks.map((block, rowIndex) => (
+          <div
+            key={`remark-${block.id}`}
+            className="sticky right-0 z-10 bg-zinc-50 border-b border-l border-zinc-200 px-1 py-1"
+            style={{ gridColumn: dates.length + 2, gridRow: `${rowIndex * 4 + 2} / span 4` }}
+          >
+            <textarea
+              value={block.remark ?? ''}
+              onChange={(e) => onChangeBlockRemark(block.id, e.target.value)}
+              placeholder="비고"
+              data-testid="block-remark"
+              className="w-full h-full text-[10px] px-1 py-0.5 bg-transparent outline-none resize-none placeholder:text-zinc-300"
+            />
+          </div>
+        ))}
+
+        {/* 본문: 동마다 오전 / 오후 / 보조공정 / 특이사항 4행 */}
         {blocks.map((block, rowIndex) =>
           dates.map((d, colIndex) => {
-            const mainKey = `${block.id}__${d}`;
-            const mainProcs = byBlockDateMain.get(mainKey) ?? [];
-            const subProcs = byBlockDateSub.get(mainKey) ?? [];
+            const key = `${block.id}__${d}`;
+            const amProcs = byBlockDateAm.get(key) ?? [];
+            const pmProcs = byBlockDatePm.get(key) ?? [];
+            const subProcs = byBlockDateSub.get(key) ?? [];
             const holiday = isHoliday(d, holidays);
             const isToday = d === today;
             const isMainHover = dragging?.type === 'process' && dragging.rowType === 'main' && hoverCell?.blockId === block.id && hoverCell?.date === d;
             const isSubHover = dragging?.type === 'process' && dragging.rowType === 'sub' && hoverCell?.blockId === block.id && hoverCell?.date === d;
-            const baseRow = rowIndex * 3 + 2;
+            const baseRow = rowIndex * 4 + 2;
             const cellShade = holiday ? 'bg-zinc-100' : isToday ? 'bg-indigo-50' : 'bg-white';
             return (
-              <div key={mainKey} style={{ display: 'contents' }}>
+              <div key={key} style={{ display: 'contents' }}>
                 <div
                   data-block={block.name}
                   data-date={d}
-                  data-row="main"
+                  data-row="am"
                   onPointerEnter={() => updateHoverCell(block.id, d, 'main')}
                   className={['border-b border-l border-zinc-200 overflow-y-auto px-1 py-0.5', cellShade, isMainHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
                   style={{ gridColumn: colIndex + 2, gridRow: baseRow }}
                 >
-                  <div className="flex flex-col gap-0.5">{mainProcs.map((p) => renderChip(p, 'main', block.id, d))}</div>
+                  <div className="flex flex-col gap-0.5">{amProcs.map((p) => renderChip(p, 'main', block.id, d, true))}</div>
+                </div>
+                <div
+                  data-block={block.name}
+                  data-date={d}
+                  data-row="pm"
+                  onPointerEnter={() => updateHoverCell(block.id, d, 'main')}
+                  className={['border-b border-l border-t border-dashed border-zinc-100 overflow-y-auto px-1 py-0.5', cellShade, isMainHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
+                  style={{ gridColumn: colIndex + 2, gridRow: baseRow + 1 }}
+                >
+                  <div className="flex flex-col gap-0.5">{pmProcs.map((p) => renderChip(p, 'main', block.id, d, true))}</div>
                 </div>
                 <div
                   data-block={block.name}
@@ -412,16 +484,16 @@ export default function GanttChart({
                   data-row="sub"
                   onPointerEnter={() => updateHoverCell(block.id, d, 'sub')}
                   className={['border-b border-l border-zinc-200 overflow-y-auto px-1 py-0.5', cellShade, isSubHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
-                  style={{ gridColumn: colIndex + 2, gridRow: baseRow + 1 }}
+                  style={{ gridColumn: colIndex + 2, gridRow: baseRow + 2 }}
                 >
-                  <div className="flex flex-col gap-0.5">{subProcs.map((p) => renderChip(p, 'sub', block.id, d))}</div>
+                  <div className="flex flex-col gap-0.5">{subProcs.map((p) => renderChip(p, 'sub', block.id, d, false))}</div>
                 </div>
                 <div
                   data-block={block.name}
                   data-date={d}
                   data-row="note"
                   className={['border-b border-l border-zinc-200 px-0.5 py-0.5', cellShade].join(' ')}
-                  style={{ gridColumn: colIndex + 2, gridRow: baseRow + 2 }}
+                  style={{ gridColumn: colIndex + 2, gridRow: baseRow + 3 }}
                 >
                   <div className="flex items-center h-full w-full">
                     <input
@@ -455,7 +527,7 @@ export default function GanttChart({
             style={{
               position: 'absolute',
               left: HEADER_W + g.colIndex * CELL_W,
-              top: rowTopFor(g.rowIndex, g.rowType),
+              top: rowTopFor(g.rowIndex, g.slot),
               width: CELL_W,
               zIndex: 5,
             }}
@@ -511,4 +583,17 @@ export default function GanttChart({
       </div>
     </div>
   );
+}
+
+function byBlockDateSlot(processes: ProcessInstance[], slot: 'am' | 'pm'): Map<string, ProcessInstance[]> {
+  const map = new Map<string, ProcessInstance[]>();
+  for (const p of processes) {
+    const category = PROCESS_TYPE_MAP[p.typeCode]?.category ?? 'main';
+    if (category !== 'main' || p.timeSlot !== slot) continue;
+    const key = `${p.blockId}__${p.date}`;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(p);
+  }
+  for (const list of map.values()) list.sort((a, b) => (a.cellOrder ?? 0) - (b.cellOrder ?? 0));
+  return map;
 }

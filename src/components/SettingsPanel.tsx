@@ -8,9 +8,10 @@ interface SettingsPanelProps {
   siteInfo: SiteInfo;
   onChangeSiteInfo: (info: SiteInfo) => void;
   blocks: Block[];
-  onAddBlock: (name: string, facilityType: FacilityType) => void;
+  onAddBlock: (name: string, facilityType: FacilityType, info: string) => void;
   onRemoveBlock: (id: string) => void;
   onChangeBlockType: (id: string, facilityType: FacilityType) => void;
+  onChangeBlockInfo: (id: string, info: string) => void;
   templates: ProcessTemplate[];
   onAddTemplate: (template: ProcessTemplate) => void;
   onRemoveTemplate: (id: string) => void;
@@ -24,12 +25,14 @@ export default function SettingsPanel({
   onAddBlock,
   onRemoveBlock,
   onChangeBlockType,
+  onChangeBlockInfo,
   templates,
   onAddTemplate,
   onRemoveTemplate,
 }: SettingsPanelProps) {
   const [newBlockName, setNewBlockName] = useState('');
   const [newBlockType, setNewBlockType] = useState<FacilityType>('building');
+  const [newBlockInfo, setNewBlockInfo] = useState('');
 
   const [templateName, setTemplateName] = useState('');
   const [templateSteps, setTemplateSteps] = useState<string[]>([]);
@@ -38,8 +41,9 @@ export default function SettingsPanel({
   function addBlock() {
     const name = newBlockName.trim();
     if (!name) return;
-    onAddBlock(name, newBlockType);
+    onAddBlock(name, newBlockType, newBlockInfo.trim());
     setNewBlockName('');
+    setNewBlockInfo('');
   }
 
   function addStep() {
@@ -108,7 +112,13 @@ export default function SettingsPanel({
           <div className="flex flex-col gap-1">
             {blocks.map((b) => (
               <div key={b.id} className="flex items-center gap-2 text-sm">
-                <span className="flex-1">{b.name}</span>
+                <span className="w-14 shrink-0">{b.name}</span>
+                <input
+                  className="border border-zinc-300 rounded px-2 py-0.5 text-xs flex-1"
+                  value={b.info ?? ''}
+                  onChange={(e) => onChangeBlockInfo(b.id, e.target.value)}
+                  placeholder="세대/층수 (예: 5세대/22층)"
+                />
                 <select
                   className="border border-zinc-300 rounded px-1 py-0.5 text-xs"
                   value={b.facilityType ?? 'building'}
@@ -129,6 +139,12 @@ export default function SettingsPanel({
               value={newBlockName}
               onChange={(e) => setNewBlockName(e.target.value)}
               placeholder="예: 15동 또는 관리동"
+            />
+            <input
+              className="border border-zinc-300 rounded px-2 py-1 text-sm w-36"
+              value={newBlockInfo}
+              onChange={(e) => setNewBlockInfo(e.target.value)}
+              placeholder="세대/층수 (선택)"
             />
             <select
               className="border border-zinc-300 rounded px-1 py-1 text-xs"
