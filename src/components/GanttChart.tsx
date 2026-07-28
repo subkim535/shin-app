@@ -425,7 +425,7 @@ export default function GanttChart({
                 'sticky top-0 z-20 border-b border-l border-zinc-200 flex flex-col items-center justify-center text-xs cursor-grab active:cursor-grabbing',
                 heavyCollision ? 'bg-red-100 text-red-700' : isToday ? 'bg-indigo-50' : 'bg-zinc-50',
                 isToday ? 'border-b-2 border-b-indigo-900' : '',
-                holiday && !isToday && !heavyCollision ? 'bg-zinc-100 text-zinc-500' : '',
+                holiday && !isToday && !heavyCollision ? 'bg-red-50 text-red-500' : '',
                 isDragSource ? 'opacity-50' : '',
                 isHoverTarget ? 'ring-2 ring-inset ring-indigo-600' : '',
               ].join(' ')}
@@ -485,7 +485,7 @@ export default function GanttChart({
             const isMainHover = dragging?.type === 'process' && dragging.rowType === 'main' && hoverCell?.blockId === block.id && hoverCell?.date === d;
             const isSubHover = dragging?.type === 'process' && dragging.rowType === 'sub' && hoverCell?.blockId === block.id && hoverCell?.date === d;
             const baseRow = rowIndex * 3 + 2;
-            const cellShade = holiday ? 'bg-zinc-100' : isToday ? 'bg-indigo-50' : 'bg-white';
+            const cellShade = holiday ? 'bg-red-50' : isToday ? 'bg-indigo-50' : 'bg-white';
             return (
               <div key={mainKey} style={{ display: 'contents' }}>
                 <div
