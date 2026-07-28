@@ -247,10 +247,14 @@ export default function GanttChart({
       if (rowIndex === undefined) continue;
       const rowType: RowType = PROCESS_TYPE_MAP[proc.typeCode]?.category === 'sub' ? 'sub' : 'main';
       const label = processLabel(proc);
-      records.forEach((record, i) => {
+      // 이동 이력을 전부 다 표시하면 여러 번 옮긴 공정은 고스트가 겹겹이 쌓여 지저분해진다.
+      // 최근 3번만 남기고, 가장 최근 이동이 항상 ①이 되도록 최신순으로 번호를 매긴다
+      // (계속 옮기면 ①이던 게 ②, ③으로 밀려나다가 4번째부터는 화면에서 사라진다).
+      const recent = records.slice(-3);
+      recent.forEach((record, i) => {
         const magnitude = diffDays(record.previousDate, record.newDate);
         if (magnitude === 0) return;
-        const seq = i + 1; // 같은 공정을 여러 번 옮겼을 때 발생 순서(1, 2, 3…)
+        const seq = recent.length - i; // 최신이 1번
         const originCol = dateIndex.get(record.previousDate);
         const destCol = dateIndex.get(record.newDate);
         const isBackward = magnitude < 0;
