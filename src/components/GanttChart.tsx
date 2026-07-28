@@ -207,9 +207,11 @@ export default function GanttChart({
 
   const processById = useMemo(() => new Map(processes.map((p) => [p.id, p])), [processes]);
 
-  const LANE_STEP = 20; // 같은 칸에 고스트가 여러 개 쌓일 때 한 줄씩 내려가는 간격(고스트 한 줄 높이 이상이어야 안 겹친다)
+  // 고스트와 화살표가 같은 레인 번호를 공유하므로(위 참고), 레인 간격도 하나만 써야 레인
+  // 번호가 같을 때 실제 픽셀 위치도 같아진다. 서로 다른 간격을 쓰면 0번 레인만 우연히
+  // 맞고 그 아래(1번, 2번...)부터는 다시 어긋난다.
+  const LANE_STEP = 20; // 고스트 한 줄 높이 이상이어야 같은 칸에 쌓인 고스트끼리 안 겹친다
   const GHOST_BOX_H = 20; // 고스트 한 줄이 실제로 차지하는 대략적인 높이
-  const ARROW_LANE_STEP = 8; // 같은 행에서 화살표끼리 겹칠 때 갈라놓는 간격
 
   // 고스트가 시작되는 기준 높이. 'bottom'은 화살표(항상 행 아래쪽에 그린다)와 같은 높이에서
   // 이어져 나오는 것처럼 보이도록, 화살표 높이 바로 위에 고스트 박스가 오게 맞춘다.
@@ -372,7 +374,7 @@ export default function GanttChart({
     }
     for (const a of rawVisuals.arrows) {
       const base = a.rowType === 'main' ? ROW_MAIN_H : ROW_SUB_H;
-      const neededBottom = base - 6 + a.lane * ARROW_LANE_STEP + 6;
+      const neededBottom = base - 6 + a.lane * LANE_STEP + 6;
       const key = `${a.rowIndex}_${a.rowType}`;
       extra.set(key, Math.max(extra.get(key) ?? 0, neededBottom - base));
     }
@@ -419,7 +421,7 @@ export default function GanttChart({
       // 기본 높이를 기준으로 삼는다.
       const base = a.rowType === 'main' ? ROW_MAIN_H : ROW_SUB_H;
       const baseY = rowTopFor(a.rowIndex, a.rowType) + base - 6;
-      const y = baseY + a.lane * ARROW_LANE_STEP; // 같은 행에서 겹치는 화살표끼리 살짝 어긋나게
+      const y = baseY + a.lane * LANE_STEP; // 같은 행에서 겹치는 화살표끼리 살짝 어긋나게 (고스트와 같은 간격을 써야 레인이 맞는다)
       return { x1, y1: y, x2, y2: y, label: a.label, reason: a.reason, path: a.path };
     });
     return { ghosts, arrows };
