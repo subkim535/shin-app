@@ -995,6 +995,7 @@ export default function ScheduleApp() {
           blocks={blocks}
           processes={processes}
           directLabor={directLabor}
+          notes={notes}
           onAddDirectLabor={handleAddDirectLabor}
           onRemoveDirectLabor={handleRemoveDirectLabor}
           onClose={() => setReportDate(null)}

@@ -25,6 +25,7 @@ interface DailyReportModalProps {
   blocks: Block[];
   processes: ProcessInstance[];
   directLabor: DirectLaborEntry[];
+  notes: Record<string, string>;
   onAddDirectLabor: (date: ISODate, category: string, workContent: string, headcount: number) => void;
   onRemoveDirectLabor: (id: string) => void;
   onClose: () => void;
@@ -40,6 +41,7 @@ export default function DailyReportModal({
   blocks,
   processes,
   directLabor,
+  notes,
   onAddDirectLabor,
   onRemoveDirectLabor,
   onClose,
@@ -54,6 +56,14 @@ export default function DailyReportModal({
     [processes, date, blockNames],
   );
   const dayDirectLabor = useMemo(() => directLabor.filter((d) => d.date === date), [directLabor, date]);
+  // 그리드의 "특이사항" 행에 동별로 적어둔 메모 중, 이 날짜에 실제로 내용이 있는 것만 모은다.
+  const dayNotes = useMemo(
+    () =>
+      blocks
+        .map((b) => ({ blockName: b.name, text: notes[`${b.id}__${date}`] ?? '' }))
+        .filter((n) => n.text.trim().length > 0),
+    [blocks, notes, date],
+  );
 
   const crewHeadcount = dayProcesses.reduce((sum, p) => sum + (p.crew?.headcount ?? 0), 0);
   const directHeadcount = dayDirectLabor.reduce((sum, d) => sum + d.headcount, 0);
@@ -88,6 +98,12 @@ export default function DailyReportModal({
           .map(csvEscape)
           .join(','),
       );
+    }
+    rows.push('');
+    rows.push(['특이사항'].map(csvEscape).join(','));
+    rows.push(['동', '내용'].map(csvEscape).join(','));
+    for (const n of dayNotes) {
+      rows.push([n.blockName, n.text].map(csvEscape).join(','));
     }
     rows.push('');
     rows.push(['직영 작업'].map(csvEscape).join(','));
@@ -153,6 +169,21 @@ export default function DailyReportModal({
                   <strong>{blockNames[p.blockId] ?? ''}</strong> {processLabel(p)}
                 </span>
                 <span className="text-xs text-zinc-500 print:text-sm">{p.crew ? `${p.crew.team} · ${p.crew.headcount}명` : '작업팀 미배정'}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-1">
+          <h3 className="text-sm font-semibold text-zinc-700 print:text-base">특이사항</h3>
+          {dayNotes.length === 0 && <p className="text-xs text-zinc-400">이 날짜에 등록된 특이사항이 없습니다.</p>}
+          <div className="flex flex-col gap-1">
+            {dayNotes.map((n) => (
+              <div
+                key={n.blockName}
+                className="text-sm border border-zinc-200 rounded px-2 py-1 print:text-base print:border-zinc-400"
+              >
+                <strong>{n.blockName}</strong> {n.text}
               </div>
             ))}
           </div>
