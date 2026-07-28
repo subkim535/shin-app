@@ -35,6 +35,9 @@ import {
 } from '@/lib/domain/types';
 import { loadState, saveState, SITE_KEY, stableStringify, subscribeState } from '@/lib/supabase/state';
 
+// 이동/순연 사유로 자주 쓰는 항목들 — 직접 입력하는 대신 눌러서 바로 넣을 수 있게 한다.
+const REASON_PRESETS = ['우천', '폭염', '폭우', '태풍', '한파', '자재수급 지연', '인력 부족', '민원 발생'];
+
 const INITIAL_BLOCKS: Block[] = [
   { id: 'b1', name: '11동', sortOrder: 1, facilityType: 'building' },
   { id: 'b2', name: '12동', sortOrder: 2, facilityType: 'building' },
@@ -333,9 +336,9 @@ export default function ScheduleApp() {
     setWarning('순연할 공정을 선택했습니다. 이제 이 공정을 드래그해서 다른 날짜로 옮겨주세요.');
   }
 
-  function confirmReason() {
+  function confirmReason(presetReason?: string) {
     if (!pendingDrop) return;
-    const reason = reasonInput.trim() || '사유 미입력';
+    const reason = (presetReason ?? reasonInput).trim() || '사유 미입력';
     if (pendingDrop.kind === 'main') {
       const result = moveMainProcess(processes, changeHistory, pendingDrop.processId, pendingDrop.date, reason, holidays);
       if (result.blockedReason) {
@@ -373,9 +376,9 @@ export default function ScheduleApp() {
     setHeaderShiftStage('reason');
   }
 
-  function confirmHeaderShiftReason() {
+  function confirmHeaderShiftReason(presetReason?: string) {
     if (!pendingHeaderShift) return;
-    const reason = headerReasonInput.trim() || '사유 미입력';
+    const reason = (presetReason ?? headerReasonInput).trim() || '사유 미입력';
     const next = shiftAllFrom(processes, pendingHeaderShift.fromDate, pendingHeaderShift.deltaDays, holidays);
     setProcesses(recomputeConflicts(next));
     setDateShiftHistory((h) => [
@@ -440,6 +443,15 @@ export default function ScheduleApp() {
             다음 주
           </button>
           <button
+            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
+            onClick={() =>
+              setGenFloorForm({ blockId: blocks[0]?.id ?? '', floor: '16F', startDate: todayISO(), templateId: 'ground' })
+            }
+            disabled={blocks.length === 0}
+          >
+            공정 생성
+          </button>
+          <button
             className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
             onClick={() => setHistoryOpen(true)}
           >
@@ -488,7 +500,19 @@ export default function ScheduleApp() {
 
       {genFloorForm && (
         <div className="flex items-center gap-2 text-sm border border-zinc-300 bg-white rounded p-2 flex-wrap">
-          <span>기준층 생성 — 템플릿:</span>
+          <span>기준층 생성 — 동:</span>
+          <select
+            className="border border-zinc-300 rounded px-2 py-1"
+            value={genFloorForm.blockId}
+            onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, blockId: e.target.value } : cur))}
+          >
+            {blocks.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          <span>템플릿:</span>
           <select
             className="border border-zinc-300 rounded px-2 py-1"
             value={genFloorForm.templateId}
@@ -607,11 +631,24 @@ export default function ScheduleApp() {
             placeholder="이동 사유를 간단히 적어주세요 (예: 우천으로 순연)"
             data-testid="reason-input"
           />
+          <div className="flex flex-wrap gap-1">
+            {REASON_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                className="text-xs px-2 py-1 rounded-full border border-zinc-300 bg-zinc-50 hover:bg-zinc-100"
+                onClick={() => confirmReason(preset)}
+                data-testid="reason-preset"
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
           <div className="flex justify-end gap-2 text-sm">
             <button className="px-3 py-1 rounded border border-zinc-300" onClick={resetDropFlow}>
               취소
             </button>
-            <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={confirmReason} data-testid="confirm-move">
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={() => confirmReason()} data-testid="confirm-move">
               확인
             </button>
           </div>
@@ -654,6 +691,18 @@ export default function ScheduleApp() {
             }}
             placeholder="예: 우천·태풍으로 전체 순연"
           />
+          <div className="flex flex-wrap gap-1">
+            {REASON_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                className="text-xs px-2 py-1 rounded-full border border-zinc-300 bg-zinc-50 hover:bg-zinc-100"
+                onClick={() => confirmHeaderShiftReason(preset)}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
           <div className="flex justify-end gap-2 text-sm">
             <button
               className="px-3 py-1 rounded border border-zinc-300"
@@ -665,7 +714,7 @@ export default function ScheduleApp() {
             >
               취소
             </button>
-            <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={confirmHeaderShiftReason}>
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={() => confirmHeaderShiftReason()}>
               확인
             </button>
           </div>
