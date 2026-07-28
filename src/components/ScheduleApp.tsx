@@ -29,7 +29,6 @@ import {
   CrewTeam,
   DateShiftRecord,
   DirectLaborEntry,
-  FacilityType,
   Holiday,
   ProcessInstance,
   ProcessTemplate,
@@ -919,7 +918,11 @@ export default function ScheduleApp() {
             <button className="px-3 py-1 rounded border border-zinc-300" onClick={() => setCrewModal(null)}>
               취소
             </button>
-            <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={handleSaveCrew}>
+            <button
+              className="px-3 py-1 rounded bg-indigo-600 text-white disabled:opacity-40"
+              onClick={handleSaveCrew}
+              disabled={crewTeams.length === 0}
+            >
               저장
             </button>
           </div>
