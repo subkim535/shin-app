@@ -51,6 +51,11 @@ function noteKey(blockId: string, date: ISODate): string {
   return `${blockId}__${date}`;
 }
 
+// 같은 공정이 여러 번 이동했을 때 고스트에 붙이는 순번 표시 (①②③…, 21 이상은 숫자로).
+function seqBadge(seq: number): string {
+  return seq >= 1 && seq <= 20 ? String.fromCodePoint(0x2460 + seq - 1) : `(${seq})`;
+}
+
 export default function GanttChart({
   blocks,
   processes,
@@ -174,10 +179,14 @@ export default function GanttChart({
     return map;
   }, [processes]);
 
-  // 프로세스별로 가장 최근 이동 이력만 시각화 대상으로 삼는다 (기준 공정 중심 표시).
-  const latestChangeByProcessId = useMemo(() => {
-    const map = new Map<string, ChangeRecord>();
-    for (const c of changeHistory) map.set(c.processId, c);
+  // 프로세스별 전체 이동 이력을 발생 순서대로 모아둔다 (changeHistory는 append 순서라
+  // 이 순서 자체가 시간순). 같은 공정이 여러 번 옮겨졌으면 전부 그리드에 표시한다.
+  const movesByProcessId = useMemo(() => {
+    const map = new Map<string, ChangeRecord[]>();
+    for (const c of changeHistory) {
+      if (!map.has(c.processId)) map.set(c.processId, []);
+      map.get(c.processId)!.push(c);
+    }
     return map;
   }, [changeHistory]);
 
@@ -209,56 +218,67 @@ export default function GanttChart({
       rowType: RowType;
       pushDown: boolean;
       oneDayDirection?: 'left' | 'right';
+      seq: number;
+      lane: number;
     }[] = [];
     const arrows: { x1: number; y1: number; x2: number; y2: number; label: string; reason: string }[] = [];
     const laneCounts = new Map<string, number>();
-    for (const record of latestChangeByProcessId.values()) {
-      const proc = processById.get(record.processId);
+    const ghostLaneCounts = new Map<string, number>();
+    for (const records of movesByProcessId.values()) {
+      const proc = processById.get(records[0].processId);
       if (!proc) continue;
-      const magnitude = diffDays(record.previousDate, record.newDate);
-      if (magnitude === 0) continue;
       const rowIndex = blockIndex.get(proc.blockId);
       if (rowIndex === undefined) continue;
       const rowType: RowType = PROCESS_TYPE_MAP[proc.typeCode]?.category === 'sub' ? 'sub' : 'main';
       const label = processLabel(proc);
-      const originCol = dateIndex.get(record.previousDate);
-      const destCol = dateIndex.get(record.newDate);
-      const isBackward = magnitude < 0;
-      const isOneDay = Math.abs(magnitude) === 1;
-      if (originCol !== undefined) {
-        // 왼쪽(이전 날짜)으로 당겨진 이동은 그 칸에 다른 실제 공정이 남아있는 경우가 많아
-        // 고스트 라벨과 겹쳐 보인다. 이 경우만 고스트를 행 아래쪽으로 내린다.
-        // 하루 이동은 점선 화살표 대신 라벨 글자 앞/뒤에 작은 방향 표시를 붙인다
-        // (SVG로 따로 그리면 라벨 텍스트 폭을 몰라서 겹치기 쉽다 — 같은 텍스트 줄에 넣으면
-        // 브라우저가 알아서 겹치지 않게 배치해준다).
-        ghosts.push({
-          date: record.previousDate,
-          label,
-          reason: record.reason,
-          colIndex: originCol,
-          rowIndex,
-          rowType,
-          pushDown: isBackward,
-          oneDayDirection: isOneDay ? (isBackward ? 'left' : 'right') : undefined,
-        });
-      }
-      if (originCol !== undefined && destCol !== undefined && !isOneDay) {
-        const laneKey = `${rowIndex}_${rowType}`;
-        const lane = laneCounts.get(laneKey) ?? 0;
-        laneCounts.set(laneKey, lane + 1);
-        const originLeft = HEADER_W + originCol * CELL_W;
-        const destLeft = HEADER_W + destCol * CELL_W;
-        // 앞당겨진(왼쪽으로 향하는) 이동은 칩 텍스트 줄과 같은 높이에 그리면 주공정 행과
-        // 겹쳐 보인다. 이 경우만 행 아래쪽 여백으로 내려서 그린다.
-        const baseY = isBackward ? rowTopFor(rowIndex, rowType) + rowHeightFor(rowType) - 6 : arrowYFor(rowIndex, rowType);
-        const y = baseY + lane * 5; // 같은 행에 화살표가 여러 개면 살짝 어긋나게
-        // 라벨과 겹치지 않도록, 두 셀의 텍스트를 지나지 않고 그 "사이 빈 공간"만 지나가게 그린다.
-        const [x1, x2] = destCol > originCol ? [originLeft + CELL_W, destLeft] : [originLeft, destLeft + CELL_W];
-        arrows.push({ x1, y1: y, x2, y2: y, label, reason: record.reason });
-      }
+      records.forEach((record, i) => {
+        const magnitude = diffDays(record.previousDate, record.newDate);
+        if (magnitude === 0) return;
+        const seq = i + 1; // 같은 공정을 여러 번 옮겼을 때 발생 순서(1, 2, 3…)
+        const originCol = dateIndex.get(record.previousDate);
+        const destCol = dateIndex.get(record.newDate);
+        const isBackward = magnitude < 0;
+        const isOneDay = Math.abs(magnitude) === 1;
+        if (originCol !== undefined) {
+          // 왼쪽(이전 날짜)으로 당겨진 이동은 그 칸에 다른 실제 공정이 남아있는 경우가 많아
+          // 고스트 라벨과 겹쳐 보인다. 이 경우만 고스트를 행 아래쪽으로 내린다.
+          // 하루 이동은 점선 화살표 대신 라벨 글자 앞/뒤에 작은 방향 표시를 붙인다
+          // (SVG로 따로 그리면 라벨 텍스트 폭을 몰라서 겹치기 쉽다 — 같은 텍스트 줄에 넣으면
+          // 브라우저가 알아서 겹치지 않게 배치해준다).
+          const ghostLaneKey = `${rowIndex}_${rowType}_${originCol}`;
+          const ghostLane = ghostLaneCounts.get(ghostLaneKey) ?? 0;
+          ghostLaneCounts.set(ghostLaneKey, ghostLane + 1);
+          ghosts.push({
+            date: record.previousDate,
+            label,
+            reason: record.reason,
+            colIndex: originCol,
+            rowIndex,
+            rowType,
+            pushDown: isBackward,
+            oneDayDirection: isOneDay ? (isBackward ? 'left' : 'right') : undefined,
+            seq,
+            lane: ghostLane,
+          });
+        }
+        if (originCol !== undefined && destCol !== undefined && !isOneDay) {
+          const laneKey = `${rowIndex}_${rowType}`;
+          const lane = laneCounts.get(laneKey) ?? 0;
+          laneCounts.set(laneKey, lane + 1);
+          const originLeft = HEADER_W + originCol * CELL_W;
+          const destLeft = HEADER_W + destCol * CELL_W;
+          // 앞당겨진(왼쪽으로 향하는) 이동은 칩 텍스트 줄과 같은 높이에 그리면 주공정 행과
+          // 겹쳐 보인다. 이 경우만 행 아래쪽 여백으로 내려서 그린다.
+          const baseY = isBackward ? rowTopFor(rowIndex, rowType) + rowHeightFor(rowType) - 6 : arrowYFor(rowIndex, rowType);
+          const y = baseY + lane * 5; // 같은 행에 화살표가 여러 개면 살짝 어긋나게
+          // 라벨과 겹치지 않도록, 두 셀의 텍스트를 지나지 않고 그 "사이 빈 공간"만 지나가게 그린다.
+          const [x1, x2] = destCol > originCol ? [originLeft + CELL_W, destLeft] : [originLeft, destLeft + CELL_W];
+          arrows.push({ x1, y1: y, x2, y2: y, label, reason: record.reason });
+        }
+      });
     }
     return { ghosts, arrows };
-  }, [latestChangeByProcessId, processById, blockIndex, dateIndex]);
+  }, [movesByProcessId, processById, blockIndex, dateIndex]);
 
   const totalWidth = HEADER_W + dates.length * CELL_W + REMARK_W;
   const totalHeight = HEADER_H + blocks.length * ROW_H;
@@ -504,7 +524,7 @@ export default function GanttChart({
             style={{
               position: 'absolute',
               left: HEADER_W + g.colIndex * CELL_W,
-              top: rowTopFor(g.rowIndex, g.rowType) + (g.pushDown ? rowHeightFor(g.rowType) / 2 : 0),
+              top: rowTopFor(g.rowIndex, g.rowType) + (g.pushDown ? rowHeightFor(g.rowType) / 2 : 0) + g.lane * 15,
               width: CELL_W,
               zIndex: 5,
             }}
@@ -515,6 +535,7 @@ export default function GanttChart({
               title={`이동 사유: ${g.reason}`}
               className="text-xs leading-tight text-zinc-400 bg-zinc-100/80 hover:bg-zinc-200 rounded px-1.5 py-0.5 text-left whitespace-nowrap"
             >
+              <span className="mr-0.5 text-zinc-500">{seqBadge(g.seq)}</span>
               {g.oneDayDirection === 'left' && <span className="mr-0.5">◀</span>}
               {g.label}
               {g.oneDayDirection === 'right' && <span className="ml-0.5">▶</span>}
