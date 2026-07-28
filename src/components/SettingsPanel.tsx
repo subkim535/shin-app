@@ -18,6 +18,8 @@ interface SettingsPanelProps {
   crewTeams: CrewTeam[];
   onAddCrewTeam: (name: string) => void;
   onRemoveCrewTeam: (id: string) => void;
+  lastSavedAt: string | null;
+  syncError: string | null;
 }
 
 export default function SettingsPanel({
@@ -35,6 +37,8 @@ export default function SettingsPanel({
   crewTeams,
   onAddCrewTeam,
   onRemoveCrewTeam,
+  lastSavedAt,
+  syncError,
 }: SettingsPanelProps) {
   const [newBlockName, setNewBlockName] = useState('');
   const [newBlockType, setNewBlockType] = useState<FacilityType>('building');
@@ -102,6 +106,19 @@ export default function SettingsPanel({
           <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={onClose}>
             닫기
           </button>
+        </div>
+
+        <div className="text-xs -mt-3" data-testid="save-status">
+          {syncError ? (
+            <span className="text-red-600">동기화 오류: {syncError}</span>
+          ) : lastSavedAt ? (
+            <span className="text-emerald-600">
+              ✓ 저장됨 · {new Date(lastSavedAt).toLocaleTimeString('ko-KR')}
+            </span>
+          ) : (
+            <span className="text-zinc-400">저장 중…</span>
+          )}
+          <span className="text-zinc-400"> — 여기 있는 모든 변경사항은 따로 저장 버튼 없이 자동으로 저장됩니다.</span>
         </div>
 
         <section className="flex flex-col gap-2">

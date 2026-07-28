@@ -134,6 +134,7 @@ export default function ScheduleApp() {
 
   const [loaded, setLoaded] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const lastSyncedJsonRef = useRef<string>('');
   // 실시간 이벤트는 네트워크 사정으로 순서가 뒤바뀌어 도착할 수 있다 (특히 저장이 여러 번
   // 빠르게 겹칠 때). 내용 비교만으로는 "오래된 이벤트가 방금 반영한 내용을 다시 덮어쓰는"
@@ -176,6 +177,7 @@ export default function ScheduleApp() {
           applyRemoteState(loadedRow.state);
           lastSyncedJsonRef.current = stableStringify(normalizeAppState(loadedRow.state));
           lastAppliedAtRef.current = loadedRow.updatedAt;
+          setLastSavedAt(loadedRow.updatedAt);
         } else {
           const initialHolidays: Holiday[] = [{ date: addDays(todayISO(), 12), kind: 'public_holiday' }];
           const initial: AppState = {
@@ -194,6 +196,7 @@ export default function ScheduleApp() {
           const updatedAt = await saveState(SITE_KEY, initial);
           lastSyncedJsonRef.current = stableStringify(initial);
           lastAppliedAtRef.current = updatedAt;
+          setLastSavedAt(updatedAt);
         }
       } catch (e) {
         setSyncError(e instanceof Error ? e.message : 'Supabase 연결에 실패했습니다.');
@@ -215,6 +218,7 @@ export default function ScheduleApp() {
       lastAppliedAtRef.current = updatedAt;
       lastSyncedJsonRef.current = stableStringify(normalizeAppState(remote));
       applyRemoteState(remote);
+      setLastSavedAt(updatedAt);
     });
     return unsubscribe;
   }, []);
@@ -234,6 +238,7 @@ export default function ScheduleApp() {
       try {
         const updatedAt = await saveState(SITE_KEY, toSave);
         lastAppliedAtRef.current = updatedAt;
+        setLastSavedAt(updatedAt);
       } catch (e) {
         setSyncError(e instanceof Error ? e.message : 'Supabase 저장에 실패했습니다.');
       }
@@ -824,6 +829,8 @@ export default function ScheduleApp() {
           crewTeams={crewTeams}
           onAddCrewTeam={handleAddCrewTeam}
           onRemoveCrewTeam={handleRemoveCrewTeam}
+          lastSavedAt={lastSavedAt}
+          syncError={syncError}
         />
       )}
 
