@@ -11,6 +11,7 @@ import {
   collidingProcesses,
   generateBaseFloorSequence,
   generateFromTemplate,
+  generateRepeatingFloors,
   isKnownType,
   moveMainProcess,
   moveSubProcess,
@@ -400,7 +401,10 @@ export default function ScheduleApp() {
     if (!genFloorForm) return;
     let generated: ProcessInstance[];
     if (genFloorForm.templateId === 'ground') {
-      generated = generateBaseFloorSequence(genFloorForm.blockId, genFloorForm.floor, genFloorForm.startDate, holidays);
+      // 기준층은 한 번으로 끝나지 않으니 시작 층부터 해당월 + 익월 말일까지 자동으로
+      // 한 층씩 올려가며 반복 생성한다.
+      const untilDate = endOfMonth(addMonths(genFloorForm.startDate, 1));
+      generated = generateRepeatingFloors(genFloorForm.blockId, genFloorForm.floor, genFloorForm.startDate, holidays, untilDate);
     } else {
       const template = templates.find((t) => t.id === genFloorForm.templateId);
       if (!template) return;

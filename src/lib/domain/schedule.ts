@@ -12,15 +12,24 @@ function isPublicHoliday(date: ISODate, holidays: Holiday[]): boolean {
   return holidays.some((h) => h.date === date && h.kind !== 'sunday');
 }
 
-// 문서 2.5 휴일 규칙: 타설(토·일·공휴일 금지), 갱폼(일·공휴일 금지), 나머지는 자동 스킵하지 않음
-export function isBlockedForType(typeCode: string, date: ISODate, holidays: Holiday[]): boolean {
+// 문서 2.5 휴일 규칙: 타설(토·일·공휴일 금지), 갱폼(일·공휴일 금지).
+// 그 외 공종은 기본적으로 일요일도 휴무로 취급한다. 단, 사용자가 직접 일요일 칸으로
+// 드래그해서 옮긴 경우(allowSunday)는 그 공정 하나만 예외로 허용한다 — 자동 생성/후속
+// 연쇄/전체순연에는 이 예외를 절대 넘기지 않는다(항상 기본값으로 호출).
+export function isBlockedForType(
+  typeCode: string,
+  date: ISODate,
+  holidays: Holiday[],
+  opts: { allowSunday?: boolean } = {},
+): boolean {
   const dow = dayOfWeek(date);
   const sunday = dow === 0;
   const saturday = dow === 6;
   const publicHoliday = isPublicHoliday(date, holidays);
   if (typeCode === 'POUR') return saturday || sunday || publicHoliday;
   if (typeCode === 'GANGFORM') return sunday || publicHoliday;
-  return false;
+  if (sunday && !opts.allowSunday) return true;
+  return publicHoliday;
 }
 
 function nextWorkableDate(typeCode: string, date: ISODate, holidays: Holiday[]): ISODate {
@@ -95,6 +104,40 @@ export function generateBaseFloorSequence(
     result.push(main);
     result.push(...attachSubProcesses(blockId, code, date, main.id, cycleId));
     cursor = addDays(date, 1);
+  }
+  return result;
+}
+
+// "16F" -> "17F"처럼 앞의 숫자만 1 증가시킨다. 숫자가 없는 라벨(자유 텍스트)은 그대로 둔다.
+function nextFloorLabel(floor: string): string {
+  const match = floor.match(/^(\d+)(.*)$/);
+  if (!match) return floor;
+  return `${Number(match[1]) + 1}${match[2]}`;
+}
+
+/**
+ * 기준층은 한 번 만들고 끝나는 게 아니라 층이 계속 반복되므로, 시작 층부터 한 층씩
+ * 자동으로 올려가며 해당월 + 익월 말일까지 반복 생성한다. 안전장치로 최대 60개 층까지만
+ * 만든다(무한루프 방지 — 날짜가 안 늘어나는 이상 상태가 생겨도 멈추게).
+ */
+export function generateRepeatingFloors(
+  blockId: string,
+  startFloor: string,
+  startDate: ISODate,
+  holidays: Holiday[],
+  untilDate: ISODate,
+): ProcessInstance[] {
+  const result: ProcessInstance[] = [];
+  let floor = startFloor;
+  let cursor = startDate;
+  for (let i = 0; i < 60; i++) {
+    const cycle = generateBaseFloorSequence(blockId, floor, cursor, holidays);
+    if (cycle.length === 0) break;
+    result.push(...cycle);
+    const lastDate = cycle.reduce((max, p) => (p.date > max ? p.date : max), cycle[0].date);
+    if (lastDate >= untilDate) break;
+    cursor = addDays(lastDate, 1);
+    floor = nextFloorLabel(floor);
   }
   return result;
 }
@@ -237,9 +280,14 @@ export function moveMainProcess(
 
   const rebuilt: ProcessInstance[] = [];
   let cursor = newDate;
-  for (const code of [moved.typeCode, ...laterMainCodes]) {
+  [moved.typeCode, ...laterMainCodes].forEach((code, i) => {
     const stepDef = PROCESS_TYPE_MAP[code];
-    const date = nextWorkableDate(code, cursor, holidays);
+    // 사용자가 직접 드래그한 공정(맨 앞 하나)만 일요일 예외를 허용한다. 이어지는 후속
+    // 공정들은 사용자가 직접 지정한 게 아니므로 계속 기본 휴일 규칙(일요일 포함)을 따른다.
+    const date =
+      i === 0 && !isBlockedForType(code, cursor, holidays, { allowSunday: true })
+        ? cursor
+        : nextWorkableDate(code, cursor, holidays);
     const main = makeProcess(blockId, code, date, cycleId, {
       floorLabel: stepDef.showFloorLabel ? moved.floorLabel : undefined,
     });
@@ -247,7 +295,7 @@ export function moveMainProcess(
     rebuilt.push(main);
     rebuilt.push(...attachSubProcesses(blockId, code, date, main.id, cycleId));
     cursor = addDays(date, 1);
-  }
+  });
 
   const record: ChangeRecord = {
     id: crypto.randomUUID(),
