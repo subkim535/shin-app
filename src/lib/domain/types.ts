@@ -108,7 +108,7 @@ export interface ChangeRecord {
   reason: string;
 }
 
-export type HolidayKind = 'sunday' | 'public_holiday' | 'substitute_holiday' | 'temporary_holiday';
+export type HolidayKind = 'sunday' | 'public_holiday' | 'substitute_holiday' | 'temporary_holiday' | 'vacation';
 
 export interface Holiday {
   date: ISODate;

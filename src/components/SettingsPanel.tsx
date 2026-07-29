@@ -1,7 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { Block, CrewTeam, FacilityType, ProcessTemplate, SiteInfo } from '@/lib/domain/types';
+import { ISODate } from '@/lib/domain/dateUtils';
+import { Block, CrewTeam, FacilityType, Holiday, HolidayKind, ProcessTemplate, SiteInfo } from '@/lib/domain/types';
+
+const HOLIDAY_KIND_LABEL: Record<HolidayKind, string> = {
+  sunday: '일요일',
+  public_holiday: '공휴일',
+  substitute_holiday: '대체휴일',
+  temporary_holiday: '임시공휴일',
+  vacation: '휴가',
+};
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -18,6 +27,9 @@ interface SettingsPanelProps {
   crewTeams: CrewTeam[];
   onAddCrewTeam: (name: string) => void;
   onRemoveCrewTeam: (id: string) => void;
+  holidays: Holiday[];
+  onAddHoliday: (date: ISODate, kind: HolidayKind) => void;
+  onRemoveHoliday: (date: ISODate) => void;
   lastSavedAt: string | null;
   syncError: string | null;
 }
@@ -37,6 +49,9 @@ export default function SettingsPanel({
   crewTeams,
   onAddCrewTeam,
   onRemoveCrewTeam,
+  holidays,
+  onAddHoliday,
+  onRemoveHoliday,
   lastSavedAt,
   syncError,
 }: SettingsPanelProps) {
@@ -57,6 +72,15 @@ export default function SettingsPanel({
     if (!name) return;
     onAddCrewTeam(name);
     setNewTeamName('');
+  }
+
+  const [newHolidayDate, setNewHolidayDate] = useState('');
+  const [newHolidayKind, setNewHolidayKind] = useState<HolidayKind>('public_holiday');
+
+  function addHoliday() {
+    if (!newHolidayDate) return;
+    onAddHoliday(newHolidayDate, newHolidayKind);
+    setNewHolidayDate('');
   }
 
   function addBlock() {
@@ -228,6 +252,49 @@ export default function SettingsPanel({
               placeholder="예: 형틀목공팀"
             />
             <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm" onClick={addTeam}>
+              추가
+            </button>
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <h3 className="text-sm font-semibold text-zinc-700">휴일 관리</h3>
+          <p className="text-xs text-zinc-500">
+            공휴일·대체휴일·임시공휴일·휴가를 등록하면 타설(토·일·공휴일 금지), 갱폼(일·공휴일 금지) 등 휴일 규칙에
+            자동 반영됩니다. 휴가는 회사에서 지정한 휴무일을 공휴일과 같은 방식으로 반영할 때 사용합니다.
+          </p>
+          <div className="flex flex-col gap-1">
+            {[...holidays]
+              .filter((h) => h.kind !== 'sunday')
+              .sort((a, b) => a.date.localeCompare(b.date))
+              .map((h) => (
+                <div key={h.date} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1">
+                  <span className="flex-1">{h.date}</span>
+                  <span className="text-xs text-zinc-500">{HOLIDAY_KIND_LABEL[h.kind]}</span>
+                  <button className="text-xs text-red-600" onClick={() => onRemoveHoliday(h.date)}>
+                    삭제
+                  </button>
+                </div>
+              ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              className="border border-zinc-300 rounded px-2 py-1 text-sm"
+              value={newHolidayDate}
+              onChange={(e) => setNewHolidayDate(e.target.value)}
+            />
+            <select
+              className="border border-zinc-300 rounded px-2 py-1 text-sm"
+              value={newHolidayKind}
+              onChange={(e) => setNewHolidayKind(e.target.value as HolidayKind)}
+            >
+              <option value="public_holiday">공휴일</option>
+              <option value="substitute_holiday">대체휴일</option>
+              <option value="temporary_holiday">임시공휴일</option>
+              <option value="vacation">휴가</option>
+            </select>
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm" onClick={addHoliday}>
               추가
             </button>
           </div>

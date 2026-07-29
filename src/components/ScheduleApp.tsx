@@ -31,6 +31,7 @@ import {
   DateShiftRecord,
   DirectLaborEntry,
   Holiday,
+  HolidayKind,
   ProcessInstance,
   ProcessTemplate,
   SiteInfo,
@@ -445,6 +446,14 @@ export default function ScheduleApp() {
 
   function handleChangeBlockRemark(blockId: string, text: string) {
     setBlocks((cur) => cur.map((b) => (b.id === blockId ? { ...b, remark: text } : b)));
+  }
+
+  function handleAddHoliday(date: ISODate, kind: HolidayKind) {
+    setHolidays((cur) => (cur.some((h) => h.date === date) ? cur : [...cur, { date, kind }]));
+  }
+
+  function handleRemoveHoliday(date: ISODate) {
+    setHolidays((cur) => cur.filter((h) => h.date !== date));
   }
 
   // 동을 지우면 그 동에 딸린 공정/이동이력/직영작업까지 같이 지운다. 그냥 blocks에서만
@@ -944,6 +953,9 @@ export default function ScheduleApp() {
           crewTeams={crewTeams}
           onAddCrewTeam={handleAddCrewTeam}
           onRemoveCrewTeam={handleRemoveCrewTeam}
+          holidays={holidays}
+          onAddHoliday={handleAddHoliday}
+          onRemoveHoliday={handleRemoveHoliday}
           lastSavedAt={lastSavedAt}
           syncError={syncError}
         />
