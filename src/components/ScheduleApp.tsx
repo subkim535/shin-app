@@ -10,8 +10,8 @@ import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
 import {
   collidingProcesses,
   generateBaseFloorSequence,
-  generateFromTemplate,
   generateRepeatingFloors,
+  generateRepeatingFromTemplate,
   isKnownType,
   moveMainProcess,
   moveSubProcess,
@@ -284,7 +284,14 @@ export default function ScheduleApp() {
 
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
-  const [genFloorForm, setGenFloorForm] = useState<{ blockId: string; floor: string; startDate: ISODate; templateId: string } | null>(
+  const [genFloorForm, setGenFloorForm] = useState<{
+    blockId: string;
+    floor: string;
+    startDate: ISODate;
+    templateId: string;
+    repeatCount: string;
+    skipOptional: boolean;
+  } | null>(
     null,
   );
 
@@ -511,7 +518,10 @@ export default function ScheduleApp() {
     } else {
       const template = templates.find((t) => t.id === genFloorForm.templateId);
       if (!template) return;
-      generated = generateFromTemplate(template, genFloorForm.blockId, genFloorForm.startDate);
+      const repeatCount = Math.max(1, Number(genFloorForm.repeatCount) || 1);
+      generated = generateRepeatingFromTemplate(template, genFloorForm.blockId, genFloorForm.startDate, holidays, repeatCount, {
+        skipOptional: genFloorForm.skipOptional,
+      });
     }
     setProcesses((cur) => recomputeConflicts([...cur, ...generated]));
     setGenFloorForm(null);
@@ -552,7 +562,14 @@ export default function ScheduleApp() {
           <button
             className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
             onClick={() =>
-              setGenFloorForm({ blockId: blocks[0]?.id ?? '', floor: '16F', startDate: todayISO(), templateId: 'ground' })
+              setGenFloorForm({
+                blockId: blocks[0]?.id ?? '',
+                floor: '16F',
+                startDate: todayISO(),
+                templateId: 'ground',
+                repeatCount: '1',
+                skipOptional: false,
+              })
             }
             disabled={blocks.length === 0}
           >
@@ -592,7 +609,14 @@ export default function ScheduleApp() {
             <button
               className="px-3 py-1 rounded border border-zinc-300"
               onClick={() =>
-                setGenFloorForm({ blockId: selectedProcess.blockId, floor: '16F', startDate: selectedProcess.date, templateId: 'ground' })
+                setGenFloorForm({
+                  blockId: selectedProcess.blockId,
+                  floor: '16F',
+                  startDate: selectedProcess.date,
+                  templateId: 'ground',
+                  repeatCount: '1',
+                  skipOptional: false,
+                })
               }
             >
               이 동에 기준층 생성
@@ -640,6 +664,26 @@ export default function ScheduleApp() {
                 value={genFloorForm.floor}
                 onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, floor: e.target.value } : cur))}
               />
+            </>
+          )}
+          {genFloorForm.templateId !== 'ground' && (
+            <>
+              <span>반복횟수:</span>
+              <input
+                type="number"
+                min="1"
+                className="border border-zinc-300 rounded px-2 py-1 w-16"
+                value={genFloorForm.repeatCount}
+                onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, repeatCount: e.target.value } : cur))}
+              />
+              <label className="flex items-center gap-1 text-xs">
+                <input
+                  type="checkbox"
+                  checked={genFloorForm.skipOptional}
+                  onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, skipOptional: e.target.checked } : cur))}
+                />
+                필요시 단계 제외
+              </label>
             </>
           )}
           <span>시작일:</span>

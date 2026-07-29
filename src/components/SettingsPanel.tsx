@@ -45,8 +45,10 @@ export default function SettingsPanel({
   const [newBlockInfo, setNewBlockInfo] = useState('');
 
   const [templateName, setTemplateName] = useState('');
-  const [templateSteps, setTemplateSteps] = useState<string[]>([]);
+  const [templateSteps, setTemplateSteps] = useState<{ name: string; durationDays: number; optional: boolean }[]>([]);
   const [stepInput, setStepInput] = useState('');
+  const [stepDuration, setStepDuration] = useState('1');
+  const [stepOptional, setStepOptional] = useState(false);
 
   const [newTeamName, setNewTeamName] = useState('');
 
@@ -68,8 +70,11 @@ export default function SettingsPanel({
   function addStep() {
     const name = stepInput.trim();
     if (!name) return;
-    setTemplateSteps((s) => [...s, name]);
+    const durationDays = Math.max(1, Number(stepDuration) || 1);
+    setTemplateSteps((s) => [...s, { name, durationDays, optional: stepOptional }]);
     setStepInput('');
+    setStepDuration('1');
+    setStepOptional(false);
   }
 
   function removeStep(idx: number) {
@@ -92,7 +97,12 @@ export default function SettingsPanel({
     onAddTemplate({
       id: crypto.randomUUID(),
       name,
-      steps: templateSteps.map((s, i) => ({ code: `CUSTOM_${name}_${i}_${s}`.replace(/\s+/g, '_'), name: s })),
+      steps: templateSteps.map((s, i) => ({
+        code: `CUSTOM_${name}_${i}_${s.name}`.replace(/\s+/g, '_'),
+        name: s.name,
+        durationDays: s.durationDays,
+        optional: s.optional || undefined,
+      })),
     });
     setTemplateName('');
     setTemplateSteps([]);
@@ -254,7 +264,11 @@ export default function SettingsPanel({
               {templateSteps.map((s, idx) => (
                 <div key={idx} className="flex items-center gap-2 text-xs">
                   <span className="w-4 text-zinc-400">{idx + 1}</span>
-                  <span className="flex-1">{s}</span>
+                  <span className="flex-1">
+                    {s.name}
+                    {s.optional && <span className="text-zinc-400"> (필요시)</span>}
+                  </span>
+                  <span className="text-zinc-400 shrink-0">{s.durationDays}일</span>
                   <button onClick={() => moveStep(idx, 'up')} disabled={idx === 0}>
                     ▲
                   </button>
@@ -277,6 +291,18 @@ export default function SettingsPanel({
                 }}
                 placeholder="공정 단계 이름 (예: 터파기)"
               />
+              <input
+                type="number"
+                min="1"
+                className="border border-zinc-300 rounded px-2 py-1 text-sm w-14 shrink-0"
+                value={stepDuration}
+                onChange={(e) => setStepDuration(e.target.value)}
+                placeholder="일수"
+              />
+              <label className="flex items-center gap-1 text-xs shrink-0">
+                <input type="checkbox" checked={stepOptional} onChange={(e) => setStepOptional(e.target.checked)} />
+                필요시
+              </label>
               <button className="px-2 py-1 rounded border border-zinc-300 text-sm" onClick={addStep}>
                 단계 추가
               </button>

@@ -31,6 +31,8 @@ export interface SiteInfo {
 export interface TemplateStepDef {
   code: string;
   name: string;
+  durationDays: number;
+  optional?: boolean; // 상황에 따라 생성 시 빼도 되는 단계 (예: 필요시에만 넣는 시스템동바리)
 }
 
 export interface ProcessTemplate {

@@ -148,14 +148,43 @@ export function generateRepeatingFloors(
  * 아직 붙이지 않았다 (원 기획서에도 "추후 별도 설계"로 남겨진 영역). 자유공정처럼
  * 각 스텝을 자유롭게 이동할 수 있는 수준으로만 우선 지원한다.
  */
-export function generateFromTemplate(template: ProcessTemplate, blockId: string, startDate: ISODate): ProcessInstance[] {
+export function generateFromTemplate(
+  template: ProcessTemplate,
+  blockId: string,
+  startDate: ISODate,
+  holidays: Holiday[] = [],
+  opts: { skipOptional?: boolean } = {},
+): ProcessInstance[] {
   const cycleId = crypto.randomUUID();
   const result: ProcessInstance[] = [];
   let cursor = startDate;
   for (const step of template.steps) {
+    if (step.optional && opts.skipOptional) continue;
+    cursor = nextWorkableDate(step.code, cursor, holidays);
     const main = makeProcess(blockId, step.code, cursor, cycleId, { customLabel: step.name });
     result.push(main);
-    cursor = addDays(cursor, 1);
+    cursor = addDays(cursor, Math.max(1, step.durationDays || 1));
+  }
+  return result;
+}
+
+// 기초/지하층처럼 같은 템플릿 사이클을 여러 번(예: 지하 B4~B1) 이어서 반복 생성한다.
+// 각 사이클은 이전 사이클의 마지막 단계 다음 날부터 시작한다.
+export function generateRepeatingFromTemplate(
+  template: ProcessTemplate,
+  blockId: string,
+  startDate: ISODate,
+  holidays: Holiday[],
+  repeatCount: number,
+  opts: { skipOptional?: boolean } = {},
+): ProcessInstance[] {
+  const result: ProcessInstance[] = [];
+  let cursor = startDate;
+  for (let i = 0; i < Math.max(1, repeatCount); i++) {
+    const cycle = generateFromTemplate(template, blockId, cursor, holidays, opts);
+    result.push(...cycle);
+    const lastDate = cycle[cycle.length - 1]?.date ?? cursor;
+    cursor = addDays(lastDate, 1);
   }
   return result;
 }
