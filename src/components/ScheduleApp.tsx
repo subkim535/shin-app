@@ -5,6 +5,7 @@ import DailyReportModal from '@/components/DailyReportModal';
 import GanttChart from '@/components/GanttChart';
 import HistoryPanel from '@/components/HistoryPanel';
 import SettingsPanel from '@/components/SettingsPanel';
+import TeamViewPanel from '@/components/TeamViewPanel';
 import { addDays, addMonths, diffDays, endOfMonth, ISODate, mondayOfWeek, todayISO } from '@/lib/domain/dateUtils';
 import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
 import {
@@ -297,6 +298,7 @@ export default function ScheduleApp() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [teamViewOpen, setTeamViewOpen] = useState(false);
   const [noteModal, setNoteModal] = useState<{ blockId: string; date: ISODate } | null>(null);
   const [reasonPopup, setReasonPopup] = useState<{ label: string; reason: string; path?: string } | null>(null);
   const [crewModal, setCrewModal] = useState<{ processId: string; team: string; headcount: string; date: string } | null>(
@@ -580,6 +582,12 @@ export default function ScheduleApp() {
             onClick={() => setHistoryOpen(true)}
           >
             변경이력
+          </button>
+          <button
+            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+            onClick={() => setTeamViewOpen(true)}
+          >
+            투입인원
           </button>
           <button
             className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
@@ -905,6 +913,15 @@ export default function ScheduleApp() {
           onClose={() => setHistoryOpen(false)}
           changeHistory={changeHistory}
           dateShiftHistory={dateShiftHistory}
+          processes={processes}
+          blocks={blocks}
+        />
+      )}
+
+      {teamViewOpen && (
+        <TeamViewPanel
+          onClose={() => setTeamViewOpen(false)}
+          crewTeams={crewTeams}
           processes={processes}
           blocks={blocks}
         />
