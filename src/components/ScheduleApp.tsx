@@ -333,11 +333,52 @@ export default function ScheduleApp() {
     setReasonInput('');
   }
 
+  // 다른 동으로 드래그했을 때, 그 공정이 자기 사이클의 첫 주요공정이면 이동이 아니라
+  // "복사"로 처리한다 — 같은 순서(먹메김/철근/거푸집 등)를 매번 새로 입력하지 않고
+  // 한 동에서 이미 만든 전체 사이클을 다른 동에 그대로 복제해 넣기 위한 기능이다.
+  // 원본 동의 공정은 그대로 남고, 대상 동에 새 cycleId로 복사본이 생성된다.
+  function handleCrossBlockCopy(proc: ProcessInstance, targetBlockId: string, targetDate: ISODate) {
+    const cycleMembers = processes.filter((p) => p.cycleId === proc.cycleId);
+    const categoryOf = (p: ProcessInstance) => {
+      const def = PROCESS_TYPE_MAP[p.typeCode];
+      return def?.category ?? (isKnownType(p.typeCode) ? 'sub' : 'main');
+    };
+    const mainMembers = cycleMembers.filter((p) => categoryOf(p) === 'main');
+    const earliestMain = mainMembers.reduce(
+      (min, p) => (!min || p.date < min.date ? p : min),
+      null as ProcessInstance | null,
+    );
+
+    if (categoryOf(proc) !== 'main' || !earliestMain || earliestMain.id !== proc.id) {
+      setWarning('다른 동으로는 사이클의 첫 주요공정만 드래그해 복사할 수 있습니다.');
+      return;
+    }
+
+    const deltaDays = diffDays(proc.date, targetDate);
+    const newCycleId = crypto.randomUUID();
+    const idMap = new Map<string, string>();
+    for (const p of cycleMembers) idMap.set(p.id, crypto.randomUUID());
+    const copied: ProcessInstance[] = cycleMembers.map((p) => ({
+      ...p,
+      id: idMap.get(p.id)!,
+      blockId: targetBlockId,
+      date: addDays(p.date, deltaDays),
+      cycleId: newCycleId,
+      cellOrder: undefined,
+      conflictGroup: undefined,
+      conflictSeq: undefined,
+      crew: undefined,
+      linkedMainProcessId: p.linkedMainProcessId ? idMap.get(p.linkedMainProcessId) : undefined,
+    }));
+    setProcesses((cur) => recomputeConflicts([...cur, ...copied]));
+    setWarning(null);
+  }
+
   function handleDropProcess(processId: string, blockId: string, date: ISODate) {
     const proc = processes.find((p) => p.id === processId);
     if (!proc) return;
     if (blockId !== proc.blockId) {
-      setWarning('주요공정/보조공정은 같은 행(동)에서 좌우로만 이동할 수 있습니다.');
+      handleCrossBlockCopy(proc, blockId, date);
       return;
     }
     if (date === proc.date) return;
