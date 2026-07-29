@@ -36,6 +36,7 @@ interface GanttChartProps {
   onDropProcess: (processId: string, blockId: string, date: ISODate) => void;
   onDropHeader: (fromDate: ISODate, toDate: ISODate) => void;
   onReorderCellOrder: (processId: string, direction: 'up' | 'down') => void;
+  onToggleActualDone: (processId: string) => void;
 }
 
 type DragState =
@@ -74,6 +75,7 @@ export default function GanttChart({
   onDropProcess,
   onDropHeader,
   onReorderCellOrder,
+  onToggleActualDone,
 }: GanttChartProps) {
   const dates = useMemo(() => datesInRange(viewStartDate, dayCount), [viewStartDate, dayCount]);
   const dateIndex = useMemo(() => new Map(dates.map((d, i) => [d, i])), [dates]);
@@ -456,8 +458,27 @@ export default function GanttChart({
             'cursor-grab active:cursor-grabbing',
             selected ? 'ring-2 ring-indigo-600' : '',
             isDragSource ? 'opacity-50' : '',
+            p.actualDone ? 'line-through decoration-2' : '',
           ].join(' ')}
         >
+          <span
+            role="checkbox"
+            aria-checked={!!p.actualDone}
+            tabIndex={0}
+            title="실제 완료 여부"
+            data-testid="actual-done-checkbox"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleActualDone(p.id);
+            }}
+            className={[
+              'inline-flex items-center justify-center w-3 h-3 mr-1 rounded-sm border align-middle shrink-0',
+              p.actualDone ? 'bg-emerald-600 border-emerald-700 text-white' : 'border-current bg-white/60',
+            ].join(' ')}
+          >
+            {p.actualDone ? '✓' : ''}
+          </span>
           {def?.showFloorLabel && p.floorLabel ? `${p.floorLabel} ` : ''}
           {label}
           {p.conflictSeq ? <sup className="ml-0.5">{p.conflictSeq}</sup> : null}

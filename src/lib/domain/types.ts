@@ -98,6 +98,7 @@ export interface ProcessInstance {
   conflictSeq?: number;
   cellOrder?: number; // 같은 동·같은 날짜에 서로 다른 주요공정이 함께 놓였을 때의 수동 작업 순서
   crew?: CrewAssignment; // 작업팀 + 투입인원
+  actualDone?: boolean; // 계획(예정) 대비 실제 완료 여부 체크
 }
 
 export interface ChangeRecord {

@@ -448,6 +448,10 @@ export default function ScheduleApp() {
     setBlocks((cur) => cur.map((b) => (b.id === blockId ? { ...b, remark: text } : b)));
   }
 
+  function handleToggleActualDone(processId: string) {
+    setProcesses((cur) => cur.map((p) => (p.id === processId ? { ...p, actualDone: !p.actualDone } : p)));
+  }
+
   function handleAddHoliday(date: ISODate, kind: HolidayKind) {
     setHolidays((cur) => (cur.some((h) => h.date === date) ? cur : [...cur, { date, kind }]));
   }
@@ -779,6 +783,7 @@ export default function ScheduleApp() {
         onDropProcess={handleDropProcess}
         onDropHeader={handleDropHeader}
         onReorderCellOrder={handleReorderCellOrder}
+        onToggleActualDone={handleToggleActualDone}
       />
 
       <p className="text-xs text-zinc-500">
