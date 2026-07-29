@@ -7,7 +7,7 @@ import { processLabel } from '@/lib/domain/schedule';
 import { Block, ChangeRecord, Holiday, ProcessInstance } from '@/lib/domain/types';
 
 const HEADER_W = 96;
-const CELL_W = 96;
+const CELL_W = 112;
 const REMARK_W = 140;
 const HEADER_H = 48;
 const ROW_MAIN_H = 52;
@@ -317,7 +317,8 @@ export default function GanttChart({
     }[] = [];
     for (const info of infos) {
       if (info.originCol === undefined) continue;
-      const hasArrow = info.destCol !== undefined && !info.isOneDay;
+      // 왼쪽(이전 날짜)으로 당긴 이동은 화살표를 그리지 않는다 — 고스트 배지만 남긴다.
+      const hasArrow = info.destCol !== undefined && !info.isOneDay && !info.isBackward;
       const footprintStart = hasArrow ? Math.min(info.originCol, info.destCol!) : info.originCol;
       const footprintEnd = hasArrow ? Math.max(info.originCol, info.destCol!) : info.originCol;
       const laneKey = `${info.rowIndex}_${info.rowType}`;
