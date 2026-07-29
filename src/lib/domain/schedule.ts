@@ -265,6 +265,51 @@ export function collidingProcesses(processes: ProcessInstance[], moved: ProcessI
 }
 
 /**
+ * moveMainProcess가 실제로 적용하기 전에, 후속 연쇄 재계산까지 미리 시뮬레이션해서
+ * 그 결과 다른 사이클의 주요공정과 겹치게 되는 날짜가 있는지 확인한다. 드래그한
+ * 공정 자체의 목적지 칸만 보는 previewMainMove와 달리, 뒤따라 밀리는 후속공정들이
+ * 조용히 다른 공정과 겹쳐버리는 경우까지 미리 경고하기 위한 것이다.
+ */
+export function previewCascadeCollisions(
+  processes: ProcessInstance[],
+  processId: string,
+  newDate: ISODate,
+  holidays: Holiday[],
+): { date: ISODate; label: string }[] {
+  const moved = processes.find((p) => p.id === processId);
+  if (!moved) return [];
+  const def = PROCESS_TYPE_MAP[moved.typeCode];
+  if (!def || def.category !== 'main') return [];
+
+  const seqIndex = MAIN_SEQUENCE_CODES.indexOf(moved.typeCode);
+  const laterMainCodes = MAIN_SEQUENCE_CODES.slice(seqIndex + 1);
+  const blockId = moved.blockId;
+  const cycleId = moved.cycleId;
+
+  // 이 사이클 안에서 새로 배치될(=자기 자신들) 주요공정 id는 겹침 대상에서 제외한다.
+  const ownMainIds = new Set(
+    processes
+      .filter((p) => p.blockId === blockId && p.cycleId === cycleId && (p.id === processId || laterMainCodes.includes(p.typeCode)))
+      .map((p) => p.id),
+  );
+
+  const collisions: { date: ISODate; label: string }[] = [];
+  let cursor = newDate;
+  [moved.typeCode, ...laterMainCodes].forEach((code, i) => {
+    const date =
+      i === 0 && !isBlockedForType(code, cursor, holidays, { allowSunday: true })
+        ? cursor
+        : nextWorkableDate(code, cursor, holidays);
+    const others = processes.filter(
+      (p) => p.blockId === blockId && p.date === date && !ownMainIds.has(p.id) && PROCESS_TYPE_MAP[p.typeCode]?.category === 'main',
+    );
+    for (const o of others) collisions.push({ date, label: processLabel(o) });
+    cursor = addDays(date, 1);
+  });
+  return collisions;
+}
+
+/**
  * 주요공정 이동: 이동한 공정만 change_history에 남기고, 후속 주요/보조공정은
  * 조용히 재계산한다 (문서 2.6: "후속공정 전체 흔적을 남기지 않고, 사용자가
  * 직접 이동한 기준 공정 중심으로 표시"). 목적지 셀에 다른 주요공정이 이미 있어도

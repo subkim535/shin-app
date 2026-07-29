@@ -16,6 +16,7 @@ import {
   isKnownType,
   moveMainProcess,
   moveSubProcess,
+  previewCascadeCollisions,
   previewMainMove,
   processLabel,
   recomputeConflicts,
@@ -599,6 +600,10 @@ export default function ScheduleApp() {
   const pendingProcess = pendingDrop ? processes.find((p) => p.id === pendingDrop.processId) : null;
   const collidingList =
     pendingDrop && pendingProcess ? collidingProcesses(processes, pendingProcess, pendingDrop.date) : [];
+  const cascadeCollisions =
+    pendingDrop && pendingProcess && pendingDrop.kind === 'main'
+      ? previewCascadeCollisions(processes, pendingDrop.processId, pendingDrop.date, holidays)
+      : [];
 
   return (
     <div className="min-h-screen bg-zinc-50 p-6 flex flex-col gap-4">
@@ -662,6 +667,14 @@ export default function ScheduleApp() {
           >
             설정
           </button>
+          <a
+            href="https://noreal.juankim.org/login?redirect=%2Fdashboard"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+          >
+            다른 시스템 열기 ↗
+          </a>
         </div>
       </header>
 
@@ -847,6 +860,17 @@ export default function ScheduleApp() {
             <strong>{blockNames[pendingDrop.blockId]}</strong> {processLabel(pendingProcess)} ({pendingProcess.date}) →{' '}
             {pendingDrop.date}로 이동
           </p>
+          {cascadeCollisions.length > 0 && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+              ⚠ 이 이동으로 후속공정이 밀리면서 주요공정이 겹치게 됩니다:{' '}
+              {cascadeCollisions.map((c, i) => (
+                <span key={i}>
+                  {i > 0 && ', '}
+                  {c.date} {c.label}
+                </span>
+              ))}
+            </p>
+          )}
           <input
             autoFocus
             className="border border-zinc-300 rounded px-2 py-1 text-sm"
