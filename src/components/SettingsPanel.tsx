@@ -2,7 +2,16 @@
 
 import { useState } from 'react';
 import { ISODate } from '@/lib/domain/dateUtils';
-import { Block, CrewTeam, FacilityType, Holiday, HolidayKind, ProcessTemplate, SiteInfo } from '@/lib/domain/types';
+import {
+  Block,
+  CrewTeam,
+  FacilityType,
+  Holiday,
+  HolidayKind,
+  ProcessTemplate,
+  SiteInfo,
+  TemplateStepDef,
+} from '@/lib/domain/types';
 
 const HOLIDAY_KIND_LABEL: Record<HolidayKind, string> = {
   sunday: '일요일',
@@ -11,6 +20,10 @@ const HOLIDAY_KIND_LABEL: Record<HolidayKind, string> = {
   temporary_holiday: '임시공휴일',
   vacation: '휴가',
 };
+
+// 문서 기획서의 대공종 분류 — 각 이름을 그대로 템플릿 이름으로 사용한다.
+// 지상 기본층(갱폼~타설)은 별도 전용 엔진이라 여기 포함하지 않는다.
+const TEMPLATE_CATEGORIES = ['기초공사', '지하층공사', '지상 PIT층', '주차장', '부속건물', '옥탑'];
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -22,7 +35,7 @@ interface SettingsPanelProps {
   onChangeBlockType: (id: string, facilityType: FacilityType) => void;
   onChangeBlockInfo: (id: string, info: string) => void;
   templates: ProcessTemplate[];
-  onAddTemplate: (template: ProcessTemplate) => void;
+  onSaveTemplateSteps: (categoryName: string, steps: TemplateStepDef[]) => void;
   onRemoveTemplate: (id: string) => void;
   crewTeams: CrewTeam[];
   onAddCrewTeam: (name: string) => void;
@@ -44,7 +57,7 @@ export default function SettingsPanel({
   onChangeBlockType,
   onChangeBlockInfo,
   templates,
-  onAddTemplate,
+  onSaveTemplateSteps,
   onRemoveTemplate,
   crewTeams,
   onAddCrewTeam,
@@ -59,11 +72,13 @@ export default function SettingsPanel({
   const [newBlockType, setNewBlockType] = useState<FacilityType>('building');
   const [newBlockInfo, setNewBlockInfo] = useState('');
 
-  const [templateName, setTemplateName] = useState('');
-  const [templateSteps, setTemplateSteps] = useState<{ name: string; durationDays: number; optional: boolean }[]>([]);
+  const [activeCategory, setActiveCategory] = useState(TEMPLATE_CATEGORIES[0]);
   const [stepInput, setStepInput] = useState('');
   const [stepDuration, setStepDuration] = useState('1');
   const [stepOptional, setStepOptional] = useState(false);
+
+  const activeTemplate = templates.find((t) => t.name === activeCategory);
+  const activeSteps = activeTemplate?.steps ?? [];
 
   const [newTeamName, setNewTeamName] = useState('');
 
@@ -95,41 +110,40 @@ export default function SettingsPanel({
     const name = stepInput.trim();
     if (!name) return;
     const durationDays = Math.max(1, Number(stepDuration) || 1);
-    setTemplateSteps((s) => [...s, { name, durationDays, optional: stepOptional }]);
+    const code = `CUSTOM_${activeCategory}_${activeSteps.length}_${name}`.replace(/\s+/g, '_');
+    onSaveTemplateSteps(activeCategory, [
+      ...activeSteps,
+      { code, name, durationDays, optional: stepOptional || undefined },
+    ]);
     setStepInput('');
     setStepDuration('1');
     setStepOptional(false);
   }
 
+  function updateStep(idx: number, patch: Partial<TemplateStepDef>) {
+    onSaveTemplateSteps(
+      activeCategory,
+      activeSteps.map((s, i) => (i === idx ? { ...s, ...patch } : s)),
+    );
+  }
+
   function removeStep(idx: number) {
-    setTemplateSteps((s) => s.filter((_, i) => i !== idx));
+    onSaveTemplateSteps(
+      activeCategory,
+      activeSteps.filter((_, i) => i !== idx),
+    );
   }
 
   function moveStep(idx: number, dir: 'up' | 'down') {
-    setTemplateSteps((s) => {
-      const next = [...s];
-      const target = dir === 'up' ? idx - 1 : idx + 1;
-      if (target < 0 || target >= next.length) return s;
-      [next[idx], next[target]] = [next[target], next[idx]];
-      return next;
-    });
+    const target = dir === 'up' ? idx - 1 : idx + 1;
+    if (target < 0 || target >= activeSteps.length) return;
+    const next = [...activeSteps];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    onSaveTemplateSteps(activeCategory, next);
   }
 
-  function saveTemplate() {
-    const name = templateName.trim();
-    if (!name || templateSteps.length === 0) return;
-    onAddTemplate({
-      id: crypto.randomUUID(),
-      name,
-      steps: templateSteps.map((s, i) => ({
-        code: `CUSTOM_${name}_${i}_${s.name}`.replace(/\s+/g, '_'),
-        name: s.name,
-        durationDays: s.durationDays,
-        optional: s.optional || undefined,
-      })),
-    });
-    setTemplateName('');
-    setTemplateSteps([]);
+  function resetCategory() {
+    if (activeTemplate) onRemoveTemplate(activeTemplate.id);
   }
 
   return (
@@ -304,51 +318,64 @@ export default function SettingsPanel({
           <h3 className="text-sm font-semibold text-zinc-700">공정 템플릿 (기초·지하층 등)</h3>
           <p className="text-xs text-zinc-500">
             지상층(갱폼~타설)은 기존 방식 그대로이고, 여기서는 기초·지하층처럼 순서가 다른 구간의 공정 순서를
-            직접 정의합니다. 이 템플릿으로 만든 공정은 후속 자동 재계산 없이 자유롭게 이동합니다.
+            공사종류별로 직접 정의합니다. 여기서 만든 공정은 후속 자동 재계산 없이 자유롭게 이동합니다.
           </p>
-          <div className="flex flex-col gap-1">
-            {templates.map((t) => (
-              <div key={t.id} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1">
-                <span className="flex-1">
-                  <strong>{t.name}</strong>
-                  <span className="text-zinc-500"> — {t.steps.map((s) => s.name).join(' → ')}</span>
+
+          <div className="flex flex-wrap gap-1 border-b border-zinc-200 pb-2">
+            {TEMPLATE_CATEGORIES.map((c) => (
+              <button
+                key={c}
+                onClick={() => setActiveCategory(c)}
+                className={[
+                  'px-2 py-1 rounded text-xs',
+                  activeCategory === c ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200',
+                ].join(' ')}
+              >
+                {c}
+                {templates.some((t) => t.name === c) ? '' : ' (미설정)'}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            {activeSteps.length === 0 && (
+              <p className="text-xs text-zinc-400">아직 등록된 단계가 없습니다. 아래에서 단계를 추가해주세요.</p>
+            )}
+            {activeSteps.map((s, idx) => (
+              <div key={idx} className="flex items-center gap-2 text-xs border border-zinc-200 rounded px-2 py-1.5">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 shrink-0 font-semibold">
+                  {idx + 1}
                 </span>
-                <button className="text-xs text-red-600" onClick={() => onRemoveTemplate(t.id)}>
+                <span className="flex-1 min-w-0 truncate">{s.name}</span>
+                <input
+                  type="number"
+                  min="1"
+                  className="border border-zinc-300 rounded px-1 py-0.5 text-xs w-12 shrink-0"
+                  value={s.durationDays}
+                  onChange={(e) => updateStep(idx, { durationDays: Math.max(1, Number(e.target.value) || 1) })}
+                />
+                <span className="text-zinc-400 shrink-0">일</span>
+                <label className="flex items-center gap-0.5 text-zinc-500 shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={!!s.optional}
+                    onChange={(e) => updateStep(idx, { optional: e.target.checked || undefined })}
+                  />
+                  필요시
+                </label>
+                <button onClick={() => moveStep(idx, 'up')} disabled={idx === 0}>
+                  ▲
+                </button>
+                <button onClick={() => moveStep(idx, 'down')} disabled={idx === activeSteps.length - 1}>
+                  ▼
+                </button>
+                <button className="text-red-600" onClick={() => removeStep(idx)}>
                   삭제
                 </button>
               </div>
             ))}
-          </div>
 
-          <div className="border border-zinc-200 rounded p-2 flex flex-col gap-2">
-            <input
-              className="border border-zinc-300 rounded px-2 py-1 text-sm"
-              value={templateName}
-              onChange={(e) => setTemplateName(e.target.value)}
-              placeholder="템플릿 이름 (예: 기초, 지하층)"
-            />
-            <div className="flex flex-col gap-1">
-              {templateSteps.map((s, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-xs">
-                  <span className="w-4 text-zinc-400">{idx + 1}</span>
-                  <span className="flex-1">
-                    {s.name}
-                    {s.optional && <span className="text-zinc-400"> (필요시)</span>}
-                  </span>
-                  <span className="text-zinc-400 shrink-0">{s.durationDays}일</span>
-                  <button onClick={() => moveStep(idx, 'up')} disabled={idx === 0}>
-                    ▲
-                  </button>
-                  <button onClick={() => moveStep(idx, 'down')} disabled={idx === templateSteps.length - 1}>
-                    ▼
-                  </button>
-                  <button className="text-red-600" onClick={() => removeStep(idx)}>
-                    삭제
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 pt-1 border-t border-zinc-200">
               <input
                 className="border border-zinc-300 rounded px-2 py-1 text-sm flex-1"
                 value={stepInput}
@@ -374,13 +401,12 @@ export default function SettingsPanel({
                 단계 추가
               </button>
             </div>
-            <button
-              className="self-end px-3 py-1 rounded bg-indigo-600 text-white text-sm disabled:opacity-40"
-              onClick={saveTemplate}
-              disabled={!templateName.trim() || templateSteps.length === 0}
-            >
-              템플릿 저장
-            </button>
+
+            {activeTemplate && (
+              <button className="self-end text-xs text-red-600" onClick={resetCategory}>
+                이 공사종류 전체 초기화
+              </button>
+            )}
           </div>
         </section>
       </div>

@@ -35,6 +35,7 @@ import {
   ProcessInstance,
   ProcessTemplate,
   SiteInfo,
+  TemplateStepDef,
 } from '@/lib/domain/types';
 import { loadState, saveState, SITE_KEY, stableStringify, subscribeState } from '@/lib/supabase/state';
 
@@ -446,6 +447,18 @@ export default function ScheduleApp() {
 
   function handleChangeBlockRemark(blockId: string, text: string) {
     setBlocks((cur) => cur.map((b) => (b.id === blockId ? { ...b, remark: text } : b)));
+  }
+
+  // 설정의 공정 템플릿 탭에서 쓴다 — 공사종류 이름을 템플릿 이름으로 그대로 매칭해서
+  // 있으면 단계를 갱신하고 없으면 새로 만든다.
+  function handleSaveTemplateSteps(categoryName: string, steps: TemplateStepDef[]) {
+    setTemplates((cur) => {
+      const existing = cur.find((t) => t.name === categoryName);
+      if (existing) {
+        return cur.map((t) => (t.id === existing.id ? { ...t, steps } : t));
+      }
+      return [...cur, { id: crypto.randomUUID(), name: categoryName, steps }];
+    });
   }
 
   function handleToggleActualDone(processId: string) {
@@ -953,7 +966,7 @@ export default function ScheduleApp() {
           }
           onChangeBlockInfo={(id, info) => setBlocks((cur) => cur.map((b) => (b.id === id ? { ...b, info } : b)))}
           templates={templates}
-          onAddTemplate={(t) => setTemplates((cur) => [...cur, t])}
+          onSaveTemplateSteps={handleSaveTemplateSteps}
           onRemoveTemplate={(id) => setTemplates((cur) => cur.filter((t) => t.id !== id))}
           crewTeams={crewTeams}
           onAddCrewTeam={handleAddCrewTeam}
