@@ -408,6 +408,12 @@ export default function ScheduleApp() {
       setWarning(preview.blockedReason);
       return;
     }
+    const cascadeCollisions = previewCascadeCollisions(processes, processId, date, holidays);
+    if (cascadeCollisions.length > 0) {
+      const list = cascadeCollisions.map((c) => `${c.date} ${c.label}`).join(', ');
+      setWarning(`이 이동은 후속공정이 밀리면서 주요공정이 겹치게 되어 이동할 수 없습니다: ${list}`);
+      return;
+    }
     setPendingDrop({ processId, blockId, date, kind: 'main', collisionCount: preview.collisionCount });
     setDropStage(preview.collisionCount >= 2 ? 'threeplus-picker' : 'reason');
   }
@@ -600,10 +606,6 @@ export default function ScheduleApp() {
   const pendingProcess = pendingDrop ? processes.find((p) => p.id === pendingDrop.processId) : null;
   const collidingList =
     pendingDrop && pendingProcess ? collidingProcesses(processes, pendingProcess, pendingDrop.date) : [];
-  const cascadeCollisions =
-    pendingDrop && pendingProcess && pendingDrop.kind === 'main'
-      ? previewCascadeCollisions(processes, pendingDrop.processId, pendingDrop.date, holidays)
-      : [];
 
   return (
     <div className="min-h-screen bg-zinc-50 p-6 flex flex-col gap-4">
@@ -860,17 +862,6 @@ export default function ScheduleApp() {
             <strong>{blockNames[pendingDrop.blockId]}</strong> {processLabel(pendingProcess)} ({pendingProcess.date}) →{' '}
             {pendingDrop.date}로 이동
           </p>
-          {cascadeCollisions.length > 0 && (
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-              ⚠ 이 이동으로 후속공정이 밀리면서 주요공정이 겹치게 됩니다:{' '}
-              {cascadeCollisions.map((c, i) => (
-                <span key={i}>
-                  {i > 0 && ', '}
-                  {c.date} {c.label}
-                </span>
-              ))}
-            </p>
-          )}
           <input
             autoFocus
             className="border border-zinc-300 rounded px-2 py-1 text-sm"
