@@ -9,8 +9,10 @@ import { Block, DirectLaborEntry, ProcessInstance, SiteInfo } from '@/lib/domain
 const DIRECT_LABOR_CATEGORIES = [
   '공사',
   '직영/용역',
+  '신호,유도원',
   '안전',
   '안전시설',
+  '외부보루트',
   '할석·미장',
   '견출',
   '바닥미장',
@@ -26,7 +28,7 @@ interface DailyReportModalProps {
   processes: ProcessInstance[];
   directLabor: DirectLaborEntry[];
   notes: Record<string, string>;
-  onAddDirectLabor: (date: ISODate, category: string, workContent: string, headcount: number) => void;
+  onAddDirectLabor: (date: ISODate, category: string, workContent: string, headcount: number, manager?: string) => void;
   onRemoveDirectLabor: (id: string) => void;
   onClose: () => void;
 }
@@ -70,6 +72,7 @@ export default function DailyReportModal({
   const totalHeadcount = crewHeadcount + directHeadcount;
 
   const [newCategory, setNewCategory] = useState(DIRECT_LABOR_CATEGORIES[0]);
+  const [newManager, setNewManager] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newHeadcount, setNewHeadcount] = useState('');
 
@@ -77,9 +80,26 @@ export default function DailyReportModal({
     const content = newContent.trim();
     const count = Number(newHeadcount);
     if (!content || !Number.isFinite(count) || count <= 0) return;
-    onAddDirectLabor(date, newCategory, content, count);
+    onAddDirectLabor(date, newCategory, content, count, newManager.trim() || undefined);
     setNewContent('');
     setNewHeadcount('');
+  }
+
+  // 직전에 직영 작업이 입력된 날짜를 찾아 그 내용을 오늘 날짜로 그대로 불러온다.
+  const previousLaborDate = useMemo(() => {
+    const pastDates = directLabor.filter((d) => d.date < date).map((d) => d.date);
+    if (pastDates.length === 0) return null;
+    return pastDates.reduce((max, d) => (d > max ? d : max));
+  }, [directLabor, date]);
+  const previousLabor = useMemo(
+    () => (previousLaborDate ? directLabor.filter((d) => d.date === previousLaborDate) : []),
+    [directLabor, previousLaborDate],
+  );
+
+  function loadPreviousDirectLabor() {
+    for (const d of previousLabor) {
+      onAddDirectLabor(date, d.category, d.workContent, d.headcount, d.manager);
+    }
   }
 
   function downloadExcel() {
@@ -107,9 +127,9 @@ export default function DailyReportModal({
     }
     rows.push('');
     rows.push(['직영 작업'].map(csvEscape).join(','));
-    rows.push(['구분', '작업내용', '인원'].map(csvEscape).join(','));
+    rows.push(['구분', '관리자', '작업내용', '인원'].map(csvEscape).join(','));
     for (const d of dayDirectLabor) {
-      rows.push([d.category, d.workContent, String(d.headcount)].map(csvEscape).join(','));
+      rows.push([d.category, d.manager ?? '', d.workContent, String(d.headcount)].map(csvEscape).join(','));
     }
     // 엑셀이 UTF-8 CSV의 한글을 깨뜨리지 않도록 BOM을 붙인다.
     const csv = '﻿' + rows.join('\r\n');
@@ -190,7 +210,18 @@ export default function DailyReportModal({
         </section>
 
         <section className="flex flex-col gap-1">
-          <h3 className="text-sm font-semibold text-zinc-700 print:text-base">직영 작업</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-zinc-700 print:text-base">직영 작업</h3>
+            {previousLabor.length > 0 && (
+              <button
+                className="text-xs px-2 py-0.5 rounded border border-zinc-300 print:hidden"
+                onClick={loadPreviousDirectLabor}
+                title={`${previousLaborDate} 작업 내용을 불러옵니다`}
+              >
+                이전 작업일 불러오기
+              </button>
+            )}
+          </div>
           <p className="text-xs text-zinc-500 print:hidden">공정표에 없는 직영(자체) 인력 작업을 이 날짜에 자유롭게 추가합니다.</p>
           <div className="flex flex-col gap-1">
             {dayDirectLabor.map((d) => (
@@ -200,6 +231,7 @@ export default function DailyReportModal({
               >
                 <span>
                   <span className="text-xs text-zinc-500 print:text-sm">[{d.category}]</span> {d.workContent} · {d.headcount}명
+                  {d.manager && <span className="text-xs text-zinc-500 print:text-sm"> · 관리자 {d.manager}</span>}
                 </span>
                 <button className="text-xs text-red-600 print:hidden" onClick={() => onRemoveDirectLabor(d.id)}>
                   삭제
@@ -219,6 +251,12 @@ export default function DailyReportModal({
                 </option>
               ))}
             </select>
+            <input
+              className="border border-zinc-300 rounded px-2 py-1 text-sm w-20 shrink-0"
+              value={newManager}
+              onChange={(e) => setNewManager(e.target.value)}
+              placeholder="관리자"
+            />
             <input
               className="border border-zinc-300 rounded px-2 py-1 text-sm flex-1"
               value={newContent}

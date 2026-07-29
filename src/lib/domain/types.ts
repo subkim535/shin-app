@@ -66,6 +66,7 @@ export interface DirectLaborEntry {
   category: string; // 구분 (예: 공사, 안전, 견출 등 — DailyReportModal의 프리셋 목록에서 선택)
   workContent: string;
   headcount: number;
+  manager?: string; // 담당 관리자
 }
 
 // Supabase에 JSONB 하나로 저장/동기화하는 전체 상태.

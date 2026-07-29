@@ -37,7 +37,20 @@ import {
 import { loadState, saveState, SITE_KEY, stableStringify, subscribeState } from '@/lib/supabase/state';
 
 // 이동/순연 사유로 자주 쓰는 항목들 — 직접 입력하는 대신 눌러서 바로 넣을 수 있게 한다.
-const REASON_PRESETS = ['우천', '폭염', '폭우', '태풍', '한파', '자재수급 지연', '인력 부족', '민원 발생'];
+const REASON_PRESETS = [
+  '우천',
+  '강풍',
+  '폭염',
+  '폭우',
+  '태풍',
+  '한파',
+  '파업',
+  '검측',
+  '타공정 지연',
+  '자재수급 지연',
+  '인력 부족',
+  '민원 발생',
+];
 
 const INITIAL_BLOCKS: Block[] = [
   { id: 'b1', name: '11동', sortOrder: 1, facilityType: 'building' },
@@ -279,7 +292,9 @@ export default function ScheduleApp() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [noteModal, setNoteModal] = useState<{ blockId: string; date: ISODate } | null>(null);
   const [reasonPopup, setReasonPopup] = useState<{ label: string; reason: string; path?: string } | null>(null);
-  const [crewModal, setCrewModal] = useState<{ processId: string; team: string; headcount: string } | null>(null);
+  const [crewModal, setCrewModal] = useState<{ processId: string; team: string; headcount: string; date: string } | null>(
+    null,
+  );
   const [reportDate, setReportDate] = useState<ISODate | null>(null);
   const [dateChoice, setDateChoice] = useState<ISODate | null>(null);
   const [postponePrompt, setPostponePrompt] = useState<{ date: ISODate; days: string } | null>(null);
@@ -352,13 +367,21 @@ export default function ScheduleApp() {
     const proc = processes.find((p) => p.id === processId);
     const currentTeam = proc?.crew?.team;
     const team = currentTeam && crewTeams.some((t) => t.name === currentTeam) ? currentTeam : crewTeams[0]?.name ?? '';
-    setCrewModal({ processId, team, headcount: proc?.crew ? String(proc.crew.headcount) : '' });
+    setCrewModal({ processId, team, headcount: proc?.crew ? String(proc.crew.headcount) : '', date: proc?.date ?? '' });
   }
 
   function handleSaveCrew() {
     if (!crewModal) return;
     const count = Number(crewModal.headcount) || 0;
     setProcesses((cur) => setCrew(cur, crewModal.processId, crewModal.team, count));
+    setCrewModal(null);
+  }
+
+  function handleMoveViaDateInput() {
+    if (!crewModal) return;
+    const proc = processes.find((p) => p.id === crewModal.processId);
+    if (!proc || !crewModal.date || crewModal.date === proc.date) return;
+    handleDropProcess(crewModal.processId, proc.blockId, crewModal.date);
     setCrewModal(null);
   }
 
@@ -390,8 +413,8 @@ export default function ScheduleApp() {
     });
   }
 
-  function handleAddDirectLabor(date: ISODate, category: string, workContent: string, headcount: number) {
-    const entry: DirectLaborEntry = { id: crypto.randomUUID(), date, category, workContent, headcount };
+  function handleAddDirectLabor(date: ISODate, category: string, workContent: string, headcount: number, manager?: string) {
+    const entry: DirectLaborEntry = { id: crypto.randomUUID(), date, category, workContent, headcount, manager };
     setDirectLabor((cur) => [...cur, entry]);
   }
 
@@ -914,6 +937,18 @@ export default function ScheduleApp() {
               if (e.key === 'Enter') handleSaveCrew();
             }}
           />
+          <div className="flex items-center gap-2 pt-2 border-t border-zinc-200">
+            <span className="text-xs text-zinc-500 shrink-0">날짜 변경</span>
+            <input
+              className="border border-zinc-300 rounded px-2 py-1 text-sm flex-1"
+              type="date"
+              value={crewModal.date}
+              onChange={(e) => setCrewModal((cur) => (cur ? { ...cur, date: e.target.value } : cur))}
+            />
+            <button className="text-xs px-2 py-1 rounded border border-zinc-300" onClick={handleMoveViaDateInput}>
+              이 날짜로 이동
+            </button>
+          </div>
           <div className="flex justify-end gap-2 text-sm">
             <button className="px-3 py-1 rounded border border-zinc-300" onClick={() => setCrewModal(null)}>
               취소
