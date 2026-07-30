@@ -13,6 +13,7 @@ import {
   collidingProcesses,
   deleteProcess,
   extendMainProcess,
+  findMainCollisions,
   generateBaseFloorSequence,
   generateRepeatingFloors,
   generateRepeatingFromTemplate,
@@ -620,6 +621,15 @@ export default function ScheduleApp() {
     if (!pendingHeaderShift) return;
     const reason = (presetReason ?? headerReasonInput).trim() || '사유 미입력';
     const next = shiftAllFrom(processes, pendingHeaderShift.fromDate, pendingHeaderShift.deltaDays, holidays);
+    const collisions = findMainCollisions(next);
+    if (collisions.length > 0) {
+      const list = collisions.map((c) => `${blockNames[c.blockId] ?? c.blockId} ${c.date} ${c.labels.join('/')}`).join(', ');
+      setWarning(`이렇게 순연하면 주요공정끼리 겹치게 되어 처리할 수 없습니다: ${list}`);
+      setPendingHeaderShift(null);
+      setHeaderShiftStage('idle');
+      setHeaderReasonInput('');
+      return;
+    }
     setProcesses(recomputeConflicts(next));
     setDateShiftHistory((h) => [
       ...h,
@@ -651,6 +661,12 @@ export default function ScheduleApp() {
       generated = generateRepeatingFromTemplate(template, genFloorForm.blockId, genFloorForm.startDate, holidays, repeatCount, {
         skipOptional: genFloorForm.skipOptional,
       });
+    }
+    const collisions = findMainCollisions([...processes, ...generated]).filter((c) => c.blockId === genFloorForm.blockId);
+    if (collisions.length > 0) {
+      const list = collisions.map((c) => `${c.date} ${c.labels.join('/')}`).join(', ');
+      setWarning(`이 시작일로 생성하면 기존 공정과 겹치게 되어 만들 수 없습니다: ${list}`);
+      return;
     }
     setProcesses((cur) => recomputeConflicts([...cur, ...generated]));
     setGenFloorForm(null);

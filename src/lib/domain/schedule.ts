@@ -546,6 +546,30 @@ export function deleteProcess(processes: ProcessInstance[], processId: string): 
 }
 
 /**
+ * 드래그 이동/연장이 아닌 경로(공정 생성, 전체 일정 순연 등)로 주요공정이 겹치게
+ * 되는지 확인한다. 같은 동·같은 날짜에 주요공정이 2개 이상이면 겹침으로 본다 —
+ * previewCascadeCollisions와 같은 "같은 동에서는 주요공정끼리 절대 안 겹친다" 규칙을
+ * 결과 상태 전체에 대해 한 번에 검사하는 버전이다.
+ */
+export function findMainCollisions(processes: ProcessInstance[]): { blockId: string; date: ISODate; labels: string[] }[] {
+  const byKey = new Map<string, ProcessInstance[]>();
+  for (const p of processes) {
+    const category = PROCESS_TYPE_MAP[p.typeCode]?.category ?? 'main';
+    if (category !== 'main') continue;
+    const key = `${p.blockId}__${p.date}`;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key)!.push(p);
+  }
+  const collisions: { blockId: string; date: ISODate; labels: string[] }[] = [];
+  for (const [key, list] of byKey) {
+    if (list.length < 2) continue;
+    const sep = key.indexOf('__');
+    collisions.push({ blockId: key.slice(0, sep), date: key.slice(sep + 2), labels: list.map(processLabel) });
+  }
+  return collisions.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
  * 전체 일정 순연: fromDate 이후(포함) 모든 동의 공정을 deltaDays만큼 이동하고,
  * 타설·갱폼처럼 휴일 규칙이 있는 공정은 다시 규칙을 적용한다.
  */
