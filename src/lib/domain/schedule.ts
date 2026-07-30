@@ -669,16 +669,20 @@ export function extendMainProcess(
   );
   const kept = processes.filter((p) => !laterMainIds.has(p.id) && !staleSubIds.has(p.id));
 
-  // moved 바로 다음 단계와의 간격도 같은 규칙(원래 간격 vs 기본값 중 큰 쪽)을 따른다.
-  let firstGap = gapDays;
-  const firstNextOriginal = laterMainCodes[0] ? originalByCode.get(laterMainCodes[0]) : undefined;
-  if (firstNextOriginal) {
-    const originalGap = diffDays(addDays(moved.date, currentDuration - 1), firstNextOriginal.date);
-    if (Number.isFinite(originalGap) && originalGap > gapDays) firstGap = originalGap;
+  // moved 바로 다음 단계와의 간격도 rebuildCycleFrom과 같은 규칙을 따른다: 원래 간격이
+  // 기본 gapDays로 자동 계산했을 때 나올 날짜(휴일 스킵 포함)보다 더 뒤에 있었다면, 그
+  // 초과분만 그대로 옮겨온다 — 단순히 휴일 때문에 벌어진 간격까지 그대로 베끼면 안 된다.
+  let firstExtraDays = 0;
+  const firstNextCode = laterMainCodes[0];
+  const firstNextOriginal = firstNextCode ? originalByCode.get(firstNextCode) : undefined;
+  if (firstNextCode && firstNextOriginal) {
+    const naturalFirstNext = nextWorkableDate(firstNextCode, addDays(moved.date, currentDuration - 1 + gapDays), holidays);
+    const excess = diffDays(naturalFirstNext, firstNextOriginal.date);
+    if (Number.isFinite(excess) && excess > 0) firstExtraDays = excess;
   }
 
   const rebuilt: ProcessInstance[] = [];
-  let cursor = addDays(moved.date, newDuration - 1 + firstGap);
+  let cursor = addDays(moved.date, newDuration - 1 + gapDays + firstExtraDays);
   laterMainCodes.forEach((code, i) => {
     const stepDef = PROCESS_TYPE_MAP[code];
     const date = nextWorkableDate(code, cursor, holidays);
@@ -704,15 +708,16 @@ export function extendMainProcess(
 
     const span = origMain?.durationDays ?? 1;
     const nextCode = laterMainCodes[i + 1];
-    let stepGap = gapDays;
+    let extraDays = 0;
     if (nextCode) {
       const next = originalByCode.get(nextCode);
       if (origMain && next) {
-        const originalGap = diffDays(addDays(origMain.date, origMain.durationDays - 1), next.date);
-        if (Number.isFinite(originalGap) && originalGap > gapDays) stepGap = originalGap;
+        const naturalNext = nextWorkableDate(nextCode, addDays(origMain.date, origMain.durationDays - 1 + gapDays), holidays);
+        const excess = diffDays(naturalNext, next.date);
+        if (Number.isFinite(excess) && excess > 0) extraDays = excess;
       }
     }
-    cursor = addDays(date, span - 1 + stepGap);
+    cursor = addDays(date, span - 1 + gapDays + extraDays);
   });
 
   const nextProcesses = withArrivals(
