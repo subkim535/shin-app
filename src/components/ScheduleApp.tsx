@@ -324,6 +324,25 @@ export default function ScheduleApp() {
     [processes, selectedProcessId],
   );
   const blockNames = useMemo(() => Object.fromEntries(blocks.map((b) => [b.id, b.name])), [blocks]);
+  // sortOrder는 저장돼 있지만 그동안 실제로 정렬에 쓰이지 않고 배열 순서 그대로 표시돼왔다.
+  // 화면에 보여줄 때는 항상 이 정렬된 목록을 쓰고, blocks 자체(원본 배열)는 그대로 둔다.
+  const sortedBlocks = useMemo(() => [...blocks].sort((a, b) => a.sortOrder - b.sortOrder), [blocks]);
+
+  function handleReorderBlock(id: string, direction: 'up' | 'down') {
+    setBlocks((cur) => {
+      const sorted = [...cur].sort((a, b) => a.sortOrder - b.sortOrder);
+      const idx = sorted.findIndex((b) => b.id === id);
+      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (idx === -1 || targetIdx < 0 || targetIdx >= sorted.length) return cur;
+      const a = sorted[idx];
+      const b = sorted[targetIdx];
+      return cur.map((block) => {
+        if (block.id === a.id) return { ...block, sortOrder: b.sortOrder };
+        if (block.id === b.id) return { ...block, sortOrder: a.sortOrder };
+        return block;
+      });
+    });
+  }
 
   function handleSelectProcess(id: string) {
     setWarning(null);
@@ -639,7 +658,7 @@ export default function ScheduleApp() {
             className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
             onClick={() =>
               setGenFloorForm({
-                blockId: blocks[0]?.id ?? '',
+                blockId: sortedBlocks[0]?.id ?? '',
                 floor: '16F',
                 startDate: todayISO(),
                 templateId: 'ground',
@@ -727,7 +746,7 @@ export default function ScheduleApp() {
             value={genFloorForm.blockId}
             onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, blockId: e.target.value } : cur))}
           >
-            {blocks.map((b) => (
+            {sortedBlocks.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
               </option>
@@ -793,7 +812,7 @@ export default function ScheduleApp() {
       )}
 
       <GanttChart
-        blocks={blocks}
+        blocks={sortedBlocks}
         processes={processes}
         holidays={holidays}
         changeHistory={changeHistory}
@@ -968,14 +987,21 @@ export default function ScheduleApp() {
           onClose={() => setSettingsOpen(false)}
           siteInfo={siteInfo}
           onChangeSiteInfo={setSiteInfo}
-          blocks={blocks}
+          blocks={sortedBlocks}
           onAddBlock={(name, facilityType, info) =>
             setBlocks((cur) => [
               ...cur,
-              { id: crypto.randomUUID(), name, sortOrder: cur.length + 1, facilityType, info: info || undefined },
+              {
+                id: crypto.randomUUID(),
+                name,
+                sortOrder: cur.reduce((max, b) => Math.max(max, b.sortOrder), 0) + 1,
+                facilityType,
+                info: info || undefined,
+              },
             ])
           }
           onRemoveBlock={handleRemoveBlock}
+          onReorderBlock={handleReorderBlock}
           onChangeBlockType={(id, facilityType) =>
             setBlocks((cur) => cur.map((b) => (b.id === id ? { ...b, facilityType } : b)))
           }
@@ -1000,7 +1026,7 @@ export default function ScheduleApp() {
           changeHistory={changeHistory}
           dateShiftHistory={dateShiftHistory}
           processes={processes}
-          blocks={blocks}
+          blocks={sortedBlocks}
         />
       )}
 
@@ -1009,7 +1035,7 @@ export default function ScheduleApp() {
           onClose={() => setTeamViewOpen(false)}
           crewTeams={crewTeams}
           processes={processes}
-          blocks={blocks}
+          blocks={sortedBlocks}
         />
       )}
 
@@ -1174,7 +1200,7 @@ export default function ScheduleApp() {
         <DailyReportModal
           date={reportDate}
           siteInfo={siteInfo}
-          blocks={blocks}
+          blocks={sortedBlocks}
           processes={processes}
           directLabor={directLabor}
           notes={notes}

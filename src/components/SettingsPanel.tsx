@@ -19,6 +19,7 @@ const HOLIDAY_KIND_LABEL: Record<HolidayKind, string> = {
   substitute_holiday: '대체휴일',
   temporary_holiday: '임시공휴일',
   vacation: '휴가',
+  site_shutdown: '현장 셧다운',
 };
 
 // 문서 기획서의 대공종 분류 — 각 이름을 그대로 템플릿 이름으로 사용한다.
@@ -32,6 +33,7 @@ interface SettingsPanelProps {
   blocks: Block[];
   onAddBlock: (name: string, facilityType: FacilityType, info: string) => void;
   onRemoveBlock: (id: string) => void;
+  onReorderBlock: (id: string, direction: 'up' | 'down') => void;
   onChangeBlockType: (id: string, facilityType: FacilityType) => void;
   onChangeBlockInfo: (id: string, info: string) => void;
   templates: ProcessTemplate[];
@@ -54,6 +56,7 @@ export default function SettingsPanel({
   blocks,
   onAddBlock,
   onRemoveBlock,
+  onReorderBlock,
   onChangeBlockType,
   onChangeBlockInfo,
   templates,
@@ -190,8 +193,26 @@ export default function SettingsPanel({
         <section className="flex flex-col gap-2">
           <h3 className="text-sm font-semibold text-zinc-700">동/구간 관리</h3>
           <div className="flex flex-col gap-1">
-            {blocks.map((b) => (
+            {blocks.map((b, idx) => (
               <div key={b.id} className="flex items-center gap-2 text-sm">
+                <span className="flex flex-col shrink-0 -my-1">
+                  <button
+                    className="text-[9px] leading-none px-0.5 disabled:opacity-30"
+                    onClick={() => onReorderBlock(b.id, 'up')}
+                    disabled={idx === 0}
+                    title="위로 이동"
+                  >
+                    ▲
+                  </button>
+                  <button
+                    className="text-[9px] leading-none px-0.5 disabled:opacity-30"
+                    onClick={() => onReorderBlock(b.id, 'down')}
+                    disabled={idx === blocks.length - 1}
+                    title="아래로 이동"
+                  >
+                    ▼
+                  </button>
+                </span>
                 <span className="w-14 shrink-0">{b.name}</span>
                 <input
                   className="border border-zinc-300 rounded px-2 py-0.5 text-xs flex-1"
@@ -307,6 +328,7 @@ export default function SettingsPanel({
               <option value="substitute_holiday">대체휴일</option>
               <option value="temporary_holiday">임시공휴일</option>
               <option value="vacation">휴가</option>
+              <option value="site_shutdown">현장 셧다운</option>
             </select>
             <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm" onClick={addHoliday}>
               추가

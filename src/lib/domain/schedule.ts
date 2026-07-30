@@ -8,8 +8,14 @@ function nextArrival() {
   return arrivalCounter;
 }
 
+// 근로자의 날(5/1)은 매년 반복되는 법정 휴일이라, 휴일 목록에 매년 등록하지 않아도
+// 항상 전 공종 작업 금지로 취급한다.
+function isWorkersDay(date: ISODate): boolean {
+  return date.slice(5) === '05-01';
+}
+
 function isPublicHoliday(date: ISODate, holidays: Holiday[]): boolean {
-  return holidays.some((h) => h.date === date && h.kind !== 'sunday');
+  return isWorkersDay(date) || holidays.some((h) => h.date === date && h.kind !== 'sunday');
 }
 
 // 문서 2.5 휴일 규칙: 타설(토·일·공휴일 금지), 갱폼(일·공휴일 금지).
