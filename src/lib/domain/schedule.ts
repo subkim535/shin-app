@@ -1,4 +1,4 @@
-import { addDays, dayOfWeek, ISODate } from './dateUtils';
+import { addDays, dayOfWeek, diffDays, ISODate } from './dateUtils';
 import { CONFLICT_GROUP, MAIN_SEQUENCE_CODES, PROCESS_TYPE_MAP } from './processTypes';
 import { ChangeRecord, Holiday, ProcessInstance, ProcessTemplate } from './types';
 
@@ -292,6 +292,17 @@ function rebuildCycleFrom(
 ): { processes: ProcessInstance[]; firstDate: ISODate } {
   const seqIndex = MAIN_SEQUENCE_CODES.indexOf(fromTypeCode);
   const laterMainCodes = MAIN_SEQUENCE_CODES.slice(seqIndex + 1);
+  const sequenceCodes = [fromTypeCode, ...laterMainCodes];
+
+  // 뒤 단계들이 원래 갖고 있던 "바로 앞 단계와의 간격"을 기억해둔다 — 예를 들어 사용자가
+  // 타설을 일부러 며칠 더 늦춰뒀는데, 그 앞의 철근만 하루 옮겼다고 타설과의 간격이
+  // 기본 간격(gapDays)으로 뭉개지면 안 된다. 원래 간격이 기본값보다 크면 그대로 유지하고,
+  // 작거나 없으면 기본값을 쓴다.
+  const originalByCode = new Map<string, { date: ISODate; durationDays: number }>();
+  for (const code of sequenceCodes) {
+    const p = processes.find((x) => x.blockId === blockId && x.cycleId === cycleId && x.typeCode === code);
+    if (p) originalByCode.set(code, { date: p.date, durationDays: p.durationDays ?? 1 });
+  }
 
   const laterMainIds = new Set(
     processes.filter((p) => p.blockId === blockId && p.cycleId === cycleId && laterMainCodes.includes(p.typeCode)).map((p) => p.id),
@@ -307,7 +318,7 @@ function rebuildCycleFrom(
   const rebuilt: ProcessInstance[] = [];
   let cursor = newDate;
   let firstDate = newDate;
-  [fromTypeCode, ...laterMainCodes].forEach((code, i) => {
+  sequenceCodes.forEach((code, i) => {
     const stepDef = PROCESS_TYPE_MAP[code];
     // 사용자가 직접 드래그한 공정(맨 앞 하나)만 일요일 예외를 허용한다. 이어지는 후속
     // 공정들(및 도미노로 밀린 다른 사이클)은 계속 기본 휴일 규칙(일요일 포함)을 따른다.
@@ -325,8 +336,19 @@ function rebuildCycleFrom(
     }
     rebuilt.push(main);
     rebuilt.push(...attachSubProcesses(blockId, code, date, main.id, cycleId));
-    const span = code === fromTypeCode ? preserveDurationDays ?? 1 : 1;
-    cursor = addDays(date, span - 1 + gapDays);
+    const span = code === fromTypeCode ? preserveDurationDays ?? 1 : originalByCode.get(code)?.durationDays ?? 1;
+
+    const nextCode = sequenceCodes[i + 1];
+    let stepGap = gapDays;
+    if (nextCode) {
+      const cur = originalByCode.get(code);
+      const next = originalByCode.get(nextCode);
+      if (cur && next) {
+        const originalGap = diffDays(addDays(cur.date, cur.durationDays - 1), next.date);
+        if (Number.isFinite(originalGap) && originalGap > gapDays) stepGap = originalGap;
+      }
+    }
+    cursor = addDays(date, span - 1 + stepGap);
   });
 
   return { processes: [...kept, ...rebuilt], firstDate };
