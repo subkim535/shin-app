@@ -303,7 +303,7 @@ export default function GanttChart({
       rowIndex: number;
       rowType: RowType;
       anchor: 'top' | 'bottom';
-      oneDayDirection?: 'left' | 'right';
+      oneDayDirection?: 'right';
       seq: number;
       lane: number;
     }[] = [];
@@ -319,8 +319,10 @@ export default function GanttChart({
     }[] = [];
     for (const info of infos) {
       if (info.originCol === undefined) continue;
-      // 왼쪽(이전 날짜)으로 당긴 이동은 화살표를 그리지 않는다 — 고스트 배지만 남긴다.
-      const hasArrow = info.destCol !== undefined && !info.isOneDay && !info.isBackward;
+      // 이전 날짜(왼쪽)로 당긴 이동은 고스트 자체를 아예 남기지 않는다 — 비워진 그 칸에는
+      // 곧 이후 공정이 들어와야 하므로 흔적이 방해가 된다. 뒤로 밀린(지연된) 이동만 흔적을 남긴다.
+      if (info.isBackward) continue;
+      const hasArrow = info.destCol !== undefined && !info.isOneDay;
       const footprintStart = hasArrow ? Math.min(info.originCol, info.destCol!) : info.originCol;
       const footprintEnd = hasArrow ? Math.max(info.originCol, info.destCol!) : info.originCol;
       const laneKey = `${info.rowIndex}_${info.rowType}`;
@@ -344,10 +346,11 @@ export default function GanttChart({
         rowIndex: info.rowIndex,
         rowType: info.rowType,
         anchor,
-        // 하루 이동은 점선 화살표 대신 라벨 글자 앞/뒤에 작은 방향 표시를 붙인다 (SVG로 따로
+        // 하루 이동은 점선 화살표 대신 라벨 글자 뒤에 작은 방향 표시를 붙인다 (SVG로 따로
         // 그리면 라벨 텍스트 폭을 몰라서 겹치기 쉽다 — 같은 텍스트 줄에 넣으면 브라우저가
-        // 알아서 겹치지 않게 배치해준다).
-        oneDayDirection: info.isOneDay ? (info.isBackward ? 'left' : 'right') : undefined,
+        // 알아서 겹치지 않게 배치해준다). 당겨진(왼쪽) 이동은 위에서 이미 걸러지므로 여기
+        // 도달하는 건 항상 지연(오른쪽) 방향이다.
+        oneDayDirection: info.isOneDay ? 'right' : undefined,
         seq: info.seq,
         lane,
       });
@@ -755,7 +758,6 @@ export default function GanttChart({
               className="text-xs leading-tight text-zinc-400 bg-zinc-100/80 hover:bg-zinc-200 rounded px-1.5 py-0.5 text-left whitespace-nowrap"
             >
               <span className="mr-0.5 text-zinc-500">{seqBadge(g.seq)}</span>
-              {g.oneDayDirection === 'left' && <span className="mr-0.5">◀</span>}
               {g.label}
               {g.oneDayDirection === 'right' && <span className="ml-0.5">▶</span>}
             </button>
