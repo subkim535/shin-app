@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { datesInRange, dayOfWeek, diffDays, formatMonthDay, ISODate, todayISO, weekdayLabelKo } from '@/lib/domain/dateUtils';
 import { PROCESS_COLOR, PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
-import { processLabel } from '@/lib/domain/schedule';
+import { isWorkersDay, processLabel } from '@/lib/domain/schedule';
 import { Block, ChangeRecord, Holiday, ProcessInstance } from '@/lib/domain/types';
 
 const HEADER_W = 96;
@@ -48,7 +48,7 @@ type DragState =
   | { type: 'block'; id: string };
 
 function isHoliday(date: ISODate, holidays: Holiday[]): boolean {
-  return dayOfWeek(date) === 0 || holidays.some((h) => h.date === date);
+  return dayOfWeek(date) === 0 || isWorkersDay(date) || holidays.some((h) => h.date === date);
 }
 
 function noteKey(blockId: string, date: ISODate): string {

@@ -10,7 +10,7 @@ function nextArrival() {
 
 // 근로자의 날(5/1)은 매년 반복되는 법정 휴일이라, 휴일 목록에 매년 등록하지 않아도
 // 항상 전 공종 작업 금지로 취급한다.
-function isWorkersDay(date: ISODate): boolean {
+export function isWorkersDay(date: ISODate): boolean {
   return date.slice(5) === '05-01';
 }
 
@@ -294,14 +294,35 @@ function rebuildCycleFrom(
   const laterMainCodes = MAIN_SEQUENCE_CODES.slice(seqIndex + 1);
   const sequenceCodes = [fromTypeCode, ...laterMainCodes];
 
-  // 뒤 단계들이 원래 갖고 있던 "바로 앞 단계와의 간격"을 기억해둔다 — 예를 들어 사용자가
-  // 타설을 일부러 며칠 더 늦춰뒀는데, 그 앞의 철근만 하루 옮겼다고 타설과의 간격이
-  // 기본 간격(gapDays)으로 뭉개지면 안 된다. 원래 간격이 기본값보다 크면 그대로 유지하고,
-  // 작거나 없으면 기본값을 쓴다.
-  const originalByCode = new Map<string, { date: ISODate; durationDays: number }>();
+  // 뒤 단계들이 원래 갖고 있던 정보를 기억해둔다 — (1) "바로 앞 단계와의 간격": 예를 들어
+  // 사용자가 타설을 일부러 며칠 더 늦춰뒀는데, 그 앞의 철근만 하루 옮겼다고 타설과의 간격이
+  // 기본 간격(gapDays)으로 뭉개지면 안 된다(원래 간격이 기본값보다 크면 유지, 작거나 없으면
+  // 기본값 사용). (2) 배정된 작업팀·실제완료 체크·소요일수 — 이 단계들은 makeProcess로
+  // 새로 만들어지므로, 원래 갖고 있던 값을 옮겨 적어주지 않으면 이동/연장 한 번에
+  // 조용히 사라진다.
+  const originalByCode = new Map<
+    string,
+    { date: ISODate; durationDays: number; crew: ProcessInstance['crew']; actualDone?: boolean; timeSlot: ProcessInstance['timeSlot'] }
+  >();
   for (const code of sequenceCodes) {
     const p = processes.find((x) => x.blockId === blockId && x.cycleId === cycleId && x.typeCode === code);
-    if (p) originalByCode.set(code, { date: p.date, durationDays: p.durationDays ?? 1 });
+    if (p) {
+      originalByCode.set(code, {
+        date: p.date,
+        durationDays: p.durationDays ?? 1,
+        crew: p.crew,
+        actualDone: p.actualDone,
+        timeSlot: p.timeSlot,
+      });
+    }
+  }
+  // 보조공정(박리제/전기·설비/먹메김)도 같은 이유로 typeCode 기준(사이클 안에서 한 종류뿐이라
+  // 유일하게 식별됨)으로 원래 값을 기억해둔다.
+  const originalSubByCode = new Map<string, { crew: ProcessInstance['crew']; actualDone?: boolean; timeSlot: ProcessInstance['timeSlot'] }>();
+  for (const p of processes) {
+    if (p.blockId === blockId && p.cycleId === cycleId && p.linkedMainProcessId && PROCESS_TYPE_MAP[p.typeCode]?.category === 'sub') {
+      originalSubByCode.set(p.typeCode, { crew: p.crew, actualDone: p.actualDone, timeSlot: p.timeSlot });
+    }
   }
 
   const laterMainIds = new Set(
@@ -330,13 +351,28 @@ function rebuildCycleFrom(
     const main = makeProcess(blockId, code, date, cycleId, {
       floorLabel: stepDef.showFloorLabel ? floorLabel : undefined,
     });
+    const origMain = originalByCode.get(code);
+    main.crew = origMain?.crew;
+    main.actualDone = origMain?.actualDone;
+    main.timeSlot = origMain?.timeSlot;
     if (code === fromTypeCode) {
       main.id = fromProcessId; // 이동한 공정 자체는 id 유지
       main.durationDays = preserveDurationDays;
+    } else {
+      main.durationDays = origMain?.durationDays;
     }
     rebuilt.push(main);
-    rebuilt.push(...attachSubProcesses(blockId, code, date, main.id, cycleId));
-    const span = code === fromTypeCode ? preserveDurationDays ?? 1 : originalByCode.get(code)?.durationDays ?? 1;
+    const subs = attachSubProcesses(blockId, code, date, main.id, cycleId);
+    for (const sub of subs) {
+      const origSub = originalSubByCode.get(sub.typeCode);
+      if (origSub) {
+        sub.crew = origSub.crew;
+        sub.actualDone = origSub.actualDone;
+        sub.timeSlot = origSub.timeSlot;
+      }
+    }
+    rebuilt.push(...subs);
+    const span = code === fromTypeCode ? preserveDurationDays ?? 1 : origMain?.durationDays ?? 1;
 
     const nextCode = sequenceCodes[i + 1];
     let stepGap = gapDays;
@@ -592,6 +628,31 @@ export function extendMainProcess(
   const blockId = moved.blockId;
   const cycleId = moved.cycleId;
 
+  // rebuildCycleFrom과 같은 이유로, 뒤 단계들의 원래 간격·배정된 작업팀·실제완료 체크를
+  // 기억해뒀다가 다시 만드는 단계에 그대로 옮겨 적는다.
+  const originalByCode = new Map<
+    string,
+    { date: ISODate; durationDays: number; crew: ProcessInstance['crew']; actualDone?: boolean; timeSlot: ProcessInstance['timeSlot'] }
+  >();
+  for (const code of laterMainCodes) {
+    const p = processes.find((x) => x.blockId === blockId && x.cycleId === cycleId && x.typeCode === code);
+    if (p) {
+      originalByCode.set(code, {
+        date: p.date,
+        durationDays: p.durationDays ?? 1,
+        crew: p.crew,
+        actualDone: p.actualDone,
+        timeSlot: p.timeSlot,
+      });
+    }
+  }
+  const originalSubByCode = new Map<string, { crew: ProcessInstance['crew']; actualDone?: boolean; timeSlot: ProcessInstance['timeSlot'] }>();
+  for (const p of processes) {
+    if (p.blockId === blockId && p.cycleId === cycleId && p.linkedMainProcessId && PROCESS_TYPE_MAP[p.typeCode]?.category === 'sub') {
+      originalSubByCode.set(p.typeCode, { crew: p.crew, actualDone: p.actualDone, timeSlot: p.timeSlot });
+    }
+  }
+
   const laterMainIds = new Set(
     processes
       .filter((p) => p.blockId === blockId && p.cycleId === cycleId && laterMainCodes.includes(p.typeCode))
@@ -602,17 +663,50 @@ export function extendMainProcess(
   );
   const kept = processes.filter((p) => !laterMainIds.has(p.id) && !staleSubIds.has(p.id));
 
+  // moved 바로 다음 단계와의 간격도 같은 규칙(원래 간격 vs 기본값 중 큰 쪽)을 따른다.
+  let firstGap = gapDays;
+  const firstNextOriginal = laterMainCodes[0] ? originalByCode.get(laterMainCodes[0]) : undefined;
+  if (firstNextOriginal) {
+    const originalGap = diffDays(addDays(moved.date, currentDuration - 1), firstNextOriginal.date);
+    if (Number.isFinite(originalGap) && originalGap > gapDays) firstGap = originalGap;
+  }
+
   const rebuilt: ProcessInstance[] = [];
-  let cursor = addDays(moved.date, newDuration - 1 + gapDays);
-  laterMainCodes.forEach((code) => {
+  let cursor = addDays(moved.date, newDuration - 1 + firstGap);
+  laterMainCodes.forEach((code, i) => {
     const stepDef = PROCESS_TYPE_MAP[code];
     const date = nextWorkableDate(code, cursor, holidays);
     const main = makeProcess(blockId, code, date, cycleId, {
       floorLabel: stepDef.showFloorLabel ? moved.floorLabel : undefined,
     });
+    const origMain = originalByCode.get(code);
+    main.crew = origMain?.crew;
+    main.actualDone = origMain?.actualDone;
+    main.timeSlot = origMain?.timeSlot;
+    main.durationDays = origMain?.durationDays;
     rebuilt.push(main);
-    rebuilt.push(...attachSubProcesses(blockId, code, date, main.id, cycleId));
-    cursor = addDays(date, gapDays);
+    const subs = attachSubProcesses(blockId, code, date, main.id, cycleId);
+    for (const sub of subs) {
+      const origSub = originalSubByCode.get(sub.typeCode);
+      if (origSub) {
+        sub.crew = origSub.crew;
+        sub.actualDone = origSub.actualDone;
+        sub.timeSlot = origSub.timeSlot;
+      }
+    }
+    rebuilt.push(...subs);
+
+    const span = origMain?.durationDays ?? 1;
+    const nextCode = laterMainCodes[i + 1];
+    let stepGap = gapDays;
+    if (nextCode) {
+      const next = originalByCode.get(nextCode);
+      if (origMain && next) {
+        const originalGap = diffDays(addDays(origMain.date, origMain.durationDays - 1), next.date);
+        if (Number.isFinite(originalGap) && originalGap > gapDays) stepGap = originalGap;
+      }
+    }
+    cursor = addDays(date, span - 1 + stepGap);
   });
 
   const nextProcesses = withArrivals(

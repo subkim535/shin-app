@@ -114,7 +114,7 @@ export default function DailyReportModal({
   const dayNotes = useMemo(
     () =>
       blocks
-        .map((b) => ({ blockName: b.name, text: notes[`${b.id}__${date}`] ?? '' }))
+        .map((b) => ({ blockId: b.id, blockName: b.name, text: notes[`${b.id}__${date}`] ?? '' }))
         .filter((n) => n.text.trim().length > 0),
     [blocks, notes, date],
   );
@@ -256,7 +256,7 @@ export default function DailyReportModal({
           <div className="flex flex-col gap-1">
             {dayNotes.map((n) => (
               <div
-                key={n.blockName}
+                key={n.blockId}
                 className="text-sm border border-zinc-200 rounded px-2 py-1 print:text-base print:border-zinc-400"
               >
                 <strong>{n.blockName}</strong> {n.text}
