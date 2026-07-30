@@ -156,7 +156,7 @@ export default function SettingsPanel({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
       <div className="bg-white rounded-lg shadow-lg w-full max-w-lg max-h-[85vh] overflow-y-auto p-4 flex flex-col gap-5">
-        <div className="flex items-center justify-between">
+        <div className="sticky -top-4 -mx-4 -mt-4 px-4 pt-4 pb-2 bg-white z-10 flex items-center justify-between border-b border-zinc-100">
           <h2 className="text-lg font-semibold">설정</h2>
           <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={onClose}>
             닫기

@@ -63,7 +63,7 @@ export default function OverviewChart({ blocks, processes }: OverviewChartProps)
   }
 
   return (
-    <div className="overflow-auto border border-zinc-200 rounded-md" data-testid="overview-chart">
+    <div className="overflow-auto border border-zinc-200 rounded-md h-full" data-testid="overview-chart">
       <table className="border-collapse text-sm w-full">
         <thead>
           <tr>

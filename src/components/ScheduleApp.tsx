@@ -22,6 +22,7 @@ import {
   moveSubProcess,
   previewMainMove,
   processLabel,
+  pushProcessesOffHoliday,
   recomputeConflicts,
   setCrew,
   shiftAllFrom,
@@ -543,7 +544,12 @@ export default function ScheduleApp() {
   }
 
   function handleAddHoliday(date: ISODate, kind: HolidayKind) {
-    setHolidays((cur) => (cur.some((h) => h.date === date) ? cur : [...cur, { date, kind }]));
+    if (holidays.some((h) => h.date === date)) return;
+    const nextHolidays = [...holidays, { date, kind }];
+    setHolidays(nextHolidays);
+    const result = pushProcessesOffHoliday(processes, changeHistory, date, nextHolidays, processGapDays);
+    setProcesses(result.processes);
+    setChangeHistory(result.changeHistory);
   }
 
   function handleRemoveHoliday(date: ISODate) {
@@ -693,8 +699,8 @@ export default function ScheduleApp() {
     pendingDrop && pendingProcess ? collidingProcesses(processes, pendingProcess, pendingDrop.date) : [];
 
   return (
-    <div className="min-h-screen bg-zinc-50 p-6 flex flex-col gap-4">
-      <header className="flex items-center justify-between">
+    <div className="h-screen overflow-hidden bg-zinc-50 p-6 flex flex-col gap-4">
+      <header className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-xl font-semibold">{siteInfo.name} — 전체 공정표</h1>
           {siteInfo.overview && <p className="text-xs text-zinc-500 mt-0.5">{siteInfo.overview}</p>}
@@ -776,7 +782,7 @@ export default function ScheduleApp() {
         </div>
       </header>
 
-      <div className="min-h-[36px] flex items-center gap-2 text-sm" data-testid="action-bar">
+      <div className="min-h-[36px] flex items-center gap-2 text-sm shrink-0" data-testid="action-bar">
         {warning && (
           <span className="text-red-600" data-testid="warning">
             {warning}
@@ -816,7 +822,7 @@ export default function ScheduleApp() {
       </div>
 
       {genFloorForm && (
-        <div className="flex items-center gap-2 text-sm border border-zinc-300 bg-white rounded p-2 flex-wrap">
+        <div className="flex items-center gap-2 text-sm border border-zinc-300 bg-white rounded p-2 flex-wrap shrink-0">
           <span>기준층 생성 — 동:</span>
           <select
             className="border border-zinc-300 rounded px-2 py-1"
@@ -914,7 +920,7 @@ export default function ScheduleApp() {
             onDeleteProcess={handleDeleteProcess}
             onMoveBlockTo={handleMoveBlockTo}
           />
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-zinc-500 shrink-0">
             공정 칩을 같은 행의 다른 날짜 셀로 드래그하면 이동합니다. 날짜 헤더를 클릭하면 작업일보 보기/전체 일정
             순연을 선택할 수 있고, 드래그하면 바로 그 날짜 이후 모든 동의 일정이 함께 순연됩니다. 왼쪽의 동 이름을
             드래그하면 동 순서를 자유롭게 바꿀 수 있습니다.
@@ -922,8 +928,10 @@ export default function ScheduleApp() {
         </>
       ) : (
         <>
-          <OverviewChart blocks={sortedBlocks} processes={processes} />
-          <p className="text-xs text-zinc-500">전체공정표는 월 단위로, 동별 타설(층 완료) 일정만 간략하게 보여줍니다.</p>
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <OverviewChart blocks={sortedBlocks} processes={processes} />
+          </div>
+          <p className="text-xs text-zinc-500 shrink-0">전체공정표는 월 단위로, 동별 타설(층 완료) 일정만 간략하게 보여줍니다.</p>
         </>
       )}
 

@@ -618,7 +618,7 @@ export default function GanttChart({
   }
 
   return (
-    <div className="overflow-auto border border-zinc-200 rounded-md" data-testid="gantt-chart">
+    <div className="overflow-auto border border-zinc-200 rounded-md flex-1 min-h-0" data-testid="gantt-chart">
       <div
         className={dragging ? 'select-none' : ''}
         style={{

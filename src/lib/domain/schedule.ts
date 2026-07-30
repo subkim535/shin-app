@@ -592,6 +592,42 @@ export function moveSubProcess(processes: ProcessInstance[], processId: string, 
 }
 
 /**
+ * 새로 휴일로 지정한 날짜에 이미 잡혀 있던 공정들을 하루 뒤로 밀어낸다. 주요공정은
+ * moveMainProcess를 그대로 태워서 같은 동 안의 도미노 캐스케이드(뒤 층 밀림·이전 층
+ * 충돌 시 보류)를 그대로 적용받고, 그 결과 딸려 있던 보조공정도 자동으로 재생성된다.
+ * 주요공정이 옮겨가고 남은, 자기 메인공정은 다른 날짜에 있는 보조공정(예: 타설 다음날
+ * 먹메김이 우연히 이 날짜에 걸린 경우)만 직접 하루 미룬다.
+ */
+export function pushProcessesOffHoliday(
+  processes: ProcessInstance[],
+  changeHistory: ChangeRecord[],
+  holidayDate: ISODate,
+  holidays: Holiday[],
+  gapDays: number,
+): MoveResult {
+  let procs = processes;
+  let hist = changeHistory;
+  const skipIds = new Set<string>();
+  for (let guard = 0; guard < 50; guard++) {
+    const onDate = procs.filter((p) => p.date === holidayDate && !skipIds.has(p.id));
+    if (onDate.length === 0) break;
+    const main = onDate.find((p) => PROCESS_TYPE_MAP[p.typeCode]?.category === 'main');
+    if (main) {
+      const result = moveMainProcess(procs, hist, main.id, addDays(holidayDate, 1), '휴일 지정으로 순연', holidays, gapDays);
+      if (result.blockedReason) {
+        skipIds.add(main.id);
+        continue;
+      }
+      procs = result.processes;
+      hist = result.changeHistory;
+      continue;
+    }
+    procs = moveSubProcess(procs, onDate[0].id, addDays(holidayDate, 1));
+  }
+  return { processes: procs, changeHistory: hist };
+}
+
+/**
  * 공정 하나를 삭제한다. 유령/중복으로 잘못 생성된 공정을 지울 때 쓰는 용도라, 후속
  * 공정을 다시 당겨오거나 재계산하지 않고 그 자리만 비운다. 주요공정을 지우면 거기
  * 딸린 보조공정(박리제·전기설비·먹메김)도 같이 지운다 — 남겨두면 주인 없는 고아
