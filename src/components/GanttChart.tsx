@@ -39,11 +39,13 @@ interface GanttChartProps {
   onToggleActualDone: (processId: string) => void;
   onExtendProcess: (processId: string, direction: 'extend' | 'shrink') => void;
   onDeleteProcess: (processId: string) => void;
+  onMoveBlockTo: (draggedBlockId: string, targetBlockId: string) => void;
 }
 
 type DragState =
   | { type: 'process'; id: string; rowType: RowType; originBlockId: string; originDate: ISODate }
-  | { type: 'header'; date: ISODate };
+  | { type: 'header'; date: ISODate }
+  | { type: 'block'; id: string };
 
 function isHoliday(date: ISODate, holidays: Holiday[]): boolean {
   return dayOfWeek(date) === 0 || holidays.some((h) => h.date === date);
@@ -80,6 +82,7 @@ export default function GanttChart({
   onToggleActualDone,
   onExtendProcess,
   onDeleteProcess,
+  onMoveBlockTo,
 }: GanttChartProps) {
   const dates = useMemo(() => datesInRange(viewStartDate, dayCount), [viewStartDate, dayCount]);
   const dateIndex = useMemo(() => new Map(dates.map((d, i) => [d, i])), [dates]);
@@ -89,6 +92,7 @@ export default function GanttChart({
   const [dragging, setDragging] = useState<DragState | null>(null);
   const [hoverCell, setHoverCell] = useState<{ blockId: string; date: ISODate } | null>(null);
   const [hoverHeaderDate, setHoverHeaderDate] = useState<ISODate | null>(null);
+  const [hoverBlockId, setHoverBlockId] = useState<string | null>(null);
   // 연장/축소/삭제처럼 자주 안 쓰는 조작은 칩마다 버튼을 늘어놓지 않고 점 3개(⋯) 메뉴 하나로
   // 묶는다 — 매번 칩을 먼저 선택해야만 나오게 하면 불편하다는 피드백이 있었다. 셀에
   // overflow-y-auto가 걸려 있어 칩 옆에 바로 펼치면 잘릴 수 있으므로, 화면 좌표를 저장해
@@ -116,6 +120,7 @@ export default function GanttChart({
   const dragRef = useRef<DragState | null>(null);
   const hoverCellRef = useRef<{ blockId: string; date: ISODate } | null>(null);
   const hoverHeaderDateRef = useRef<ISODate | null>(null);
+  const hoverBlockIdRef = useRef<string | null>(null);
 
   function handlePointerUp() {
     const d = dragRef.current;
@@ -135,13 +140,20 @@ export default function GanttChart({
       } else {
         onClickHeaderDate(d.date);
       }
+    } else if (d?.type === 'block') {
+      const hb = hoverBlockIdRef.current;
+      if (hb && hb !== d.id) {
+        onMoveBlockTo(d.id, hb);
+      }
     }
     dragRef.current = null;
     hoverCellRef.current = null;
     hoverHeaderDateRef.current = null;
+    hoverBlockIdRef.current = null;
     setDragging(null);
     setHoverCell(null);
     setHoverHeaderDate(null);
+    setHoverBlockId(null);
     window.removeEventListener('pointerup', handlePointerUp);
   }
 
@@ -161,6 +173,21 @@ export default function GanttChart({
     setDragging(d);
     setHoverHeaderDate(date);
     window.addEventListener('pointerup', handlePointerUp);
+  }
+
+  function startDragBlock(id: string) {
+    const d: DragState = { type: 'block', id };
+    dragRef.current = d;
+    hoverBlockIdRef.current = id;
+    setDragging(d);
+    setHoverBlockId(id);
+    window.addEventListener('pointerup', handlePointerUp);
+  }
+
+  function updateHoverBlock(id: string) {
+    if (dragRef.current?.type !== 'block') return;
+    hoverBlockIdRef.current = id;
+    setHoverBlockId(id);
   }
 
   // rowType이 드래그 중인 항목과 일치하는 셀에서만 hover를 갱신한다.
@@ -654,17 +681,29 @@ export default function GanttChart({
           비고
         </div>
 
-        {/* 행 헤더 (동 이름, 3행 전체에 걸쳐 표시) */}
-        {blocks.map((block, rowIndex) => (
-          <div
-            key={`label-${block.id}`}
-            className="sticky left-0 z-20 bg-white border-b border-r border-zinc-200 flex flex-col justify-center px-2 font-medium whitespace-nowrap"
-            style={{ gridColumn: 1, gridRow: `${rowIndex * 3 + 2} / span 3` }}
-          >
-            <span>{block.name}</span>
-            {block.info && <span className="text-[10px] text-zinc-400 font-normal">{block.info}</span>}
-          </div>
-        ))}
+        {/* 행 헤더 (동 이름, 3행 전체에 걸쳐 표시) — 드래그해서 동 순서를 자유롭게 바꿀 수 있다 */}
+        {blocks.map((block, rowIndex) => {
+          const isDragSource = dragging?.type === 'block' && dragging.id === block.id;
+          const isHoverTarget = dragging?.type === 'block' && dragging.id !== block.id && hoverBlockId === block.id;
+          return (
+            <div
+              key={`label-${block.id}`}
+              onPointerDown={() => startDragBlock(block.id)}
+              onPointerEnter={() => updateHoverBlock(block.id)}
+              data-block-row={block.name}
+              title="드래그해서 동 순서 변경"
+              className={[
+                'sticky left-0 z-20 bg-white border-b border-r border-zinc-200 flex flex-col justify-center px-2 font-medium whitespace-nowrap cursor-grab active:cursor-grabbing',
+                isDragSource ? 'opacity-50' : '',
+                isHoverTarget ? 'ring-2 ring-inset ring-indigo-600' : '',
+              ].join(' ')}
+              style={{ gridColumn: 1, gridRow: `${rowIndex * 3 + 2} / span 3` }}
+            >
+              <span>{block.name}</span>
+              {block.info && <span className="text-[10px] text-zinc-400 font-normal">{block.info}</span>}
+            </div>
+          );
+        })}
 
         {/* 비고 열 (동 단위, 날짜와 무관, 오른쪽 고정) */}
         {blocks.map((block, rowIndex) => (

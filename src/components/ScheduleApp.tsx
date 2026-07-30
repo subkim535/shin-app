@@ -355,6 +355,26 @@ export default function ScheduleApp() {
     });
   }
 
+  // 간트차트 행 헤더(동 이름)를 드래그해서 임의 위치로 옮긴다 — 인접 칸끼리만 바꾸는
+  // handleReorderBlock과 달리, dragged 동을 target 동 자리로 통째로 옮기고 그 사이
+  // 나머지 동들을 한 칸씩 밀어서 전체 sortOrder를 다시 매긴다.
+  function handleMoveBlockTo(draggedId: string, targetId: string) {
+    if (draggedId === targetId) return;
+    setBlocks((cur) => {
+      const sorted = [...cur].sort((a, b) => a.sortOrder - b.sortOrder);
+      const fromIdx = sorted.findIndex((b) => b.id === draggedId);
+      const toIdx = sorted.findIndex((b) => b.id === targetId);
+      if (fromIdx === -1 || toIdx === -1) return cur;
+      const [moved] = sorted.splice(fromIdx, 1);
+      // fromIdx보다 뒤로 옮길 때는 방금 제거한 자리만큼 뒤쪽 인덱스가 하나씩 당겨졌으므로
+      // 보정해야, dragged 동이 정확히 target 동의 원래 자리(그 앞)에 들어간다.
+      const insertAt = fromIdx < toIdx ? toIdx - 1 : toIdx;
+      sorted.splice(insertAt, 0, moved);
+      const orderMap = new Map(sorted.map((b, i) => [b.id, i + 1]));
+      return cur.map((block) => ({ ...block, sortOrder: orderMap.get(block.id) ?? block.sortOrder }));
+    });
+  }
+
   function handleSelectProcess(id: string) {
     setWarning(null);
     setSelectedProcessId((cur) => (cur === id ? null : id));
@@ -892,10 +912,12 @@ export default function ScheduleApp() {
             onToggleActualDone={handleToggleActualDone}
             onExtendProcess={handleExtendProcess}
             onDeleteProcess={handleDeleteProcess}
+            onMoveBlockTo={handleMoveBlockTo}
           />
           <p className="text-xs text-zinc-500">
             공정 칩을 같은 행의 다른 날짜 셀로 드래그하면 이동합니다. 날짜 헤더를 클릭하면 작업일보 보기/전체 일정
-            순연을 선택할 수 있고, 드래그하면 바로 그 날짜 이후 모든 동의 일정이 함께 순연됩니다.
+            순연을 선택할 수 있고, 드래그하면 바로 그 날짜 이후 모든 동의 일정이 함께 순연됩니다. 왼쪽의 동 이름을
+            드래그하면 동 순서를 자유롭게 바꿀 수 있습니다.
           </p>
         </>
       ) : (
