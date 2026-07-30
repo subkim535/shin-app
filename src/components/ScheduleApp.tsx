@@ -502,12 +502,21 @@ export default function ScheduleApp() {
   }
 
   function handleExtendProcess(processId: string, direction: 'extend' | 'shrink') {
-    const result = extendMainProcess(processes, processId, holidays, direction, processGapDays);
-    if (result.blockedReason) {
-      setWarning(result.blockedReason);
+    // ⏩/⏪는 연달아 빠르게 눌릴 수 있는 단순 버튼이라, 클로저에 갇힌 processes를 그대로 쓰면
+    // 같은 렌더 안에서 여러 번 눌렀을 때 뒤 클릭이 앞 클릭 결과를 덮어써서 클릭 수만큼
+    // 반영되지 않는다. 실제 상태 반영은 항상 최신 state를 기준으로 다시 계산하는 함수형
+    // 업데이트로 하고, 경고 메시지는 클릭 시점의 상태로 미리 한 번 계산해 바로 보여준다
+    // (아주 드물게 그 사이 다른 업데이트가 끼어들면 경고 없이 조용히 무시될 수 있지만,
+    // 상태 자체가 잘못 반영되는 일은 없다).
+    const preview = extendMainProcess(processes, processId, holidays, direction, processGapDays);
+    if (preview.blockedReason) {
+      setWarning(preview.blockedReason);
       return;
     }
-    setProcesses(recomputeConflicts(result.processes));
+    setProcesses((prev) => {
+      const result = extendMainProcess(prev, processId, holidays, direction, processGapDays);
+      return result.blockedReason ? prev : recomputeConflicts(result.processes);
+    });
   }
 
   function handleAddHoliday(date: ISODate, kind: HolidayKind) {
