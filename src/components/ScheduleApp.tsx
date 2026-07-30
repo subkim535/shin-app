@@ -11,6 +11,7 @@ import { addDays, addMonths, diffDays, endOfMonth, ISODate, mondayOfWeek, todayI
 import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
 import {
   collidingProcesses,
+  deleteProcess,
   extendMainProcess,
   generateBaseFloorSequence,
   generateRepeatingFloors,
@@ -519,6 +520,11 @@ export default function ScheduleApp() {
     });
   }
 
+  function handleDeleteProcess(processId: string) {
+    setProcesses((prev) => recomputeConflicts(deleteProcess(prev, processId)));
+    setSelectedProcessId((cur) => (cur === processId ? null : cur));
+  }
+
   function handleAddHoliday(date: ISODate, kind: HolidayKind) {
     setHolidays((cur) => (cur.some((h) => h.date === date) ? cur : [...cur, { date, kind }]));
   }
@@ -873,6 +879,7 @@ export default function ScheduleApp() {
             onReorderCellOrder={handleReorderCellOrder}
             onToggleActualDone={handleToggleActualDone}
             onExtendProcess={handleExtendProcess}
+            onDeleteProcess={handleDeleteProcess}
           />
           <p className="text-xs text-zinc-500">
             공정 칩을 같은 행의 다른 날짜 셀로 드래그하면 이동합니다. 날짜 헤더를 클릭하면 작업일보 보기/전체 일정

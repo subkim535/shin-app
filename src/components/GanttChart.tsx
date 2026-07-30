@@ -38,6 +38,7 @@ interface GanttChartProps {
   onReorderCellOrder: (processId: string, direction: 'up' | 'down') => void;
   onToggleActualDone: (processId: string) => void;
   onExtendProcess: (processId: string, direction: 'extend' | 'shrink') => void;
+  onDeleteProcess: (processId: string) => void;
 }
 
 type DragState =
@@ -78,6 +79,7 @@ export default function GanttChart({
   onReorderCellOrder,
   onToggleActualDone,
   onExtendProcess,
+  onDeleteProcess,
 }: GanttChartProps) {
   const dates = useMemo(() => datesInRange(viewStartDate, dayCount), [viewStartDate, dayCount]);
   const dateIndex = useMemo(() => new Map(dates.map((d, i) => [d, i])), [dates]);
@@ -546,7 +548,10 @@ export default function GanttChart({
             👷
           </button>
         )}
-        {category === 'main' && (p.durationDays ?? 1) > 1 && (
+        {/* 연장/축소/삭제는 칩이 선택됐을 때만 보인다 — 항상 보이게 하면 칸 폭이 부족해
+            라벨이 두 줄로 밀리고, 그러면 고스트 위치 계산 기준(1줄 높이)과 실제 칩 높이가
+            어긋나 고스트가 칩과 겹쳐 보인다. 선택은 칩을 한 번 클릭(드래그 없이)하면 된다. */}
+        {category === 'main' && selected && (p.durationDays ?? 1) > 1 && (
           <button
             type="button"
             onPointerDown={(e) => e.stopPropagation()}
@@ -561,7 +566,7 @@ export default function GanttChart({
             ⏪
           </button>
         )}
-        {category === 'main' && (
+        {category === 'main' && selected && (
           <button
             type="button"
             onPointerDown={(e) => e.stopPropagation()}
@@ -574,6 +579,21 @@ export default function GanttChart({
             className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[9px] leading-none px-0.5"
           >
             ⏩
+          </button>
+        )}
+        {selected && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteProcess(p.id);
+            }}
+            title="이 공정 삭제"
+            data-testid="delete-process"
+            className="shrink-0 text-zinc-400 hover:text-red-600 text-[9px] leading-none px-0.5"
+          >
+            🗑
           </button>
         )}
       </div>

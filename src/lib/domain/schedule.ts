@@ -535,6 +535,23 @@ export function moveSubProcess(processes: ProcessInstance[], processId: string, 
 }
 
 /**
+ * 공정 하나를 삭제한다. 유령/중복으로 잘못 생성된 공정을 지울 때 쓰는 용도라, 후속
+ * 공정을 다시 당겨오거나 재계산하지 않고 그 자리만 비운다. 주요공정을 지우면 거기
+ * 딸린 보조공정(박리제·전기설비·먹메김)도 같이 지운다 — 남겨두면 주인 없는 고아
+ * 보조공정이 되기 때문이다.
+ */
+export function deleteProcess(processes: ProcessInstance[], processId: string): ProcessInstance[] {
+  const target = processes.find((p) => p.id === processId);
+  if (!target) return processes;
+  const isMain = PROCESS_TYPE_MAP[target.typeCode]?.category === 'main';
+  const linkedSubIds = isMain
+    ? new Set(processes.filter((p) => p.linkedMainProcessId === processId).map((p) => p.id))
+    : new Set<string>();
+  const remaining = processes.filter((p) => p.id !== processId && !linkedSubIds.has(p.id));
+  return reindexCellOrders(remaining, target.blockId, target.date);
+}
+
+/**
  * 전체 일정 순연: fromDate 이후(포함) 모든 동의 공정을 deltaDays만큼 이동하고,
  * 타설·갱폼처럼 휴일 규칙이 있는 공정은 다시 규칙을 적용한다.
  */
