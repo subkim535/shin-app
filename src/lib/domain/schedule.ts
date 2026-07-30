@@ -277,6 +277,11 @@ export function collidingProcesses(processes: ProcessInstance[], moved: ProcessI
  * 그 결과 다른 사이클의 주요공정과 겹치게 되는 날짜가 있는지 확인한다. 드래그한
  * 공정 자체의 목적지 칸만 보는 previewMainMove와 달리, 뒤따라 밀리는 후속공정들이
  * 조용히 다른 공정과 겹쳐버리는 경우까지 미리 경고하기 위한 것이다.
+ *
+ * 주의: 드래그한 공정 자기 자신의 목적지 칸 자체가 겹치는 건 여기서 막지 않는다 —
+ * 그건 기존의 "여러 공정 공존" 기능(사유 입력/3개 이상 선택 모달)이 사용자의 명시적
+ * 확인을 받아 처리하는 영역이다. 여기서 막는 건 오직 사용자가 보지 못하는 "조용히
+ * 밀려난 후속공정"이 겹치는 경우뿐이다.
  */
 export function previewCascadeCollisions(
   processes: ProcessInstance[],
@@ -309,10 +314,13 @@ export function previewCascadeCollisions(
       i === 0 && !isBlockedForType(code, cursor, holidays, { allowSunday: true })
         ? cursor
         : nextWorkableDate(code, cursor, holidays);
-    const others = processes.filter(
-      (p) => p.blockId === blockId && p.date === date && !ownMainIds.has(p.id) && PROCESS_TYPE_MAP[p.typeCode]?.category === 'main',
-    );
-    for (const o of others) collisions.push({ date, label: processLabel(o) });
+    // i===0(드래그한 공정 자신의 목적지 칸)은 여기서 겹침으로 안 친다 — 위 주석 참고.
+    if (i > 0) {
+      const others = processes.filter(
+        (p) => p.blockId === blockId && p.date === date && !ownMainIds.has(p.id) && PROCESS_TYPE_MAP[p.typeCode]?.category === 'main',
+      );
+      for (const o of others) collisions.push({ date, label: processLabel(o) });
+    }
     const span = i === 0 ? moved.durationDays ?? 1 : 1;
     cursor = addDays(date, span - 1 + gapDays);
   });
