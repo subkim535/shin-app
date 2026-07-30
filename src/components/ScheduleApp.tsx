@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import DailyReportModal from '@/components/DailyReportModal';
 import GanttChart from '@/components/GanttChart';
 import HistoryPanel from '@/components/HistoryPanel';
+import OverviewChart from '@/components/OverviewChart';
 import SettingsPanel from '@/components/SettingsPanel';
 import TeamViewPanel from '@/components/TeamViewPanel';
 import { addDays, addMonths, diffDays, endOfMonth, ISODate, mondayOfWeek, todayISO } from '@/lib/domain/dateUtils';
@@ -147,6 +148,9 @@ export default function ScheduleApp() {
   const [crewTeams, setCrewTeams] = useState<CrewTeam[]>([]);
   const [processGapDays, setProcessGapDays] = useState<number>(1);
   const [viewStartDate, setViewStartDate] = useState<ISODate>(() => mondayOfWeek(todayISO()));
+  // 월간공정표(일단위, 기본)과 전체공정표(월단위, 타설만 표기) 중 어느 걸 볼지 — 각자 화면에서만
+  // 쓰는 상태라 저장 대상(AppState)에는 넣지 않는다.
+  const [viewMode, setViewMode] = useState<'monthly' | 'overview'>('monthly');
   // 오늘이 포함된 주의 월요일부터 다음 달 말일까지를 기본 범위로 고정 (이후 이전주/다음주로 더 이동 가능)
   const [dayCount] = useState<number>(() => computeDayCount(mondayOfWeek(todayISO())));
 
@@ -653,22 +657,33 @@ export default function ScheduleApp() {
         <div className="flex gap-2 text-sm">
           <button
             className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-            onClick={() => setViewStartDate((d) => addDays(d, -7))}
+            onClick={() => setViewMode((m) => (m === 'monthly' ? 'overview' : 'monthly'))}
+            data-testid="view-mode-toggle"
           >
-            이전 주
+            {viewMode === 'monthly' ? '전체공정표 보기' : '월간공정표 보기'}
           </button>
-          <button
-            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-            onClick={() => setViewStartDate(mondayOfWeek(todayISO()))}
-          >
-            오늘
-          </button>
-          <button
-            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-            onClick={() => setViewStartDate((d) => addDays(d, 7))}
-          >
-            다음 주
-          </button>
+          {viewMode === 'monthly' && (
+            <>
+              <button
+                className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+                onClick={() => setViewStartDate((d) => addDays(d, -7))}
+              >
+                이전 주
+              </button>
+              <button
+                className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+                onClick={() => setViewStartDate(mondayOfWeek(todayISO()))}
+              >
+                오늘
+              </button>
+              <button
+                className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+                onClick={() => setViewStartDate((d) => addDays(d, 7))}
+              >
+                다음 주
+              </button>
+            </>
+          )}
           <button
             className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
             onClick={() =>
@@ -826,33 +841,41 @@ export default function ScheduleApp() {
         </div>
       )}
 
-      <GanttChart
-        blocks={sortedBlocks}
-        processes={processes}
-        holidays={holidays}
-        changeHistory={changeHistory}
-        notes={notes}
-        onChangeNote={handleChangeNote}
-        onOpenNote={(blockId, date) => setNoteModal({ blockId, date })}
-        onShowReason={(label, reason, path) => setReasonPopup({ label, reason, path })}
-        onEditCrew={handleOpenCrew}
-        onChangeBlockRemark={handleChangeBlockRemark}
-        onClickHeaderDate={(date) => setDateChoice(date)}
-        viewStartDate={viewStartDate}
-        dayCount={dayCount}
-        selectedProcessId={selectedProcessId}
-        onSelectProcess={handleSelectProcess}
-        onDropProcess={handleDropProcess}
-        onDropHeader={handleDropHeader}
-        onReorderCellOrder={handleReorderCellOrder}
-        onToggleActualDone={handleToggleActualDone}
-        onExtendProcess={handleExtendProcess}
-      />
-
-      <p className="text-xs text-zinc-500">
-        공정 칩을 같은 행의 다른 날짜 셀로 드래그하면 이동합니다. 날짜 헤더를 클릭하면 작업일보 보기/전체 일정
-        순연을 선택할 수 있고, 드래그하면 바로 그 날짜 이후 모든 동의 일정이 함께 순연됩니다.
-      </p>
+      {viewMode === 'monthly' ? (
+        <>
+          <GanttChart
+            blocks={sortedBlocks}
+            processes={processes}
+            holidays={holidays}
+            changeHistory={changeHistory}
+            notes={notes}
+            onChangeNote={handleChangeNote}
+            onOpenNote={(blockId, date) => setNoteModal({ blockId, date })}
+            onShowReason={(label, reason, path) => setReasonPopup({ label, reason, path })}
+            onEditCrew={handleOpenCrew}
+            onChangeBlockRemark={handleChangeBlockRemark}
+            onClickHeaderDate={(date) => setDateChoice(date)}
+            viewStartDate={viewStartDate}
+            dayCount={dayCount}
+            selectedProcessId={selectedProcessId}
+            onSelectProcess={handleSelectProcess}
+            onDropProcess={handleDropProcess}
+            onDropHeader={handleDropHeader}
+            onReorderCellOrder={handleReorderCellOrder}
+            onToggleActualDone={handleToggleActualDone}
+            onExtendProcess={handleExtendProcess}
+          />
+          <p className="text-xs text-zinc-500">
+            공정 칩을 같은 행의 다른 날짜 셀로 드래그하면 이동합니다. 날짜 헤더를 클릭하면 작업일보 보기/전체 일정
+            순연을 선택할 수 있고, 드래그하면 바로 그 날짜 이후 모든 동의 일정이 함께 순연됩니다.
+          </p>
+        </>
+      ) : (
+        <>
+          <OverviewChart blocks={sortedBlocks} processes={processes} />
+          <p className="text-xs text-zinc-500">전체공정표는 월 단위로, 동별 타설(층 완료) 일정만 간략하게 보여줍니다.</p>
+        </>
+      )}
 
       {dropStage === 'threeplus-picker' && pendingDrop && pendingProcess && (
         <Modal draggable>
