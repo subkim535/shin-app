@@ -22,12 +22,25 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Vercel이 배포마다 자동으로 채워주는 값 — main(Production Branch)이면 "production",
+  // dev 프리뷰나 로컬 개발 서버면 그 외 값(preview / undefined)이 된다. 실제 서비스
+  // 화면에는 절대 안 보이고, dev/로컬에서만 지금 보고 있는 게 개발용 화면이라는 걸
+  // 표시해주기 위한 용도라 클릭을 막지 않게 pointer-events-none으로 둔다.
+  const isProduction = process.env.VERCEL_ENV === 'production';
+
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        {!isProduction && (
+          <div className="fixed bottom-2 left-2 z-[9999] pointer-events-none select-none rounded bg-amber-500 px-2 py-0.5 text-xs font-bold text-white shadow">
+            DEV
+          </div>
+        )}
+      </body>
     </html>
   );
 }
