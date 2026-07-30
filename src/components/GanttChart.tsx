@@ -1,13 +1,13 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { datesInRange, dayOfWeek, diffDays, formatMonthDay, ISODate, todayISO, weekdayLabelKo } from '@/lib/domain/dateUtils';
 import { PROCESS_COLOR, PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
 import { processLabel } from '@/lib/domain/schedule';
 import { Block, ChangeRecord, Holiday, ProcessInstance } from '@/lib/domain/types';
 
 const HEADER_W = 96;
-const CELL_W = 112;
+const CELL_W = 128;
 const REMARK_W = 140;
 const HEADER_H = 48;
 const ROW_MAIN_H = 52;
@@ -89,6 +89,26 @@ export default function GanttChart({
   const [dragging, setDragging] = useState<DragState | null>(null);
   const [hoverCell, setHoverCell] = useState<{ blockId: string; date: ISODate } | null>(null);
   const [hoverHeaderDate, setHoverHeaderDate] = useState<ISODate | null>(null);
+  // 연장/축소/삭제처럼 자주 안 쓰는 조작은 칩마다 버튼을 늘어놓지 않고 점 3개(⋯) 메뉴 하나로
+  // 묶는다 — 매번 칩을 먼저 선택해야만 나오게 하면 불편하다는 피드백이 있었다. 셀에
+  // overflow-y-auto가 걸려 있어 칩 옆에 바로 펼치면 잘릴 수 있으므로, 화면 좌표를 저장해
+  // 그리드 바깥의 fixed 오버레이로 따로 그린다.
+  const [chipMenu, setChipMenu] = useState<{
+    processId: string;
+    x: number;
+    y: number;
+    category: 'main' | 'sub';
+    durationDays: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!chipMenu) return;
+    function handleOutside() {
+      setChipMenu(null);
+    }
+    window.addEventListener('pointerdown', handleOutside);
+    return () => window.removeEventListener('pointerdown', handleOutside);
+  }, [chipMenu]);
 
   // pointerup은 React state 커밋을 기다리지 않고 같은 제스처 안에서 즉시 window에
   // 리스너를 붙였다 떼는 ref 기반 방식으로 처리한다. state 업데이트 타이밍에 의존하면
@@ -548,54 +568,24 @@ export default function GanttChart({
             👷
           </button>
         )}
-        {/* 연장/축소/삭제는 칩이 선택됐을 때만 보인다 — 항상 보이게 하면 칸 폭이 부족해
-            라벨이 두 줄로 밀리고, 그러면 고스트 위치 계산 기준(1줄 높이)과 실제 칩 높이가
-            어긋나 고스트가 칩과 겹쳐 보인다. 선택은 칩을 한 번 클릭(드래그 없이)하면 된다. */}
-        {category === 'main' && selected && (p.durationDays ?? 1) > 1 && (
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onExtendProcess(p.id, 'shrink');
-            }}
-            title="연장 취소 (-1일)"
-            data-testid="shrink-process"
-            className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[9px] leading-none px-0.5"
-          >
-            ⏪
-          </button>
-        )}
-        {category === 'main' && selected && (
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onExtendProcess(p.id, 'extend');
-            }}
-            title="오늘 안 끝나 다음날로 넘어갈 때 — 공정 연장 (+1일)"
-            data-testid="extend-process"
-            className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[9px] leading-none px-0.5"
-          >
-            ⏩
-          </button>
-        )}
-        {selected && (
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onDeleteProcess(p.id);
-            }}
-            title="이 공정 삭제"
-            data-testid="delete-process"
-            className="shrink-0 text-zinc-400 hover:text-red-600 text-[9px] leading-none px-0.5"
-          >
-            🗑
-          </button>
-        )}
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            const rect = e.currentTarget.getBoundingClientRect();
+            setChipMenu((cur) =>
+              cur?.processId === p.id
+                ? null
+                : { processId: p.id, x: rect.left, y: rect.bottom + 2, category, durationDays: p.durationDays ?? 1 },
+            );
+          }}
+          title="더보기 (연장·삭제 등)"
+          data-testid="chip-menu-toggle"
+          className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[9px] leading-none px-0.5"
+        >
+          ⋯
+        </button>
       </div>
     );
   }
@@ -821,6 +811,54 @@ export default function GanttChart({
             </g>
           ))}
         </svg>
+
+        {/* 칩의 ⋯ 버튼 메뉴. 셀에 overflow-y-auto가 걸려 있어 칩 옆에 바로 펼치면 잘릴 수
+            있으므로, 버튼을 누른 시점의 화면 좌표를 기준으로 그리드 바깥에 fixed로 그린다. */}
+        {chipMenu && (
+          <div
+            className="fixed z-40 bg-white border border-zinc-200 rounded shadow-lg py-1 text-xs min-w-[120px]"
+            style={{ left: chipMenu.x, top: chipMenu.y }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {chipMenu.category === 'main' && (
+              <button
+                type="button"
+                data-testid="menu-extend"
+                className="block w-full text-left px-3 py-1.5 hover:bg-zinc-100"
+                onClick={() => {
+                  onExtendProcess(chipMenu.processId, 'extend');
+                  setChipMenu(null);
+                }}
+              >
+                연장 (+1일) — 오늘 안 끝났을 때
+              </button>
+            )}
+            {chipMenu.category === 'main' && chipMenu.durationDays > 1 && (
+              <button
+                type="button"
+                data-testid="menu-shrink"
+                className="block w-full text-left px-3 py-1.5 hover:bg-zinc-100"
+                onClick={() => {
+                  onExtendProcess(chipMenu.processId, 'shrink');
+                  setChipMenu(null);
+                }}
+              >
+                연장 취소 (-1일)
+              </button>
+            )}
+            <button
+              type="button"
+              data-testid="menu-delete"
+              className="block w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-600"
+              onClick={() => {
+                onDeleteProcess(chipMenu.processId);
+                setChipMenu(null);
+              }}
+            >
+              삭제
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
