@@ -349,56 +349,71 @@ function cascadePushLaterCycles(
   gapDays: number,
 ): { processes: ProcessInstance[]; blockedReason?: string } {
   let procs = processes;
-  let referenceCycleId = startCycleId;
-  const startOriginal = originalOrder.get(startCycleId);
 
   function mainProcsOf(cid: string) {
     return procs.filter((p) => p.blockId === blockId && p.cycleId === cid && MAIN_SEQUENCE_CODES.includes(p.typeCode));
   }
+  function earliestOf(mp: ProcessInstance[]) {
+    return mp.reduce((min, p) => (p.date < min ? p.date : min), mp[0].date);
+  }
+  function latestOf(mp: ProcessInstance[]) {
+    return mp.reduce((max, p) => (p.date > max ? p.date : max), mp[0].date);
+  }
 
-  // 무한루프 방지 안전장치 — 한 동에 60개 층 이상은 없다고 본다(생성 쪽과 동일한 한도).
-  for (let guard = 0; guard < 60; guard++) {
-    const refProcs = mainProcsOf(referenceCycleId);
-    if (refProcs.length === 0) break;
-    const refEarliest = refProcs.reduce((min, p) => (p.date < min ? p.date : min), refProcs[0].date);
-    const refLatest = refProcs.reduce((max, p) => (p.date > max ? p.date : max), refProcs[0].date);
+  // 이 동의 모든 사이클을 "원래(이동 전) 층 순서" 그대로 정렬한다 — 이동은 그 사이클이
+  // 서 있는 층 순서 자체를 바꾸는 게 아니라 그 자리의 날짜만 바꾸는 것이라, 순서 판단은
+  // 항상 이 원래 순서 기준으로 해야 층이 뒤바뀌는 일이 없다(날짜 구간이 우연히 안
+  // 겹친다고 건너뛰면 뒤 층이 앞 층보다 먼저 시공되는 것처럼 보이는 역전이 생겼었다).
+  const allCycleIds = Array.from(
+    new Set(procs.filter((p) => p.blockId === blockId && MAIN_SEQUENCE_CODES.includes(p.typeCode)).map((p) => p.cycleId)),
+  );
+  const orderedCycleIds = allCycleIds.sort((a, b) => {
+    const oa = originalOrder.get(a) ?? '';
+    const ob = originalOrder.get(b) ?? '';
+    return oa < ob ? -1 : oa > ob ? 1 : 0;
+  });
+  const startIdx = orderedCycleIds.indexOf(startCycleId);
+  if (startIdx === -1) return { processes: procs };
 
-    const otherCycleIds = Array.from(
-      new Set(
-        procs
-          .filter((p) => p.blockId === blockId && MAIN_SEQUENCE_CODES.includes(p.typeCode) && p.cycleId !== referenceCycleId)
-          .map((p) => p.cycleId),
-      ),
-    );
+  const startProcs = mainProcsOf(startCycleId);
+  const startEarliest = earliestOf(startProcs);
 
-    let target: { cid: string; earliest: ISODate; gangformId: string; label: string } | null = null;
-    for (const cid of otherCycleIds) {
-      const mp = mainProcsOf(cid);
-      const earliest = mp.reduce((min, p) => (p.date < min ? p.date : min), mp[0].date);
-      const latest = mp.reduce((max, p) => (p.date > max ? p.date : max), mp[0].date);
-      const overlaps = earliest <= refLatest && latest >= refEarliest;
-      if (!overlaps) continue;
-
-      const otherOriginal = originalOrder.get(cid);
-      const isLaterFloor = startOriginal === undefined || otherOriginal === undefined || otherOriginal > startOriginal;
+  // 이동한 사이클보다 원래 층 순서가 앞서는(더 이전 층) 사이클과 겹치면 과거를 되돌릴
+  // 수 없으니 여기서 막는다.
+  for (let i = 0; i < startIdx; i++) {
+    const mp = mainProcsOf(orderedCycleIds[i]);
+    if (mp.length === 0) continue;
+    if (startEarliest <= latestOf(mp)) {
       const gangform = mp.find((p) => p.typeCode === 'GANGFORM');
-      if (!isLaterFloor) {
-        return {
-          processes,
-          blockedReason: `이 이동은 이전 층 공정과 겹치게 되어 이동할 수 없습니다: ${earliest} ${gangform ? processLabel(gangform) : ''}`,
-        };
-      }
-      if (gangform && (!target || earliest < target.earliest)) {
-        target = { cid, earliest, gangformId: gangform.id, label: processLabel(gangform) };
-      }
+      return {
+        processes,
+        blockedReason: `이 이동은 이전 층 공정과 겹치게 되어 이동할 수 없습니다: ${earliestOf(mp)} ${gangform ? processLabel(gangform) : ''}`,
+      };
     }
+  }
 
-    if (!target) break; // 더 이상 겹치는 이후 층이 없으면 연쇄 종료
-
-    const requiredStart = addDays(refLatest, gapDays);
-    const rebuild = rebuildCycleFrom(procs, blockId, target.cid, 'GANGFORM', target.gangformId, requiredStart, holidays, gapDays, undefined);
-    procs = reindexCellOrders(rebuild.processes, blockId, target.earliest);
-    referenceCycleId = target.cid;
+  // 이동한 사이클부터 시작해서 원래 층 순서대로 쭉 훑으며, 각 사이클이 바로 앞 사이클의
+  // 마지막 날짜 + gapDays보다 뒤에서 시작하는지 확인한다. 아니면 그만큼만 뒤로 민다 —
+  // 이미 충분히 떨어져 있으면 건드리지 않는다.
+  let cursor = latestOf(startProcs);
+  for (let i = startIdx + 1; i < orderedCycleIds.length; i++) {
+    const cid = orderedCycleIds[i];
+    const mp = mainProcsOf(cid);
+    if (mp.length === 0) continue;
+    const earliest = earliestOf(mp);
+    const requiredStart = addDays(cursor, gapDays);
+    if (earliest < requiredStart) {
+      const gangform = mp.find((p) => p.typeCode === 'GANGFORM');
+      if (!gangform) {
+        cursor = latestOf(mp);
+        continue;
+      }
+      const rebuild = rebuildCycleFrom(procs, blockId, cid, 'GANGFORM', gangform.id, requiredStart, holidays, gapDays, undefined);
+      procs = reindexCellOrders(rebuild.processes, blockId, earliest);
+      cursor = latestOf(mainProcsOf(cid));
+    } else {
+      cursor = latestOf(mp);
+    }
   }
 
   return { processes: procs };

@@ -2,8 +2,34 @@
 
 import { useMemo, useState } from 'react';
 import { ISODate } from '@/lib/domain/dateUtils';
-import { processLabel } from '@/lib/domain/schedule';
+import { isKnownType, processLabel } from '@/lib/domain/schedule';
 import { Block, DirectLaborEntry, ProcessInstance, SiteInfo } from '@/lib/domain/types';
+
+// 작업내용을 동별이 아니라 공종별로 묶어서 보여줄 때 쓰는 순서·표기. W_철근/S_철근은
+// "철근" 하나로 합친다 — 현장에서는 동/구간별이 아니라 공종별로 인력을 배치하기 때문에
+// "타설: 11동,16층 / 12동,17층" 식으로 한눈에 보는 게 더 유용하다는 피드백.
+const WORK_GROUP_ORDER = ['GANGFORM', 'REBAR', 'AL', 'POUR', 'RELEASE_AGENT', 'ELECTRIC_FACILITY', 'TROWEL'] as const;
+const WORK_GROUP_LABEL: Record<string, string> = {
+  GANGFORM: '갱폼',
+  REBAR: '철근',
+  AL: 'AL',
+  POUR: '타설',
+  RELEASE_AGENT: '박리제',
+  ELECTRIC_FACILITY: '전기·설비',
+  TROWEL: '먹메김',
+};
+
+function workGroupKey(typeCode: string): string {
+  if (typeCode === 'W_REBAR' || typeCode === 'S_REBAR') return 'REBAR';
+  return typeCode;
+}
+
+// 층수는 갱폼 공정에만 붙어 있으므로(showFloorLabel), 같은 cycleId의 갱폼에서 가져온다.
+function floorNumberLabel(floorLabel: string | undefined): string {
+  if (!floorLabel) return '';
+  const digits = floorLabel.match(/^\d+/)?.[0];
+  return digits ? `${digits}층` : floorLabel;
+}
 
 // 직영 작업 구분 프리셋 — 매번 타이핑하지 않고 목록에서 고르게 한다.
 const DIRECT_LABOR_CATEGORIES = [
@@ -57,6 +83,32 @@ export default function DailyReportModal({
         .sort((a, b) => (blockNames[a.blockId] ?? '').localeCompare(blockNames[b.blockId] ?? '')),
     [processes, date, blockNames],
   );
+
+  const floorByCycle = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of processes) {
+      if (p.typeCode === 'GANGFORM' && p.floorLabel) map.set(p.cycleId, p.floorLabel);
+    }
+    return map;
+  }, [processes]);
+
+  // 동별 나열 대신 공종별로 묶어서 "타설: 11동,16층 / 12동,17층" 형태로 보여준다.
+  const groupedDayProcesses = useMemo(() => {
+    const map = new Map<string, { blockName: string; floor: string }[]>();
+    for (const p of dayProcesses) {
+      const label = isKnownType(p.typeCode) ? WORK_GROUP_LABEL[workGroupKey(p.typeCode)] ?? p.typeCode : processLabel(p);
+      if (!map.has(label)) map.set(label, []);
+      map.get(label)!.push({ blockName: blockNames[p.blockId] ?? '', floor: floorNumberLabel(floorByCycle.get(p.cycleId)) });
+    }
+    const orderedLabels = WORK_GROUP_ORDER.map((k) => WORK_GROUP_LABEL[k]).filter((l) => map.has(l));
+    const otherLabels = [...map.keys()].filter((l) => !orderedLabels.includes(l));
+    return [...orderedLabels, ...otherLabels].map((label) => ({
+      label,
+      items: map
+        .get(label)!
+        .sort((a, b) => a.blockName.localeCompare(b.blockName) || a.floor.localeCompare(b.floor)),
+    }));
+  }, [dayProcesses, floorByCycle, blockNames]);
   const dayDirectLabor = useMemo(() => directLabor.filter((d) => d.date === date), [directLabor, date]);
   // 그리드의 "특이사항" 행에 동별로 적어둔 메모 중, 이 날짜에 실제로 내용이 있는 것만 모은다.
   const dayNotes = useMemo(
@@ -180,15 +232,19 @@ export default function DailyReportModal({
           <h3 className="text-sm font-semibold text-zinc-700 print:text-base">작업내용</h3>
           {dayProcesses.length === 0 && <p className="text-xs text-zinc-400">이 날짜에 예정된 공정이 없습니다.</p>}
           <div className="flex flex-col gap-1">
-            {dayProcesses.map((p) => (
+            {groupedDayProcesses.map((g) => (
               <div
-                key={p.id}
-                className="text-sm border border-zinc-200 rounded px-2 py-1 flex items-center justify-between print:text-base print:border-zinc-400"
+                key={g.label}
+                className="text-sm border border-zinc-200 rounded px-2 py-1 print:text-base print:border-zinc-400"
               >
-                <span>
-                  <strong>{blockNames[p.blockId] ?? ''}</strong> {processLabel(p)}
-                </span>
-                <span className="text-xs text-zinc-500 print:text-sm">{p.crew ? `${p.crew.team} · ${p.crew.headcount}명` : '작업팀 미배정'}</span>
+                <strong>{g.label}:</strong>{' '}
+                {g.items.map((it, i) => (
+                  <span key={i}>
+                    {it.blockName}
+                    {it.floor ? `, ${it.floor}` : ''}
+                    {i < g.items.length - 1 ? ' / ' : ''}
+                  </span>
+                ))}
               </div>
             ))}
           </div>

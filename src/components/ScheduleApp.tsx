@@ -673,9 +673,11 @@ export default function ScheduleApp() {
     let generated: ProcessInstance[];
     if (genFloorForm.templateId === 'ground') {
       // 기준층은 한 번으로 끝나지 않으니 시작 층부터 해당월 + 익월 말일까지 자동으로
-      // 한 층씩 올려가며 반복 생성한다.
+      // 한 층씩 올려가며 반복 생성한다. 숫자만 입력했으면(예: "16") 층 표기 규칙에 맞게
+      // "F"를 자동으로 붙인다.
+      const startFloor = /^\d+$/.test(genFloorForm.floor.trim()) ? `${genFloorForm.floor.trim()}F` : genFloorForm.floor;
       const untilDate = endOfMonth(addMonths(genFloorForm.startDate, 1));
-      generated = generateRepeatingFloors(genFloorForm.blockId, genFloorForm.floor, genFloorForm.startDate, holidays, untilDate, processGapDays);
+      generated = generateRepeatingFloors(genFloorForm.blockId, startFloor, genFloorForm.startDate, holidays, untilDate, processGapDays);
     } else {
       const template = templates.find((t) => t.id === genFloorForm.templateId);
       if (!template) return;
@@ -855,6 +857,12 @@ export default function ScheduleApp() {
                 className="border border-zinc-300 rounded px-2 py-1 w-20"
                 value={genFloorForm.floor}
                 onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, floor: e.target.value } : cur))}
+                onBlur={(e) => {
+                  const trimmed = e.target.value.trim();
+                  if (/^\d+$/.test(trimmed)) {
+                    setGenFloorForm((cur) => (cur ? { ...cur, floor: `${trimmed}F` } : cur));
+                  }
+                }}
               />
             </>
           )}
