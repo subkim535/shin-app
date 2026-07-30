@@ -83,6 +83,7 @@ export interface AppState {
   notes: Record<string, string>;
   directLabor: DirectLaborEntry[];
   crewTeams: CrewTeam[];
+  processGapDays: number; // 주요공정 하나가 끝난 다음 다음 공정이 시작되기까지 두는 기본 여유일수 (기본 1일 = 바로 다음날)
 }
 
 export interface ProcessInstance {

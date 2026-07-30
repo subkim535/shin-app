@@ -45,6 +45,8 @@ interface SettingsPanelProps {
   holidays: Holiday[];
   onAddHoliday: (date: ISODate, kind: HolidayKind) => void;
   onRemoveHoliday: (date: ISODate) => void;
+  processGapDays: number;
+  onChangeProcessGapDays: (days: number) => void;
   lastSavedAt: string | null;
   syncError: string | null;
 }
@@ -68,6 +70,8 @@ export default function SettingsPanel({
   holidays,
   onAddHoliday,
   onRemoveHoliday,
+  processGapDays,
+  onChangeProcessGapDays,
   lastSavedAt,
   syncError,
 }: SettingsPanelProps) {
@@ -333,6 +337,26 @@ export default function SettingsPanel({
             <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm" onClick={addHoliday}>
               추가
             </button>
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <h3 className="text-sm font-semibold text-zinc-700">공종 간 여유일수</h3>
+          <p className="text-xs text-zinc-500">
+            지상층 기본(갱폼~타설) 공정에서 한 공종이 끝난 다음 다음 공종이 시작되기까지 두는 기본 간격입니다.
+            1일이면 바로 다음날부터, 2일이면 하루 더 쉬고 시작합니다. 새로 생성하는 공정과, 앞으로 이동/연장하는
+            공정에 적용됩니다.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="1"
+              max="14"
+              className="border border-zinc-300 rounded px-2 py-1 text-sm w-20"
+              value={processGapDays}
+              onChange={(e) => onChangeProcessGapDays(Math.min(14, Math.max(1, Number(e.target.value) || 1)))}
+            />
+            <span className="text-xs text-zinc-500">일</span>
           </div>
         </section>
 

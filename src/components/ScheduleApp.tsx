@@ -145,6 +145,7 @@ export default function ScheduleApp() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [directLabor, setDirectLabor] = useState<DirectLaborEntry[]>([]);
   const [crewTeams, setCrewTeams] = useState<CrewTeam[]>([]);
+  const [processGapDays, setProcessGapDays] = useState<number>(1);
   const [viewStartDate, setViewStartDate] = useState<ISODate>(() => mondayOfWeek(todayISO()));
   // 오늘이 포함된 주의 월요일부터 다음 달 말일까지를 기본 범위로 고정 (이후 이전주/다음주로 더 이동 가능)
   const [dayCount] = useState<number>(() => computeDayCount(mondayOfWeek(todayISO())));
@@ -166,6 +167,7 @@ export default function ScheduleApp() {
       ...remote,
       directLabor: (remote.directLabor ?? []).map((d) => ({ ...d, category: d.category ?? '기타' })),
       crewTeams: remote.crewTeams ?? [],
+      processGapDays: remote.processGapDays ?? 1,
     };
   }
 
@@ -181,6 +183,7 @@ export default function ScheduleApp() {
     setNotes(state.notes);
     setDirectLabor(state.directLabor);
     setCrewTeams(state.crewTeams);
+    setProcessGapDays(state.processGapDays);
   }
 
   // 최초 로드: Supabase에 저장된 데이터가 있으면 불러오고, 없으면(첫 실행) 샘플 데이터를 만들어 저장한다.
@@ -208,6 +211,7 @@ export default function ScheduleApp() {
             notes: {},
             directLabor: [],
             crewTeams: [],
+            processGapDays: 1,
           };
           applyRemoteState(initial);
           const updatedAt = await saveState(SITE_KEY, initial);
@@ -277,6 +281,7 @@ export default function ScheduleApp() {
       notes,
       directLabor,
       crewTeams,
+      processGapDays,
     };
     const json = stableStringify(state);
     if (json === lastSyncedJsonRef.current) return;
@@ -285,7 +290,7 @@ export default function ScheduleApp() {
       flushPendingSave();
     }, 500);
     return () => clearTimeout(handle);
-  }, [loaded, siteInfo, blocks, templates, holidays, processes, changeHistory, dateShiftHistory, notes, directLabor, crewTeams]);
+  }, [loaded, siteInfo, blocks, templates, holidays, processes, changeHistory, dateShiftHistory, notes, directLabor, crewTeams, processGapDays]);
 
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -428,7 +433,7 @@ export default function ScheduleApp() {
       setWarning(preview.blockedReason);
       return;
     }
-    const cascadeCollisions = previewCascadeCollisions(processes, processId, date, holidays);
+    const cascadeCollisions = previewCascadeCollisions(processes, processId, date, holidays, processGapDays);
     if (cascadeCollisions.length > 0) {
       const list = cascadeCollisions.map((c) => `${c.date} ${c.label}`).join(', ');
       setWarning(`이 이동은 후속공정이 밀리면서 주요공정이 겹치게 되어 이동할 수 없습니다: ${list}`);
@@ -493,7 +498,7 @@ export default function ScheduleApp() {
   }
 
   function handleExtendProcess(processId: string, direction: 'extend' | 'shrink') {
-    const result = extendMainProcess(processes, processId, holidays, direction);
+    const result = extendMainProcess(processes, processId, holidays, direction, processGapDays);
     if (result.blockedReason) {
       setWarning(result.blockedReason);
       return;
@@ -548,7 +553,7 @@ export default function ScheduleApp() {
     if (!pendingDrop) return;
     const reason = (presetReason ?? reasonInput).trim() || '사유 미입력';
     if (pendingDrop.kind === 'main') {
-      const result = moveMainProcess(processes, changeHistory, pendingDrop.processId, pendingDrop.date, reason, holidays);
+      const result = moveMainProcess(processes, changeHistory, pendingDrop.processId, pendingDrop.date, reason, holidays, processGapDays);
       if (result.blockedReason) {
         setWarning(result.blockedReason);
       } else {
@@ -619,7 +624,7 @@ export default function ScheduleApp() {
       // 기준층은 한 번으로 끝나지 않으니 시작 층부터 해당월 + 익월 말일까지 자동으로
       // 한 층씩 올려가며 반복 생성한다.
       const untilDate = endOfMonth(addMonths(genFloorForm.startDate, 1));
-      generated = generateRepeatingFloors(genFloorForm.blockId, genFloorForm.floor, genFloorForm.startDate, holidays, untilDate);
+      generated = generateRepeatingFloors(genFloorForm.blockId, genFloorForm.floor, genFloorForm.startDate, holidays, untilDate, processGapDays);
     } else {
       const template = templates.find((t) => t.id === genFloorForm.templateId);
       if (!template) return;
@@ -1026,6 +1031,8 @@ export default function ScheduleApp() {
           holidays={holidays}
           onAddHoliday={handleAddHoliday}
           onRemoveHoliday={handleRemoveHoliday}
+          processGapDays={processGapDays}
+          onChangeProcessGapDays={setProcessGapDays}
           lastSavedAt={lastSavedAt}
           syncError={syncError}
         />

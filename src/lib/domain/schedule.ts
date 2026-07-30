@@ -99,6 +99,7 @@ export function generateBaseFloorSequence(
   floor: string,
   startDate: ISODate,
   holidays: Holiday[],
+  gapDays: number = 1,
 ): ProcessInstance[] {
   const cycleId = crypto.randomUUID();
   const result: ProcessInstance[] = [];
@@ -109,7 +110,7 @@ export function generateBaseFloorSequence(
     const main = makeProcess(blockId, code, date, cycleId, { floorLabel: def.showFloorLabel ? floor : undefined });
     result.push(main);
     result.push(...attachSubProcesses(blockId, code, date, main.id, cycleId));
-    cursor = addDays(date, 1);
+    cursor = addDays(date, gapDays);
   }
   return result;
 }
@@ -132,12 +133,13 @@ export function generateRepeatingFloors(
   startDate: ISODate,
   holidays: Holiday[],
   untilDate: ISODate,
+  gapDays: number = 1,
 ): ProcessInstance[] {
   const result: ProcessInstance[] = [];
   let floor = startFloor;
   let cursor = startDate;
   for (let i = 0; i < 60; i++) {
-    const cycle = generateBaseFloorSequence(blockId, floor, cursor, holidays);
+    const cycle = generateBaseFloorSequence(blockId, floor, cursor, holidays, gapDays);
     if (cycle.length === 0) break;
     result.push(...cycle);
     const lastDate = cycle.reduce((max, p) => (p.date > max ? p.date : max), cycle[0].date);
@@ -281,6 +283,7 @@ export function previewCascadeCollisions(
   processId: string,
   newDate: ISODate,
   holidays: Holiday[],
+  gapDays: number = 1,
 ): { date: ISODate; label: string }[] {
   const moved = processes.find((p) => p.id === processId);
   if (!moved) return [];
@@ -310,7 +313,8 @@ export function previewCascadeCollisions(
       (p) => p.blockId === blockId && p.date === date && !ownMainIds.has(p.id) && PROCESS_TYPE_MAP[p.typeCode]?.category === 'main',
     );
     for (const o of others) collisions.push({ date, label: processLabel(o) });
-    cursor = addDays(date, 1);
+    const span = i === 0 ? moved.durationDays ?? 1 : 1;
+    cursor = addDays(date, span - 1 + gapDays);
   });
   return collisions;
 }
@@ -328,6 +332,7 @@ export function moveMainProcess(
   newDate: ISODate,
   reason: string,
   holidays: Holiday[],
+  gapDays: number = 1,
 ): MoveResult {
   const moved = processes.find((p) => p.id === processId);
   if (!moved) return { processes, changeHistory };
@@ -371,10 +376,14 @@ export function moveMainProcess(
     const main = makeProcess(blockId, code, date, cycleId, {
       floorLabel: stepDef.showFloorLabel ? moved.floorLabel : undefined,
     });
-    main.id = code === moved.typeCode ? processId : main.id; // 이동한 공정 자체는 id 유지
+    if (code === moved.typeCode) {
+      main.id = processId; // 이동한 공정 자체는 id 유지
+      main.durationDays = moved.durationDays; // 연장(며칠짜리)해둔 상태도 이동 후 그대로 유지
+    }
     rebuilt.push(main);
     rebuilt.push(...attachSubProcesses(blockId, code, date, main.id, cycleId));
-    cursor = addDays(date, 1);
+    const span = code === moved.typeCode ? moved.durationDays ?? 1 : 1;
+    cursor = addDays(date, span - 1 + gapDays);
   });
 
   const record: ChangeRecord = {
@@ -405,6 +414,7 @@ export function previewExtendCollisions(
   processId: string,
   newDuration: number,
   holidays: Holiday[],
+  gapDays: number = 1,
 ): { date: ISODate; label: string }[] {
   const moved = processes.find((p) => p.id === processId);
   if (!moved) return [];
@@ -423,14 +433,14 @@ export function previewExtendCollisions(
   );
 
   const collisions: { date: ISODate; label: string }[] = [];
-  let cursor = addDays(moved.date, newDuration);
+  let cursor = addDays(moved.date, newDuration - 1 + gapDays);
   laterMainCodes.forEach((code) => {
     const date = nextWorkableDate(code, cursor, holidays);
     const others = processes.filter(
       (p) => p.blockId === blockId && p.date === date && !ownMainIds.has(p.id) && PROCESS_TYPE_MAP[p.typeCode]?.category === 'main',
     );
     for (const o of others) collisions.push({ date, label: processLabel(o) });
-    cursor = addDays(date, 1);
+    cursor = addDays(date, gapDays);
   });
   return collisions;
 }
@@ -445,6 +455,7 @@ export function extendMainProcess(
   processId: string,
   holidays: Holiday[],
   direction: 'extend' | 'shrink' = 'extend',
+  gapDays: number = 1,
 ): MoveResult {
   const moved = processes.find((p) => p.id === processId);
   if (!moved) return { processes, changeHistory: [] };
@@ -464,7 +475,7 @@ export function extendMainProcess(
     };
   }
 
-  const collisions = previewExtendCollisions(processes, processId, newDuration, holidays);
+  const collisions = previewExtendCollisions(processes, processId, newDuration, holidays, gapDays);
   if (collisions.length > 0) {
     const list = collisions.map((c) => `${c.date} ${c.label}`).join(', ');
     return {
@@ -490,7 +501,7 @@ export function extendMainProcess(
   const kept = processes.filter((p) => !laterMainIds.has(p.id) && !staleSubIds.has(p.id));
 
   const rebuilt: ProcessInstance[] = [];
-  let cursor = addDays(moved.date, newDuration);
+  let cursor = addDays(moved.date, newDuration - 1 + gapDays);
   laterMainCodes.forEach((code) => {
     const stepDef = PROCESS_TYPE_MAP[code];
     const date = nextWorkableDate(code, cursor, holidays);
@@ -499,7 +510,7 @@ export function extendMainProcess(
     });
     rebuilt.push(main);
     rebuilt.push(...attachSubProcesses(blockId, code, date, main.id, cycleId));
-    cursor = addDays(date, 1);
+    cursor = addDays(date, gapDays);
   });
 
   const nextProcesses = withArrivals(
