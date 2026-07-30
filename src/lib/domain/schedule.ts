@@ -273,59 +273,144 @@ export function collidingProcesses(processes: ProcessInstance[], moved: ProcessI
 }
 
 /**
- * moveMainProcess가 실제로 적용하기 전에, 드래그한 공정 자신의 목적지 칸과 후속
- * 연쇄 재계산 결과 모두를 미리 시뮬레이션해서 같은 동 안의 다른 사이클 주요공정과
- * 겹치게 되는 날짜가 있는지 확인한다. 같은 동에서는 주요공정끼리 절대 겹칠 수 없다는
- * 규칙이라, 드래그한 칸 자체가 겹치는 경우와 뒤따라 밀리는 후속공정이 조용히 겹치는
- * 경우를 구분하지 않고 전부 여기서 막는다. (다른 동의 같은 공종이 같은 날 겹치는 건
- * 별개의 기존 기능(충돌순번 ①②③ 표시)이 다루는 영역이라 여기서 건드리지 않는다.)
+ * 사이클 하나(주요공정 하나 + 그 뒤에 이어지는 같은 사이클의 later 단계들 + 딸린
+ * 보조공정)를 fromTypeCode 위치부터 newDate 기준으로 통째로 다시 배치한다.
+ * moveMainProcess 자신의 이동과, 도미노 연쇄로 다른 사이클을 밀어낼 때 둘 다 이
+ * 함수를 쓴다 — 후자는 change_history를 남기지 않는 "조용한 재계산"이라 이 함수
+ * 자체는 change_history를 건드리지 않고 processes만 돌려준다.
  */
-export function previewCascadeCollisions(
+function rebuildCycleFrom(
   processes: ProcessInstance[],
-  processId: string,
+  blockId: string,
+  cycleId: string,
+  fromTypeCode: string,
+  fromProcessId: string,
   newDate: ISODate,
   holidays: Holiday[],
-  gapDays: number = 1,
-): { date: ISODate; label: string }[] {
-  const moved = processes.find((p) => p.id === processId);
-  if (!moved) return [];
-  const def = PROCESS_TYPE_MAP[moved.typeCode];
-  if (!def || def.category !== 'main') return [];
-
-  const seqIndex = MAIN_SEQUENCE_CODES.indexOf(moved.typeCode);
+  gapDays: number,
+  preserveDurationDays: number | undefined,
+): { processes: ProcessInstance[]; firstDate: ISODate } {
+  const seqIndex = MAIN_SEQUENCE_CODES.indexOf(fromTypeCode);
   const laterMainCodes = MAIN_SEQUENCE_CODES.slice(seqIndex + 1);
-  const blockId = moved.blockId;
-  const cycleId = moved.cycleId;
 
-  // 이 사이클 안에서 새로 배치될(=자기 자신들) 주요공정 id는 겹침 대상에서 제외한다.
-  const ownMainIds = new Set(
+  const laterMainIds = new Set(
+    processes.filter((p) => p.blockId === blockId && p.cycleId === cycleId && laterMainCodes.includes(p.typeCode)).map((p) => p.id),
+  );
+  const staleSubIds = new Set(
     processes
-      .filter((p) => p.blockId === blockId && p.cycleId === cycleId && (p.id === processId || laterMainCodes.includes(p.typeCode)))
+      .filter((p) => p.linkedMainProcessId && (p.linkedMainProcessId === fromProcessId || laterMainIds.has(p.linkedMainProcessId)))
       .map((p) => p.id),
   );
+  const kept = processes.filter((p) => p.id !== fromProcessId && !laterMainIds.has(p.id) && !staleSubIds.has(p.id));
+  const floorLabel = processes.find((p) => p.id === fromProcessId)?.floorLabel;
 
-  const collisions: { date: ISODate; label: string }[] = [];
+  const rebuilt: ProcessInstance[] = [];
   let cursor = newDate;
-  [moved.typeCode, ...laterMainCodes].forEach((code, i) => {
+  let firstDate = newDate;
+  [fromTypeCode, ...laterMainCodes].forEach((code, i) => {
+    const stepDef = PROCESS_TYPE_MAP[code];
+    // 사용자가 직접 드래그한 공정(맨 앞 하나)만 일요일 예외를 허용한다. 이어지는 후속
+    // 공정들(및 도미노로 밀린 다른 사이클)은 계속 기본 휴일 규칙(일요일 포함)을 따른다.
     const date =
       i === 0 && !isBlockedForType(code, cursor, holidays, { allowSunday: true })
         ? cursor
         : nextWorkableDate(code, cursor, holidays);
-    const others = processes.filter(
-      (p) => p.blockId === blockId && p.date === date && !ownMainIds.has(p.id) && PROCESS_TYPE_MAP[p.typeCode]?.category === 'main',
-    );
-    for (const o of others) collisions.push({ date, label: processLabel(o) });
-    const span = i === 0 ? moved.durationDays ?? 1 : 1;
+    if (i === 0) firstDate = date;
+    const main = makeProcess(blockId, code, date, cycleId, {
+      floorLabel: stepDef.showFloorLabel ? floorLabel : undefined,
+    });
+    if (code === fromTypeCode) {
+      main.id = fromProcessId; // 이동한 공정 자체는 id 유지
+      main.durationDays = preserveDurationDays;
+    }
+    rebuilt.push(main);
+    rebuilt.push(...attachSubProcesses(blockId, code, date, main.id, cycleId));
+    const span = code === fromTypeCode ? preserveDurationDays ?? 1 : 1;
     cursor = addDays(date, span - 1 + gapDays);
   });
-  return collisions;
+
+  return { processes: [...kept, ...rebuilt], firstDate };
+}
+
+/**
+ * 도미노 연쇄: 방금 옮긴(또는 방금 밀어낸) 사이클이 같은 동의 "이후 층" 사이클과
+ * 날짜가 겹치면, 그 사이클을 곧바로 뒤로 밀어낸다 — 필요하면 그 다음 층, 또 그
+ * 다음 층까지 연쇄적으로. 각 사이클은 자기 자신의 휴일 규칙에 맞춰 재배치된다.
+ * "이전 층"(원래 더 앞선 층)과 겹치는 경우는 밀어내지 않고 통째로 막는다 — 이미
+ * 앞서 있는 공정의 일정을 뒤로 미룰 수는 없기 때문이다. 층 순서는 이번 이동이
+ * 시작되기 전(originalOrder)의 사이클별 가장 이른 날짜로 판별한다.
+ */
+function cascadePushLaterCycles(
+  processes: ProcessInstance[],
+  blockId: string,
+  startCycleId: string,
+  originalOrder: Map<string, ISODate>,
+  holidays: Holiday[],
+  gapDays: number,
+): { processes: ProcessInstance[]; blockedReason?: string } {
+  let procs = processes;
+  let referenceCycleId = startCycleId;
+  const startOriginal = originalOrder.get(startCycleId);
+
+  function mainProcsOf(cid: string) {
+    return procs.filter((p) => p.blockId === blockId && p.cycleId === cid && MAIN_SEQUENCE_CODES.includes(p.typeCode));
+  }
+
+  // 무한루프 방지 안전장치 — 한 동에 60개 층 이상은 없다고 본다(생성 쪽과 동일한 한도).
+  for (let guard = 0; guard < 60; guard++) {
+    const refProcs = mainProcsOf(referenceCycleId);
+    if (refProcs.length === 0) break;
+    const refEarliest = refProcs.reduce((min, p) => (p.date < min ? p.date : min), refProcs[0].date);
+    const refLatest = refProcs.reduce((max, p) => (p.date > max ? p.date : max), refProcs[0].date);
+
+    const otherCycleIds = Array.from(
+      new Set(
+        procs
+          .filter((p) => p.blockId === blockId && MAIN_SEQUENCE_CODES.includes(p.typeCode) && p.cycleId !== referenceCycleId)
+          .map((p) => p.cycleId),
+      ),
+    );
+
+    let target: { cid: string; earliest: ISODate; gangformId: string; label: string } | null = null;
+    for (const cid of otherCycleIds) {
+      const mp = mainProcsOf(cid);
+      const earliest = mp.reduce((min, p) => (p.date < min ? p.date : min), mp[0].date);
+      const latest = mp.reduce((max, p) => (p.date > max ? p.date : max), mp[0].date);
+      const overlaps = earliest <= refLatest && latest >= refEarliest;
+      if (!overlaps) continue;
+
+      const otherOriginal = originalOrder.get(cid);
+      const isLaterFloor = startOriginal === undefined || otherOriginal === undefined || otherOriginal > startOriginal;
+      const gangform = mp.find((p) => p.typeCode === 'GANGFORM');
+      if (!isLaterFloor) {
+        return {
+          processes,
+          blockedReason: `이 이동은 이전 층 공정과 겹치게 되어 이동할 수 없습니다: ${earliest} ${gangform ? processLabel(gangform) : ''}`,
+        };
+      }
+      if (gangform && (!target || earliest < target.earliest)) {
+        target = { cid, earliest, gangformId: gangform.id, label: processLabel(gangform) };
+      }
+    }
+
+    if (!target) break; // 더 이상 겹치는 이후 층이 없으면 연쇄 종료
+
+    const requiredStart = addDays(refLatest, gapDays);
+    const rebuild = rebuildCycleFrom(procs, blockId, target.cid, 'GANGFORM', target.gangformId, requiredStart, holidays, gapDays, undefined);
+    procs = reindexCellOrders(rebuild.processes, blockId, target.earliest);
+    referenceCycleId = target.cid;
+  }
+
+  return { processes: procs };
 }
 
 /**
  * 주요공정 이동: 이동한 공정만 change_history에 남기고, 후속 주요/보조공정은
  * 조용히 재계산한다 (문서 2.6: "후속공정 전체 흔적을 남기지 않고, 사용자가
- * 직접 이동한 기준 공정 중심으로 표시"). 목적지 셀에 다른 주요공정이 이미 있어도
- * 막지 않고 공존시키며, 새로 이동해온 공정이 1번이 되고 기존 것들은 뒤로 밀린다.
+ * 직접 이동한 기준 공정 중심으로 표시"). 이 이동으로 같은 동의 다른(이후) 층
+ * 사이클과 겹치게 되면 막지 않고 그 사이클을 도미노처럼 뒤로 밀어낸다 — 실제
+ * 현장에서 한 층 일정이 밀리면 뒤에 이어지는 층들도 자연스럽게 순서대로 밀리는
+ * 것과 같은 원리다. 다만 "이전 층"과 겹치게 되는 경우는 밀 수 없으므로 그대로 막는다.
  */
 export function moveMainProcess(
   processes: ProcessInstance[],
@@ -346,57 +431,35 @@ export function moveMainProcess(
     return { processes, changeHistory, blockedReason: preview.blockedReason };
   }
 
-  const seqIndex = MAIN_SEQUENCE_CODES.indexOf(moved.typeCode);
-  const laterMainCodes = MAIN_SEQUENCE_CODES.slice(seqIndex + 1);
   const blockId = moved.blockId;
   const cycleId = moved.cycleId;
   const oldDate = moved.date;
 
-  const laterMainIds = new Set(
-    processes
-      .filter((p) => p.blockId === blockId && p.cycleId === cycleId && laterMainCodes.includes(p.typeCode))
-      .map((p) => p.id),
-  );
-  const staleSubIds = new Set(
-    processes
-      .filter((p) => p.linkedMainProcessId && (p.linkedMainProcessId === processId || laterMainIds.has(p.linkedMainProcessId)))
-      .map((p) => p.id),
-  );
+  // 이번 이동이 시작되기 전, 같은 동 안 사이클들의 원래 층 순서(가장 이른 날짜 기준)를
+  // 기록해둔다 — 도미노 연쇄가 "이후 층"만 밀 수 있게 판별하는 기준이 된다.
+  const originalOrder = new Map<string, ISODate>();
+  for (const p of processes) {
+    if (p.blockId !== blockId || !MAIN_SEQUENCE_CODES.includes(p.typeCode)) continue;
+    const cur = originalOrder.get(p.cycleId);
+    if (!cur || p.date < cur) originalOrder.set(p.cycleId, p.date);
+  }
 
-  const kept = processes.filter((p) => p.id !== processId && !laterMainIds.has(p.id) && !staleSubIds.has(p.id));
+  const rebuild = rebuildCycleFrom(processes, blockId, cycleId, moved.typeCode, processId, newDate, holidays, gapDays, moved.durationDays);
 
-  const rebuilt: ProcessInstance[] = [];
-  let cursor = newDate;
-  [moved.typeCode, ...laterMainCodes].forEach((code, i) => {
-    const stepDef = PROCESS_TYPE_MAP[code];
-    // 사용자가 직접 드래그한 공정(맨 앞 하나)만 일요일 예외를 허용한다. 이어지는 후속
-    // 공정들은 사용자가 직접 지정한 게 아니므로 계속 기본 휴일 규칙(일요일 포함)을 따른다.
-    const date =
-      i === 0 && !isBlockedForType(code, cursor, holidays, { allowSunday: true })
-        ? cursor
-        : nextWorkableDate(code, cursor, holidays);
-    const main = makeProcess(blockId, code, date, cycleId, {
-      floorLabel: stepDef.showFloorLabel ? moved.floorLabel : undefined,
-    });
-    if (code === moved.typeCode) {
-      main.id = processId; // 이동한 공정 자체는 id 유지
-      main.durationDays = moved.durationDays; // 연장(며칠짜리)해둔 상태도 이동 후 그대로 유지
-    }
-    rebuilt.push(main);
-    rebuilt.push(...attachSubProcesses(blockId, code, date, main.id, cycleId));
-    const span = code === moved.typeCode ? moved.durationDays ?? 1 : 1;
-    cursor = addDays(date, span - 1 + gapDays);
-  });
+  const cascade = cascadePushLaterCycles(rebuild.processes, blockId, cycleId, originalOrder, holidays, gapDays);
+  if (cascade.blockedReason) {
+    return { processes, changeHistory, blockedReason: cascade.blockedReason }; // 통째로 되돌림
+  }
 
   const record: ChangeRecord = {
     id: crypto.randomUUID(),
     processId,
     previousDate: oldDate,
-    newDate: rebuilt[0].date,
+    newDate: rebuild.firstDate,
     reason,
   };
 
-  let nextProcesses = withArrivals([...kept, ...rebuilt], [rebuilt[0].id]);
+  let nextProcesses = withArrivals(cascade.processes, [processId]);
   nextProcesses = reindexCellOrders(nextProcesses, blockId, oldDate); // 떠난 셀 정리
   nextProcesses = placeIntoCellAsFirst(nextProcesses, processId); // 새 셀에서 1번으로
   return { processes: nextProcesses, changeHistory: [...changeHistory, record] };

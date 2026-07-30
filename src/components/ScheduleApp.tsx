@@ -20,7 +20,6 @@ import {
   isKnownType,
   moveMainProcess,
   moveSubProcess,
-  previewCascadeCollisions,
   previewMainMove,
   processLabel,
   recomputeConflicts,
@@ -439,12 +438,9 @@ export default function ScheduleApp() {
       setWarning(preview.blockedReason);
       return;
     }
-    const cascadeCollisions = previewCascadeCollisions(processes, processId, date, holidays, processGapDays);
-    if (cascadeCollisions.length > 0) {
-      const list = cascadeCollisions.map((c) => `${c.date} ${c.label}`).join(', ');
-      setWarning(`이 이동은 후속공정이 밀리면서 주요공정이 겹치게 되어 이동할 수 없습니다: ${list}`);
-      return;
-    }
+    // 같은 동의 이후 층과 겹치는 경우는 여기서 미리 막지 않는다 — moveMainProcess가
+    // 확정 시점에 도미노로 뒤 층을 밀어서 자동으로 해결한다(이전 층과 겹치는 경우만
+    // moveMainProcess가 blockedReason으로 막는다).
     setPendingDrop({ processId, blockId, date, kind: 'main', collisionCount: preview.collisionCount });
     setDropStage(preview.collisionCount >= 2 ? 'threeplus-picker' : 'reason');
   }
