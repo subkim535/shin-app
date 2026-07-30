@@ -693,7 +693,7 @@ export default function GanttChart({
               data-block-row={block.name}
               title="드래그해서 동 순서 변경"
               className={[
-                'sticky left-0 z-20 bg-white border-b border-r border-zinc-200 flex flex-col justify-center px-2 font-medium whitespace-nowrap cursor-grab active:cursor-grabbing',
+                'sticky left-0 z-20 bg-white border-b-2 border-r border-zinc-200 border-b-zinc-900 flex flex-col justify-center px-2 font-medium whitespace-nowrap cursor-grab active:cursor-grabbing',
                 isDragSource ? 'opacity-50' : '',
                 isHoverTarget ? 'ring-2 ring-inset ring-indigo-600' : '',
               ].join(' ')}
@@ -709,7 +709,7 @@ export default function GanttChart({
         {blocks.map((block, rowIndex) => (
           <div
             key={`remark-${block.id}`}
-            className="sticky right-0 z-10 bg-zinc-50 border-b border-l border-zinc-200 px-1 py-1"
+            className="sticky right-0 z-10 bg-zinc-50 border-b-2 border-l border-zinc-200 border-b-zinc-900 px-1 py-1"
             style={{ gridColumn: dates.length + 2, gridRow: `${rowIndex * 3 + 2} / span 3` }}
           >
             <textarea
@@ -760,7 +760,7 @@ export default function GanttChart({
                   data-block={block.name}
                   data-date={d}
                   data-row="note"
-                  className={['border-b border-l border-zinc-200 px-0.5 py-0.5', cellShade].join(' ')}
+                  className={['border-b-2 border-l border-zinc-200 border-b-zinc-900 px-0.5 py-0.5', cellShade].join(' ')}
                   style={{ gridColumn: colIndex + 2, gridRow: baseRow + 2 }}
                 >
                   <div className="flex items-center h-full w-full">

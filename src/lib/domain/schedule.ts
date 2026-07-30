@@ -338,17 +338,23 @@ function rebuildCycleFrom(
     rebuilt.push(...attachSubProcesses(blockId, code, date, main.id, cycleId));
     const span = code === fromTypeCode ? preserveDurationDays ?? 1 : originalByCode.get(code)?.durationDays ?? 1;
 
+    // "원래 간격을 유지"하되, 그 간격이 순전히 휴일 때문에 밀린 것이면(예: 사이에 있던
+    // 일요일 때문에 원래도 자동으로 하루 더 벌어져 있었을 뿐) 그대로 옮겨오면 안 된다 —
+    // 새 날짜 기준으로는 그 휴일이 더 이상 사이에 안 낄 수도 있기 때문이다. 그래서
+    // "기본 간격만 뒀을 때 원래 자동으로 나왔을 날짜"보다 실제로 더 뒤에 있었던 만큼만
+    // (= 사용자가 일부러 늘린 몫만) 새 날짜에도 그대로 얹어준다.
     const nextCode = sequenceCodes[i + 1];
-    let stepGap = gapDays;
+    let extraDays = 0;
     if (nextCode) {
       const cur = originalByCode.get(code);
       const next = originalByCode.get(nextCode);
       if (cur && next) {
-        const originalGap = diffDays(addDays(cur.date, cur.durationDays - 1), next.date);
-        if (Number.isFinite(originalGap) && originalGap > gapDays) stepGap = originalGap;
+        const naturalNext = nextWorkableDate(nextCode, addDays(cur.date, cur.durationDays - 1 + gapDays), holidays);
+        const excess = diffDays(naturalNext, next.date);
+        if (Number.isFinite(excess) && excess > 0) extraDays = excess;
       }
     }
-    cursor = addDays(date, span - 1 + stepGap);
+    cursor = addDays(date, span - 1 + gapDays + extraDays);
   });
 
   return { processes: [...kept, ...rebuilt], firstDate };
