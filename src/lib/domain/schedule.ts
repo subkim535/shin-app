@@ -391,6 +391,124 @@ export function moveMainProcess(
   return { processes: nextProcesses, changeHistory: [...changeHistory, record] };
 }
 
+// 작업이 하루 안에 안 끝나 다음날로 넘어갈 때 쓰는 최대 연장 일수. 그 이상은 실제로는
+// 날짜를 옮기는 게 맞는 경우가 대부분이라 안전장치로 막아둔다.
+export const MAX_EXTEND_DAYS = 5;
+
+/**
+ * 연장/축소했을 때 후속 공정들이 다른 사이클과 겹치게 되는지 미리 확인한다.
+ * previewCascadeCollisions와 같은 방식이지만, 기준 날짜(moved.date)는 그대로 두고
+ * 그 공정이 차지하는 일수(newDuration)만 바뀐 걸로 시뮬레이션한다.
+ */
+export function previewExtendCollisions(
+  processes: ProcessInstance[],
+  processId: string,
+  newDuration: number,
+  holidays: Holiday[],
+): { date: ISODate; label: string }[] {
+  const moved = processes.find((p) => p.id === processId);
+  if (!moved) return [];
+  const def = PROCESS_TYPE_MAP[moved.typeCode];
+  if (!def || def.category !== 'main') return [];
+
+  const seqIndex = MAIN_SEQUENCE_CODES.indexOf(moved.typeCode);
+  const laterMainCodes = MAIN_SEQUENCE_CODES.slice(seqIndex + 1);
+  const blockId = moved.blockId;
+  const cycleId = moved.cycleId;
+
+  const ownMainIds = new Set(
+    processes
+      .filter((p) => p.blockId === blockId && p.cycleId === cycleId && (p.id === processId || laterMainCodes.includes(p.typeCode)))
+      .map((p) => p.id),
+  );
+
+  const collisions: { date: ISODate; label: string }[] = [];
+  let cursor = addDays(moved.date, newDuration);
+  laterMainCodes.forEach((code) => {
+    const date = nextWorkableDate(code, cursor, holidays);
+    const others = processes.filter(
+      (p) => p.blockId === blockId && p.date === date && !ownMainIds.has(p.id) && PROCESS_TYPE_MAP[p.typeCode]?.category === 'main',
+    );
+    for (const o of others) collisions.push({ date, label: processLabel(o) });
+    cursor = addDays(date, 1);
+  });
+  return collisions;
+}
+
+/**
+ * 주요공정을 하루(또는 direction='shrink'면 반대로) 연장한다. 이동과 달리 이 공정
+ * 자체의 날짜·딸린 보조공정은 그대로 두고, 그 다음부터 이어지는 후속 주요/보조공정만
+ * "며칠짜리로 늘어났는지"에 맞춰 다시 배치한다.
+ */
+export function extendMainProcess(
+  processes: ProcessInstance[],
+  processId: string,
+  holidays: Holiday[],
+  direction: 'extend' | 'shrink' = 'extend',
+): MoveResult {
+  const moved = processes.find((p) => p.id === processId);
+  if (!moved) return { processes, changeHistory: [] };
+  const def = PROCESS_TYPE_MAP[moved.typeCode];
+  if (!def || def.category !== 'main') return { processes, changeHistory: [] };
+
+  const currentDuration = moved.durationDays ?? 1;
+  const newDuration = direction === 'extend' ? currentDuration + 1 : currentDuration - 1;
+  if (newDuration < 1 || newDuration > MAX_EXTEND_DAYS) {
+    return {
+      processes,
+      changeHistory: [],
+      blockedReason:
+        newDuration > MAX_EXTEND_DAYS
+          ? `${processLabel(moved)}은(는) 최대 ${MAX_EXTEND_DAYS}일까지만 연장할 수 있습니다.`
+          : `${processLabel(moved)}은(는) 더 줄일 수 없습니다.`,
+    };
+  }
+
+  const collisions = previewExtendCollisions(processes, processId, newDuration, holidays);
+  if (collisions.length > 0) {
+    const list = collisions.map((c) => `${c.date} ${c.label}`).join(', ');
+    return {
+      processes,
+      changeHistory: [],
+      blockedReason: `연장하면 후속공정이 밀리면서 주요공정이 겹치게 되어 처리할 수 없습니다: ${list}`,
+    };
+  }
+
+  const seqIndex = MAIN_SEQUENCE_CODES.indexOf(moved.typeCode);
+  const laterMainCodes = MAIN_SEQUENCE_CODES.slice(seqIndex + 1);
+  const blockId = moved.blockId;
+  const cycleId = moved.cycleId;
+
+  const laterMainIds = new Set(
+    processes
+      .filter((p) => p.blockId === blockId && p.cycleId === cycleId && laterMainCodes.includes(p.typeCode))
+      .map((p) => p.id),
+  );
+  const staleSubIds = new Set(
+    processes.filter((p) => p.linkedMainProcessId && laterMainIds.has(p.linkedMainProcessId)).map((p) => p.id),
+  );
+  const kept = processes.filter((p) => !laterMainIds.has(p.id) && !staleSubIds.has(p.id));
+
+  const rebuilt: ProcessInstance[] = [];
+  let cursor = addDays(moved.date, newDuration);
+  laterMainCodes.forEach((code) => {
+    const stepDef = PROCESS_TYPE_MAP[code];
+    const date = nextWorkableDate(code, cursor, holidays);
+    const main = makeProcess(blockId, code, date, cycleId, {
+      floorLabel: stepDef.showFloorLabel ? moved.floorLabel : undefined,
+    });
+    rebuilt.push(main);
+    rebuilt.push(...attachSubProcesses(blockId, code, date, main.id, cycleId));
+    cursor = addDays(date, 1);
+  });
+
+  const nextProcesses = withArrivals(
+    [...kept.map((p) => (p.id === processId ? { ...p, durationDays: newDuration } : p)), ...rebuilt],
+    rebuilt.map((p) => p.id),
+  );
+  return { processes: nextProcesses, changeHistory: [] };
+}
+
 // 보조공정만 이동: 후속 재계산 없음. 목적지에 다른 보조공정이 있으면 공존(병합) 허용.
 export function moveSubProcess(processes: ProcessInstance[], processId: string, newDate: ISODate): ProcessInstance[] {
   const updated = processes.map((p) => (p.id === processId ? { ...p, date: newDate } : p));

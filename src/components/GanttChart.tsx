@@ -37,6 +37,7 @@ interface GanttChartProps {
   onDropHeader: (fromDate: ISODate, toDate: ISODate) => void;
   onReorderCellOrder: (processId: string, direction: 'up' | 'down') => void;
   onToggleActualDone: (processId: string) => void;
+  onExtendProcess: (processId: string, direction: 'extend' | 'shrink') => void;
 }
 
 type DragState =
@@ -76,6 +77,7 @@ export default function GanttChart({
   onDropHeader,
   onReorderCellOrder,
   onToggleActualDone,
+  onExtendProcess,
 }: GanttChartProps) {
   const dates = useMemo(() => datesInRange(viewStartDate, dayCount), [viewStartDate, dayCount]);
   const dateIndex = useMemo(() => new Map(dates.map((d, i) => [d, i])), [dates]);
@@ -483,6 +485,14 @@ export default function GanttChart({
           {def?.showFloorLabel && p.floorLabel ? `${p.floorLabel} ` : ''}
           {label}
           {p.conflictSeq ? <sup className="ml-0.5">{p.conflictSeq}</sup> : null}
+          {p.durationDays && p.durationDays > 1 ? (
+            <span
+              className="ml-1 inline-block px-1 rounded bg-white/70 text-[9px] align-middle"
+              title={`${p.durationDays}일짜리 공정으로 연장됨`}
+            >
+              {p.durationDays}일
+            </span>
+          ) : null}
           {p.crew ? <span className="ml-0.5 text-[9px] opacity-80">👷{p.crew.headcount}</span> : null}
           {p.cellOrder ? (
             <span className="ml-1 inline-flex items-center gap-0.5 align-middle">
@@ -531,6 +541,36 @@ export default function GanttChart({
             className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[9px] leading-none px-0.5"
           >
             👷
+          </button>
+        )}
+        {category === 'main' && (p.durationDays ?? 1) > 1 && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onExtendProcess(p.id, 'shrink');
+            }}
+            title="연장 취소 (-1일)"
+            data-testid="shrink-process"
+            className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[9px] leading-none px-0.5"
+          >
+            ⏪
+          </button>
+        )}
+        {category === 'main' && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onExtendProcess(p.id, 'extend');
+            }}
+            title="오늘 안 끝나 다음날로 넘어갈 때 — 공정 연장 (+1일)"
+            data-testid="extend-process"
+            className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[9px] leading-none px-0.5"
+          >
+            ⏩
           </button>
         )}
       </div>

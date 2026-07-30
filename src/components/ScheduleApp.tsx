@@ -10,6 +10,7 @@ import { addDays, addMonths, diffDays, endOfMonth, ISODate, mondayOfWeek, todayI
 import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
 import {
   collidingProcesses,
+  extendMainProcess,
   generateBaseFloorSequence,
   generateRepeatingFloors,
   generateRepeatingFromTemplate,
@@ -491,6 +492,15 @@ export default function ScheduleApp() {
     setProcesses((cur) => cur.map((p) => (p.id === processId ? { ...p, actualDone: !p.actualDone } : p)));
   }
 
+  function handleExtendProcess(processId: string, direction: 'extend' | 'shrink') {
+    const result = extendMainProcess(processes, processId, holidays, direction);
+    if (result.blockedReason) {
+      setWarning(result.blockedReason);
+      return;
+    }
+    setProcesses(recomputeConflicts(result.processes));
+  }
+
   function handleAddHoliday(date: ISODate, kind: HolidayKind) {
     setHolidays((cur) => (cur.some((h) => h.date === date) ? cur : [...cur, { date, kind }]));
   }
@@ -831,6 +841,7 @@ export default function ScheduleApp() {
         onDropHeader={handleDropHeader}
         onReorderCellOrder={handleReorderCellOrder}
         onToggleActualDone={handleToggleActualDone}
+        onExtendProcess={handleExtendProcess}
       />
 
       <p className="text-xs text-zinc-500">
