@@ -1,5 +1,7 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+> `main` is the deployed/production branch (frozen — no more direct pushes). Ongoing development happens on `dev`.
+
 ## Getting Started
 
 First, run the development server:
