@@ -549,7 +549,7 @@ export default function GanttChart({
     );
   }
 
-  function renderChip(p: ProcessInstance, rowType: RowType, blockId: string, date: ISODate, attachedSubs: ProcessInstance[] = []) {
+  function renderChip(p: ProcessInstance, rowType: RowType, blockId: string, date: ISODate) {
     const def = PROCESS_TYPE_MAP[p.typeCode];
     const category = def?.category ?? 'main';
     const selected = p.id === selectedProcessId;
@@ -557,8 +557,7 @@ export default function GanttChart({
     const isDragSource = dragging?.type === 'process' && dragging.id === p.id;
     const label = processLabel(p);
     return (
-      <div key={p.id} className="flex flex-col w-full min-w-0">
-      <div className="flex items-center gap-0.5 w-full min-w-0 flex-wrap">
+      <div key={p.id} className="flex items-center gap-0.5 w-full min-w-0 flex-wrap">
         <button
           type="button"
           onPointerDown={(e) => {
@@ -696,12 +695,6 @@ export default function GanttChart({
         >
           ⋯
         </button>
-      </div>
-      {attachedSubs.length > 0 && (
-        <div className="flex flex-wrap gap-0.5 mt-0.5 pl-1">
-          {attachedSubs.map((s) => renderSubBadge(s, blockId, date))}
-        </div>
-      )}
       </div>
     );
   }
@@ -858,7 +851,7 @@ export default function GanttChart({
                   <div className={isHalfDaySplit ? 'flex gap-0.5 items-start' : 'flex flex-col gap-0.5'}>
                     {mainProcs.map((p) => (
                       <div key={p.id} className={isHalfDaySplit ? 'flex-1 min-w-0' : ''}>
-                        {renderChip(p, 'main', block.id, d, attachedSubsByMain.get(p.id) ?? [])}
+                        {renderChip(p, 'main', block.id, d)}
                       </div>
                     ))}
                   </div>
@@ -871,7 +864,22 @@ export default function GanttChart({
                   className={['border-b border-l border-zinc-200 overflow-y-auto px-1 py-0.5', cellShade, isSubHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
                   style={{ gridColumn: colIndex + 2, gridRow: baseRow + 1 }}
                 >
-                  <div className="flex flex-col gap-0.5">{orphanSubProcs.map((p) => renderChip(p, 'sub', block.id, d))}</div>
+                  {isHalfDaySplit ? (
+                    // 위 주공정 칸이 오전/오후로 반씩 나뉘어 있으면, 보조공정도 각자의
+                    // 주공정 바로 아래(같은 절반 폭)에 오도록 똑같이 반으로 나눠 배치한다.
+                    <div className="flex gap-0.5 items-start h-full">
+                      {mainProcs.map((p) => (
+                        <div key={p.id} className="flex-1 min-w-0 flex flex-wrap gap-0.5 content-start">
+                          {(attachedSubsByMain.get(p.id) ?? []).map((s) => renderSubBadge(s, block.id, d))}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-0.5">
+                      {[...attachedSubsByMain.values()].flat().map((s) => renderSubBadge(s, block.id, d))}
+                      {orphanSubProcs.map((s) => renderSubBadge(s, block.id, d))}
+                    </div>
+                  )}
                 </div>
                 <div
                   data-block={block.name}
