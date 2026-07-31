@@ -108,12 +108,17 @@ export default function DailyReportModal({
   }, [processes]);
 
   // 동별 나열 대신 공종별로 묶어서 "타설: 11동,16층 / 12동,17층" 형태로 보여준다.
+  // 오전/오후로 반나절 나눈 공정은 태그를 붙여서 구분한다.
   const groupedDayProcesses = useMemo(() => {
-    const map = new Map<string, { blockName: string; floor: string }[]>();
+    const map = new Map<string, { blockName: string; floor: string; timeSlot?: 'morning' | 'afternoon' }[]>();
     for (const p of dayProcesses) {
       const key = isKnownType(p.typeCode) ? workGroupKey(p.typeCode) : processLabel(p);
       if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push({ blockName: blockNames[p.blockId] ?? '', floor: floorNumberLabel(floorByCycle.get(p.cycleId)) });
+      map.get(key)!.push({
+        blockName: blockNames[p.blockId] ?? '',
+        floor: floorNumberLabel(floorByCycle.get(p.cycleId)),
+        timeSlot: p.timeSlot === 'morning' || p.timeSlot === 'afternoon' ? p.timeSlot : undefined,
+      });
     }
     const orderedKeys = WORK_GROUP_ORDER.filter((k) => map.has(k));
     const otherKeys = [...map.keys()].filter((k) => !(orderedKeys as string[]).includes(k));
@@ -290,8 +295,17 @@ export default function DailyReportModal({
                   {g.items.map((it, i) => (
                     <span
                       key={i}
-                      className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-700 print:bg-white print:border print:border-zinc-300 print:text-sm"
+                      className="inline-flex items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-700 print:bg-white print:border print:border-zinc-300 print:text-sm"
                     >
+                      {it.timeSlot && (
+                        <span
+                          className={`rounded px-1 text-[10px] font-semibold print:border print:border-current ${
+                            it.timeSlot === 'morning' ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700'
+                          }`}
+                        >
+                          {it.timeSlot === 'morning' ? '오전' : '오후'}
+                        </span>
+                      )}
                       {it.blockName}
                       {it.floor ? ` ${it.floor}` : ''}
                     </span>

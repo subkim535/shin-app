@@ -41,6 +41,10 @@ interface GanttChartProps {
   onExtendProcess: (processId: string, direction: 'extend' | 'shrink') => void;
   onDeleteProcess: (processId: string) => void;
   onMoveBlockTo: (draggedBlockId: string, targetBlockId: string) => void;
+  // 동/층 검색으로 특정 동 행을 화면에 스크롤해서 보여줄 때 쓴다. nonce를 매번 바꿔서
+  // 같은 동을 다시 검색해도(스크롤이 이미 그 위치라 값이 안 바뀌어도) 매번 스크롤이
+  // 다시 실행되게 한다.
+  scrollToBlockId?: { blockId: string; nonce: number } | null;
 }
 
 type DragState =
@@ -85,11 +89,13 @@ export default function GanttChart({
   onExtendProcess,
   onDeleteProcess,
   onMoveBlockTo,
+  scrollToBlockId,
 }: GanttChartProps) {
   const dates = useMemo(() => datesInRange(viewStartDate, dayCount), [viewStartDate, dayCount]);
   const dateIndex = useMemo(() => new Map(dates.map((d, i) => [d, i])), [dates]);
   const blockIndex = useMemo(() => new Map(blocks.map((b, i) => [b.id, i])), [blocks]);
   const today = todayISO();
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const [dragging, setDragging] = useState<DragState | null>(null);
   const [hoverCell, setHoverCell] = useState<{ blockId: string; date: ISODate } | null>(null);
@@ -492,6 +498,17 @@ export default function GanttChart({
   const totalHeight = rowMetrics.totalHeight;
   const gridTemplateRows = `${HEADER_H}px ` + blocks.map((_, i) => `${rowMetrics.mainH[i]}px ${rowMetrics.subH[i]}px ${ROW_NOTE_H}px`).join(' ');
 
+  // 동/층 검색으로 특정 동을 찾으면 그 동 행이 세로로 화면에 보이게 스크롤한다.
+  useEffect(() => {
+    if (!scrollToBlockId) return;
+    const rowIndex = blockIndex.get(scrollToBlockId.blockId);
+    const container = scrollContainerRef.current;
+    if (rowIndex === undefined || !container) return;
+    const top = rowMetrics.blockTop[rowIndex] ?? 0;
+    const targetScroll = Math.max(0, top - HEADER_H);
+    container.scrollTo({ top: targetScroll, behavior: 'smooth' });
+  }, [scrollToBlockId, blockIndex, rowMetrics]);
+
   // 같은 날짜에 같이 붙는 보조공정(박리제/전기·설비/철근검측 등)을 별도 행이 아니라
   // 주공정 칩 바로 아래에 작은 배지로 묶어서 보여준다 — 체크·드래그·삭제는 그대로 되지만
   // 자리를 거의 안 차지한다.
@@ -696,7 +713,7 @@ export default function GanttChart({
   }
 
   return (
-    <div className="overflow-auto border border-zinc-200 rounded-md flex-1 min-h-0" data-testid="gantt-chart">
+    <div ref={scrollContainerRef} className="overflow-auto border border-zinc-200 rounded-md flex-1 min-h-0" data-testid="gantt-chart">
       <div
         className={dragging ? 'select-none' : ''}
         style={{

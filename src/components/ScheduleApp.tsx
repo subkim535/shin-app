@@ -302,6 +302,9 @@ export default function ScheduleApp() {
 
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchNotFound, setSearchNotFound] = useState(false);
+  const [scrollToBlockId, setScrollToBlockId] = useState<{ blockId: string; nonce: number } | null>(null);
   const [genFloorForm, setGenFloorForm] = useState<{
     blockId: string;
     floor: string;
@@ -382,6 +385,39 @@ export default function ScheduleApp() {
   function handleSelectProcess(id: string) {
     setWarning(null);
     setSelectedProcessId((cur) => (cur === id ? null : id));
+  }
+
+  // 동 이름 또는 층수로 빠르게 찾아서 그 자리로 스크롤한다. 층수(예: "17"/"17F")를
+  // 먼저 찾아보고, 없으면 동 이름(부분 일치)으로 찾는다. 층을 찾은 경우엔 그 층이
+  // 보이는 주간으로 날짜도 같이 옮기고 해당 갱폼 공정을 선택 상태로 표시한다.
+  function handleSearch() {
+    const q = searchQuery.trim();
+    if (!q) return;
+    const qUpper = q.toUpperCase();
+    const qDigits = q.replace(/[^0-9]/g, '');
+
+    const floorMatch = processes.find((p) => {
+      if (p.typeCode !== 'GANGFORM' || !p.floorLabel) return false;
+      const label = p.floorLabel.toUpperCase();
+      if (label === qUpper) return true;
+      return !!qDigits && label.replace(/[^0-9]/g, '') === qDigits;
+    });
+    if (floorMatch) {
+      setViewStartDate(mondayOfWeek(floorMatch.date));
+      setSelectedProcessId(floorMatch.id);
+      setScrollToBlockId({ blockId: floorMatch.blockId, nonce: Date.now() });
+      setSearchNotFound(false);
+      return;
+    }
+
+    const blockMatch = sortedBlocks.find((b) => b.name.includes(q));
+    if (blockMatch) {
+      setScrollToBlockId({ blockId: blockMatch.id, nonce: Date.now() });
+      setSearchNotFound(false);
+      return;
+    }
+
+    setSearchNotFound(true);
   }
 
   function resetDropFlow() {
@@ -802,6 +838,30 @@ export default function ScheduleApp() {
               >
                 다음 주
               </button>
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setSearchNotFound(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSearch();
+                  }}
+                  placeholder="동 이름 또는 층수"
+                  data-testid="block-search-input"
+                  className="px-2 py-1.5 rounded border border-zinc-300 text-sm w-32"
+                />
+                <button
+                  className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+                  onClick={handleSearch}
+                  data-testid="block-search-button"
+                >
+                  찾기
+                </button>
+                {searchNotFound && <span className="text-xs text-red-600 whitespace-nowrap">못 찾았어요</span>}
+              </div>
             </>
           )}
           <button
@@ -994,6 +1054,7 @@ export default function ScheduleApp() {
             onExtendProcess={handleExtendProcess}
             onDeleteProcess={handleDeleteProcess}
             onMoveBlockTo={handleMoveBlockTo}
+            scrollToBlockId={scrollToBlockId}
           />
           <p className="text-xs text-zinc-500 shrink-0">
             공정 칩을 같은 행의 다른 날짜 셀로 드래그하면 이동합니다. 날짜 헤더를 클릭하면 작업일보 보기/전체 일정
