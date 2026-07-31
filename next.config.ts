@@ -4,7 +4,9 @@ import type { NextConfig } from "next";
 // (Environments 드롭다운이 비활성화됨), 배포 환경별로 다른 Supabase 프로젝트를 쓰는
 // 걸 여기서 대신 결정한다. VERCEL_ENV는 Vercel이 빌드마다 자동으로 채워주는 값이라
 // 별도 설정 없이도 항상 정확하다 — "production"이면 main(실제 서비스), 그 외(preview,
-// 로컬 npm run dev 등)면 전부 별도 dev용 Supabase를 쓴다.
+// 로컬 npm run dev 등)면 전부 별도 dev용 Supabase를 쓴다. (대시보드 값이 비어도
+// 빌드가 깨지지 않도록, main도 이 방식으로 프로덕션 값을 직접 채워서 고친 적이 있다 —
+// 커밋 846aa29.)
 const isProduction = process.env.VERCEL_ENV === "production";
 
 const nextConfig: NextConfig = {
