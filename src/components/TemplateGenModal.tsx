@@ -280,7 +280,18 @@ export default function TemplateGenModal({ blocks, templates, holidays, onSubmit
               <div className="flex gap-3">
                 {/* 선택된 순서 */}
                 <div className="flex-1 flex flex-col gap-1">
-                  <h3 className="text-xs font-semibold text-zinc-500">선택한 순서</h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold text-zinc-500">선택한 순서</h3>
+                    {orderedIndices.length > 0 && (
+                      <button
+                        type="button"
+                        className="text-xs text-red-600 hover:underline"
+                        onClick={() => setOrderedIndices([])}
+                      >
+                        전체 취소
+                      </button>
+                    )}
+                  </div>
                   {orderedIndices.length === 0 && <p className="text-xs text-zinc-400">오른쪽 목록에서 공정을 눌러 순서를 만드세요.</p>}
                   {orderedIndices
                     .filter((idx) => idx < baseSteps.length)

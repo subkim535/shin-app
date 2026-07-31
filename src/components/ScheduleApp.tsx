@@ -897,119 +897,115 @@ export default function ScheduleApp() {
 
   return (
     <div className="h-screen overflow-hidden bg-zinc-50 p-6 flex flex-col gap-4">
-      <header className="flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-xl font-semibold">{siteInfo.name} — 전체 공정표</h1>
-          {siteInfo.overview && <p className="text-xs text-zinc-500 mt-0.5">{siteInfo.overview}</p>}
-          {!loaded && !syncError && <p className="text-xs text-zinc-400 mt-0.5">불러오는 중…</p>}
-          {syncError && <p className="text-xs text-red-600 mt-0.5">동기화 오류: {syncError}</p>}
-        </div>
-        <div className="flex gap-2 text-sm">
-          <button
-            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-            onClick={() => setViewMode((m) => (m === 'monthly' ? 'overview' : 'monthly'))}
-            data-testid="view-mode-toggle"
-          >
-            {viewMode === 'monthly' ? '전체공정표 보기' : '월간공정표 보기'}
-          </button>
-          {viewMode === 'monthly' && (
-            <>
-              <button
-                className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-                onClick={() => setViewStartDate((d) => addDays(d, -7))}
-              >
-                이전 주
-              </button>
-              <button
-                className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-                onClick={() => setViewStartDate(mondayOfWeek(todayISO()))}
-              >
-                오늘
-              </button>
-              <button
-                className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-                onClick={() => setViewStartDate((d) => addDays(d, 7))}
-              >
-                다음 주
-              </button>
-              <div className="flex items-center gap-1">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setSearchNotFound(false);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSearch();
-                  }}
-                  placeholder="동 이름 또는 층수"
-                  data-testid="block-search-input"
-                  className="px-2 py-1.5 rounded border border-zinc-300 text-sm w-32"
-                />
+      <header className="flex flex-col gap-2 shrink-0">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-semibold">{siteInfo.name} — 전체 공정표</h1>
+            {siteInfo.overview && <p className="text-xs text-zinc-500 mt-0.5">{siteInfo.overview}</p>}
+            {!loaded && !syncError && <p className="text-xs text-zinc-400 mt-0.5">불러오는 중…</p>}
+            {syncError && <p className="text-xs text-red-600 mt-0.5">동기화 오류: {syncError}</p>}
+          </div>
+          <div className="flex gap-2 text-sm">
+            <button
+              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              onClick={() => setViewMode((m) => (m === 'monthly' ? 'overview' : 'monthly'))}
+              data-testid="view-mode-toggle"
+            >
+              {viewMode === 'monthly' ? '전체공정표 보기' : '월간공정표 보기'}
+            </button>
+            {viewMode === 'monthly' && (
+              <>
                 <button
                   className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-                  onClick={handleSearch}
-                  data-testid="block-search-button"
+                  onClick={() => setViewStartDate((d) => addDays(d, -7))}
                 >
-                  찾기
+                  이전 주
                 </button>
-                {searchNotFound && <span className="text-xs text-red-600 whitespace-nowrap">못 찾았어요</span>}
-              </div>
-            </>
-          )}
-          <button
-            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-            onClick={handleUndo}
-            title="되돌리기 (Ctrl+Z)"
-            data-testid="undo-button"
-          >
-            되돌리기
-          </button>
-          <button
-            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
-            onClick={() =>
-              setGenFloorForm({
-                blockId: sortedBlocks[0]?.id ?? '',
-                floor: '16F',
-                startDate: todayISO(),
-                templateId: 'ground',
-                repeatCount: '1',
-                skipOptional: false,
-              })
-            }
-            disabled={blocks.length === 0}
-          >
-            공정 생성
-          </button>
-          <button
-            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
-            onClick={() => setTemplateGenOpen(true)}
-            disabled={blocks.length === 0}
-          >
-            구간 공정 생성
-          </button>
-          <button
-            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-            onClick={() => setTeamViewOpen(true)}
-          >
-            투입인원
-          </button>
-          <button
-            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-            onClick={() => setSettingsOpen(true)}
-          >
-            설정
-          </button>
-          <a
-            href="https://noreal.juankim.org/login?redirect=%2Fdashboard"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-          >
-            다른 시스템 열기 ↗
-          </a>
+                <button
+                  className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+                  onClick={() => setViewStartDate(mondayOfWeek(todayISO()))}
+                >
+                  오늘
+                </button>
+                <button
+                  className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+                  onClick={() => setViewStartDate((d) => addDays(d, 7))}
+                >
+                  다음 주
+                </button>
+              </>
+            )}
+            <button
+              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              onClick={handleUndo}
+              title="되돌리기 (Ctrl+Z)"
+              data-testid="undo-button"
+            >
+              되돌리기
+            </button>
+            <button
+              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
+              onClick={() =>
+                setGenFloorForm({
+                  blockId: sortedBlocks[0]?.id ?? '',
+                  floor: '16F',
+                  startDate: todayISO(),
+                  templateId: 'ground',
+                  repeatCount: '1',
+                  skipOptional: false,
+                })
+              }
+              disabled={blocks.length === 0}
+            >
+              공정 생성
+            </button>
+            <button
+              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
+              onClick={() => setTemplateGenOpen(true)}
+              disabled={blocks.length === 0}
+            >
+              구간 공정 생성
+            </button>
+            <button
+              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              onClick={() => setTeamViewOpen(true)}
+            >
+              투입인원
+            </button>
+            <button
+              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              onClick={() => setSettingsOpen(true)}
+            >
+              설정
+            </button>
+          </div>
         </div>
+        {viewMode === 'monthly' && (
+          <div className="flex items-center justify-end gap-1 text-sm">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setSearchNotFound(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSearch();
+              }}
+              placeholder="동 이름 또는 층수"
+              data-testid="block-search-input"
+              className="px-2 py-1.5 rounded border border-zinc-300 text-sm w-32"
+            />
+            <button
+              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              onClick={handleSearch}
+              data-testid="block-search-button"
+            >
+              찾기
+            </button>
+            {searchNotFound && <span className="text-xs text-red-600 whitespace-nowrap">못 찾았어요</span>}
+          </div>
+        )}
       </header>
 
       <div className="min-h-[36px] flex items-center gap-2 text-sm shrink-0" data-testid="action-bar">
