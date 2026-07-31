@@ -167,6 +167,13 @@ export default function ScheduleApp() {
   // 것을 막을 수 없어서, DB의 updated_at 시각을 기준으로 이보다 오래된 이벤트는 무시한다.
   const lastAppliedAtRef = useRef<string>('');
 
+  // 되돌리기(Ctrl+Z) 기록. 다른 사용자가 실시간으로 반영한 변경(원격 동기화)은 "내가 한
+  // 행동"이 아니므로 이 기록엔 안 남긴다 — applyRemoteState를 부를 때만 이 플래그를 세운다.
+  const isApplyingRemoteRef = useRef(false);
+  const undoStackRef = useRef<AppState[]>([]);
+  const lastUndoStateRef = useRef<AppState | null>(null);
+  const UNDO_STACK_LIMIT = 40;
+
   // DB의 예전 데이터는 그 이후 추가된 필드(directLabor 등)가 아예 없을 수 있다.
   // 매번 이 함수를 거쳐서 기본값을 채운 "정규화된" 상태만 다루면, 로컬 상태와 마지막으로
   // 동기화한 문자열이 항상 같은 모양이 되어 필드 유무 차이로 인한 무한 저장 루프를 막는다.
@@ -180,6 +187,7 @@ export default function ScheduleApp() {
   }
 
   function applyRemoteState(remote: AppState) {
+    isApplyingRemoteRef.current = true;
     const state = normalizeAppState(remote);
     setSiteInfo(state.siteInfo);
     setBlocks(state.blocks);
@@ -300,11 +308,97 @@ export default function ScheduleApp() {
     return () => clearTimeout(handle);
   }, [loaded, siteInfo, blocks, templates, holidays, processes, changeHistory, dateShiftHistory, notes, directLabor, crewTeams, processGapDays]);
 
+  // 되돌리기 기록: 상태가 바뀌고 잠시(600ms) 조용하면, 그 직전 상태를 되돌리기 스택에
+  // 쌓아둔다 — 드래그 하나, 삭제 하나처럼 "동작 하나"에 해당하는 변화 묶음이 한 칸이
+  // 되도록 저장 debounce와 같은 방식을 쓴다. 원격 동기화로 반영된 변경(다른 사용자가
+  // 한 행동)은 되돌리기 대상에서 제외한다.
+  useEffect(() => {
+    if (!loaded) {
+      isApplyingRemoteRef.current = false;
+      return;
+    }
+    const cameFromRemote = isApplyingRemoteRef.current;
+    isApplyingRemoteRef.current = false;
+
+    const state: AppState = {
+      siteInfo,
+      blocks,
+      templates,
+      holidays,
+      processes,
+      changeHistory,
+      dateShiftHistory,
+      notes,
+      directLabor,
+      crewTeams,
+      processGapDays,
+    };
+
+    if (lastUndoStateRef.current === null) {
+      // 처음 불러온 상태는 그 자체가 되돌릴 대상이 아니라 기준점이다.
+      lastUndoStateRef.current = state;
+      return;
+    }
+
+    const handle = setTimeout(() => {
+      if (cameFromRemote) {
+        lastUndoStateRef.current = state;
+        return;
+      }
+      const prev = lastUndoStateRef.current;
+      if (prev && stableStringify(prev) !== stableStringify(state)) {
+        undoStackRef.current.push(prev);
+        if (undoStackRef.current.length > UNDO_STACK_LIMIT) undoStackRef.current.shift();
+      }
+      lastUndoStateRef.current = state;
+    }, 600);
+    return () => clearTimeout(handle);
+  }, [loaded, siteInfo, blocks, templates, holidays, processes, changeHistory, dateShiftHistory, notes, directLabor, crewTeams, processGapDays]);
+
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchNotFound, setSearchNotFound] = useState(false);
   const [scrollToBlockId, setScrollToBlockId] = useState<{ blockId: string; nonce: number } | null>(null);
+
+  // 되돌리기 스택에서 바로 직전 상태를 꺼내서 전체 상태에 그대로 되돌린다. 연달아
+  // 누르면(또는 Ctrl+Z를 연달아 입력하면) 한 번에 한 칸씩 계속 더 되돌아간다.
+  function handleUndo() {
+    const prev = undoStackRef.current.pop();
+    if (!prev) {
+      setWarning('더 되돌릴 내용이 없습니다.');
+      return;
+    }
+    lastUndoStateRef.current = prev;
+    setSiteInfo(prev.siteInfo);
+    setBlocks(prev.blocks);
+    setTemplates(prev.templates);
+    setHolidays(prev.holidays);
+    setProcesses(prev.processes);
+    setChangeHistory(prev.changeHistory);
+    setDateShiftHistory(prev.dateShiftHistory);
+    setNotes(prev.notes);
+    setDirectLabor(prev.directLabor);
+    setCrewTeams(prev.crewTeams);
+    setProcessGapDays(prev.processGapDays);
+    setSelectedProcessId(null);
+    setWarning(null);
+  }
+
+  // Ctrl+Z(맥은 Cmd+Z)를 되돌리기로 쓴다. 텍스트 입력칸에 포커스가 있을 때는 그 칸
+  // 자체의 되돌리기(브라우저 기본 동작)를 그대로 두기 위해 건드리지 않는다.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.key.toLowerCase() !== 'z') return;
+      const tag = (document.activeElement?.tagName ?? '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      e.preventDefault();
+      handleUndo();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleUndo]);
+
   const [genFloorForm, setGenFloorForm] = useState<{
     blockId: string;
     floor: string;
@@ -864,6 +958,14 @@ export default function ScheduleApp() {
               </div>
             </>
           )}
+          <button
+            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+            onClick={handleUndo}
+            title="되돌리기 (Ctrl+Z)"
+            data-testid="undo-button"
+          >
+            되돌리기
+          </button>
           <button
             className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
             onClick={() =>
