@@ -508,7 +508,7 @@ export default function GanttChart({
         data-process-id={s.id}
         data-testid="sub-badge"
         className={[
-          'inline-flex items-center gap-0.5 rounded px-1 py-0 text-[9px] leading-tight bg-zinc-100 text-zinc-600 border border-zinc-200 max-w-full',
+          'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] leading-tight bg-zinc-100 text-zinc-700 border border-zinc-300 max-w-full',
           'cursor-grab active:cursor-grabbing',
           selectedProcessId === s.id ? 'ring-1 ring-indigo-600' : '',
           isDragSource ? 'opacity-50' : '',
@@ -525,7 +525,7 @@ export default function GanttChart({
             onToggleActualDone(s.id);
           }}
           className={[
-            'inline-flex items-center justify-center w-2 h-2 rounded-sm border shrink-0',
+            'inline-flex items-center justify-center w-3 h-3 rounded-sm border shrink-0',
             s.actualDone ? 'bg-emerald-600 border-emerald-700 text-white' : 'border-current bg-white/60',
           ].join(' ')}
         >
@@ -541,7 +541,7 @@ export default function GanttChart({
             e.stopPropagation();
             onDeleteProcess(s.id);
           }}
-          className="shrink-0 opacity-50 hover:opacity-100"
+          className="shrink-0 text-zinc-400 hover:text-red-600 font-semibold"
         >
           ×
         </span>
@@ -549,11 +549,11 @@ export default function GanttChart({
     );
   }
 
-  function renderChip(p: ProcessInstance, rowType: RowType, blockId: string, date: ISODate) {
+  // 이제 이 함수는 주공정 칩 전용이다 — 보조공정은 renderSubBadge가 전담한다.
+  function renderChip(p: ProcessInstance, blockId: string, date: ISODate) {
     const def = PROCESS_TYPE_MAP[p.typeCode];
-    const category = def?.category ?? 'main';
     const selected = p.id === selectedProcessId;
-    const color = category === 'main' ? PROCESS_COLOR[p.typeCode] ?? FALLBACK_COLOR : undefined;
+    const color = PROCESS_COLOR[p.typeCode] ?? FALLBACK_COLOR;
     const isDragSource = dragging?.type === 'process' && dragging.id === p.id;
     const label = processLabel(p);
     return (
@@ -562,13 +562,13 @@ export default function GanttChart({
           type="button"
           onPointerDown={(e) => {
             e.stopPropagation();
-            startDragProcess(p.id, rowType, blockId, date);
+            startDragProcess(p.id, 'main', blockId, date);
           }}
           data-process-id={p.id}
           title={p.crew ? `${p.crew.team} · ${p.crew.headcount}명` : undefined}
           className={[
             'text-left rounded px-1.5 py-0.5 text-xs leading-tight relative flex-1 min-w-[44px]',
-            category === 'main' ? `font-semibold ${color?.bg ?? ''} ${color?.text ?? ''}` : 'text-zinc-600 bg-zinc-50',
+            `font-semibold ${color.bg} ${color.text}`,
             'cursor-grab active:cursor-grabbing',
             selected ? 'ring-2 ring-indigo-600' : '',
             isDragSource ? 'opacity-50' : '',
@@ -639,44 +639,40 @@ export default function GanttChart({
             </span>
           ) : null}
         </button>
-        {category === 'main' && (
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onEditCrew(p.id);
-            }}
-            title="작업팀·투입인원"
-            data-testid="crew-edit"
-            className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[9px] leading-none px-0.5"
-          >
-            👷
-          </button>
-        )}
-        {category === 'main' && (
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              const next = p.timeSlot === 'morning' ? 'afternoon' : p.timeSlot === 'afternoon' ? undefined : 'morning';
-              onSetTimeSlot(p.id, next);
-            }}
-            title="오전/오후 반나절 설정 (설정 시 같은 날 다른 주요공정과 겹침 허용)"
-            data-testid="timeslot-toggle"
-            className={[
-              'shrink-0 text-[9px] leading-none px-1 py-0.5 rounded border',
-              p.timeSlot === 'morning'
-                ? 'bg-sky-100 text-sky-700 border-sky-300'
-                : p.timeSlot === 'afternoon'
-                  ? 'bg-violet-100 text-violet-700 border-violet-300'
-                  : 'text-zinc-400 border-zinc-200 hover:text-zinc-700',
-            ].join(' ')}
-          >
-            {p.timeSlot === 'morning' ? '오전' : p.timeSlot === 'afternoon' ? '오후' : '종일'}
-          </button>
-        )}
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditCrew(p.id);
+          }}
+          title="작업팀·투입인원"
+          data-testid="crew-edit"
+          className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[9px] leading-none px-0.5"
+        >
+          👷
+        </button>
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            const next = p.timeSlot === 'morning' ? 'afternoon' : p.timeSlot === 'afternoon' ? undefined : 'morning';
+            onSetTimeSlot(p.id, next);
+          }}
+          title="오전/오후 반나절 설정 (설정 시 같은 날 다른 주요공정과 겹침 허용)"
+          data-testid="timeslot-toggle"
+          className={[
+            'shrink-0 text-[9px] leading-none px-1 py-0.5 rounded border',
+            p.timeSlot === 'morning'
+              ? 'bg-sky-100 text-sky-700 border-sky-300'
+              : p.timeSlot === 'afternoon'
+                ? 'bg-violet-100 text-violet-700 border-violet-300'
+                : 'text-zinc-400 border-zinc-200 hover:text-zinc-700',
+          ].join(' ')}
+        >
+          {p.timeSlot === 'morning' ? '오전' : p.timeSlot === 'afternoon' ? '오후' : '종일'}
+        </button>
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
@@ -686,7 +682,7 @@ export default function GanttChart({
             setChipMenu((cur) =>
               cur?.processId === p.id
                 ? null
-                : { processId: p.id, x: rect.left, y: rect.bottom + 2, category, durationDays: p.durationDays ?? 1 },
+                : { processId: p.id, x: rect.left, y: rect.bottom + 2, category: 'main', durationDays: p.durationDays ?? 1 },
             );
           }}
           title="더보기 (연장·삭제 등)"
@@ -851,7 +847,7 @@ export default function GanttChart({
                   <div className={isHalfDaySplit ? 'flex gap-0.5 items-start' : 'flex flex-col gap-0.5'}>
                     {mainProcs.map((p) => (
                       <div key={p.id} className={isHalfDaySplit ? 'flex-1 min-w-0' : ''}>
-                        {renderChip(p, 'main', block.id, d)}
+                        {renderChip(p, block.id, d)}
                       </div>
                     ))}
                   </div>
