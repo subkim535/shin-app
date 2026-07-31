@@ -913,28 +913,6 @@ export default function ScheduleApp() {
             >
               {viewMode === 'monthly' ? '전체공정표 보기' : '월간공정표 보기'}
             </button>
-            {viewMode === 'monthly' && (
-              <>
-                <button
-                  className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-                  onClick={() => setViewStartDate((d) => addDays(d, -7))}
-                >
-                  이전 주
-                </button>
-                <button
-                  className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-                  onClick={() => setViewStartDate(mondayOfWeek(todayISO()))}
-                >
-                  오늘
-                </button>
-                <button
-                  className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
-                  onClick={() => setViewStartDate((d) => addDays(d, 7))}
-                >
-                  다음 주
-                </button>
-              </>
-            )}
             <button
               className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={handleUndo}
@@ -944,7 +922,7 @@ export default function ScheduleApp() {
               되돌리기
             </button>
             <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
+              className="px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40"
               onClick={() =>
                 setGenFloorForm({
                   blockId: sortedBlocks[0]?.id ?? '',
@@ -960,7 +938,7 @@ export default function ScheduleApp() {
               공정 생성
             </button>
             <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
+              className="px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40"
               onClick={() => setTemplateGenOpen(true)}
               disabled={blocks.length === 0}
             >
@@ -981,7 +959,28 @@ export default function ScheduleApp() {
           </div>
         </div>
         {viewMode === 'monthly' && (
-          <div className="flex items-center justify-end gap-1 text-sm">
+          <div className="flex items-center justify-between gap-1 text-sm">
+            <div className="flex gap-2">
+              <button
+                className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+                onClick={() => setViewStartDate((d) => addDays(d, -7))}
+              >
+                이전 주
+              </button>
+              <button
+                className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+                onClick={() => setViewStartDate(mondayOfWeek(todayISO()))}
+              >
+                오늘
+              </button>
+              <button
+                className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+                onClick={() => setViewStartDate((d) => addDays(d, 7))}
+              >
+                다음 주
+              </button>
+            </div>
+            <div className="flex items-center gap-1">
             <input
               type="text"
               value={searchQuery}
@@ -1004,6 +1003,7 @@ export default function ScheduleApp() {
               찾기
             </button>
             {searchNotFound && <span className="text-xs text-red-600 whitespace-nowrap">못 찾았어요</span>}
+            </div>
           </div>
         )}
       </header>
