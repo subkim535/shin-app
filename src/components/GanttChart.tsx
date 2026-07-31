@@ -492,7 +492,64 @@ export default function GanttChart({
   const totalHeight = rowMetrics.totalHeight;
   const gridTemplateRows = `${HEADER_H}px ` + blocks.map((_, i) => `${rowMetrics.mainH[i]}px ${rowMetrics.subH[i]}px ${ROW_NOTE_H}px`).join(' ');
 
-  function renderChip(p: ProcessInstance, rowType: RowType, blockId: string, date: ISODate) {
+  // 같은 날짜에 같이 붙는 보조공정(박리제/전기·설비/철근검측 등)을 별도 행이 아니라
+  // 주공정 칩 바로 아래에 작은 배지로 묶어서 보여준다 — 체크·드래그·삭제는 그대로 되지만
+  // 자리를 거의 안 차지한다.
+  function renderSubBadge(s: ProcessInstance, blockId: string, date: ISODate) {
+    const isDragSource = dragging?.type === 'process' && dragging.id === s.id;
+    return (
+      <button
+        key={s.id}
+        type="button"
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          startDragProcess(s.id, 'sub', blockId, date);
+        }}
+        data-process-id={s.id}
+        data-testid="sub-badge"
+        className={[
+          'inline-flex items-center gap-0.5 rounded px-1 py-0 text-[9px] leading-tight bg-zinc-100 text-zinc-600 border border-zinc-200 max-w-full',
+          'cursor-grab active:cursor-grabbing',
+          selectedProcessId === s.id ? 'ring-1 ring-indigo-600' : '',
+          isDragSource ? 'opacity-50' : '',
+          s.actualDone ? 'line-through decoration-1' : '',
+        ].join(' ')}
+      >
+        <span
+          role="checkbox"
+          aria-checked={!!s.actualDone}
+          title="실제 완료 여부"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleActualDone(s.id);
+          }}
+          className={[
+            'inline-flex items-center justify-center w-2 h-2 rounded-sm border shrink-0',
+            s.actualDone ? 'bg-emerald-600 border-emerald-700 text-white' : 'border-current bg-white/60',
+          ].join(' ')}
+        >
+          {s.actualDone ? '✓' : ''}
+        </span>
+        <span className="truncate">{processLabel(s)}</span>
+        <span
+          role="button"
+          tabIndex={0}
+          title="삭제"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDeleteProcess(s.id);
+          }}
+          className="shrink-0 opacity-50 hover:opacity-100"
+        >
+          ×
+        </span>
+      </button>
+    );
+  }
+
+  function renderChip(p: ProcessInstance, rowType: RowType, blockId: string, date: ISODate, attachedSubs: ProcessInstance[] = []) {
     const def = PROCESS_TYPE_MAP[p.typeCode];
     const category = def?.category ?? 'main';
     const selected = p.id === selectedProcessId;
@@ -500,7 +557,8 @@ export default function GanttChart({
     const isDragSource = dragging?.type === 'process' && dragging.id === p.id;
     const label = processLabel(p);
     return (
-      <div key={p.id} className="flex items-center gap-0.5 w-full">
+      <div key={p.id} className="flex flex-col w-full min-w-0">
+      <div className="flex items-center gap-0.5 w-full min-w-0">
         <button
           type="button"
           onPointerDown={(e) => {
@@ -639,6 +697,12 @@ export default function GanttChart({
           ⋯
         </button>
       </div>
+      {attachedSubs.length > 0 && (
+        <div className="flex flex-wrap gap-0.5 mt-0.5 pl-1">
+          {attachedSubs.map((s) => renderSubBadge(s, blockId, date))}
+        </div>
+      )}
+      </div>
     );
   }
 
@@ -752,7 +816,29 @@ export default function GanttChart({
           dates.map((d, colIndex) => {
             const mainKey = `${block.id}__${d}`;
             const mainProcs = byBlockDateMain.get(mainKey) ?? [];
-            const subProcs = byBlockDateSub.get(mainKey) ?? [];
+            const allSubProcs = byBlockDateSub.get(mainKey) ?? [];
+            // 같은 날짜의 보조공정은 자기 주공정(linkedMainProcessId)이 이 셀에 있으면 그
+            // 주공정 칩 안에 작은 배지로 붙여서 보여준다. 주공정이 이 셀에 없는(예: 다음날
+            // 붙는 먹메김이 우연히 다른 주공정 없이 혼자 있는) 경우만 아래 보조공정 행에
+            // 그대로 남겨둔다.
+            const mainIds = new Set(mainProcs.map((m) => m.id));
+            const attachedSubsByMain = new Map<string, ProcessInstance[]>();
+            const orphanSubProcs: ProcessInstance[] = [];
+            for (const s of allSubProcs) {
+              if (s.linkedMainProcessId && mainIds.has(s.linkedMainProcessId)) {
+                if (!attachedSubsByMain.has(s.linkedMainProcessId)) attachedSubsByMain.set(s.linkedMainProcessId, []);
+                attachedSubsByMain.get(s.linkedMainProcessId)!.push(s);
+              } else {
+                orphanSubProcs.push(s);
+              }
+            }
+            // 오전/오후로 정확히 나뉜 주공정 2개가 같은 셀에 있을 때만 칩을 반씩 나눠 옆으로
+            // 붙인다 — 그 외(3개 이상 겹침, 종일끼리 겹침 등)는 기존처럼 위아래로 쌓는다.
+            const isHalfDaySplit =
+              mainProcs.length === 2 &&
+              (mainProcs[0].timeSlot === 'morning' || mainProcs[0].timeSlot === 'afternoon') &&
+              (mainProcs[1].timeSlot === 'morning' || mainProcs[1].timeSlot === 'afternoon') &&
+              mainProcs[0].timeSlot !== mainProcs[1].timeSlot;
             const holiday = isHoliday(d, holidays);
             const isToday = d === today;
             const isMainHover = dragging?.type === 'process' && dragging.rowType === 'main' && hoverCell?.blockId === block.id && hoverCell?.date === d;
@@ -769,7 +855,13 @@ export default function GanttChart({
                   className={['border-b border-l border-zinc-200 overflow-y-auto px-1 py-0.5', cellShade, isMainHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
                   style={{ gridColumn: colIndex + 2, gridRow: baseRow }}
                 >
-                  <div className="flex flex-col gap-0.5">{mainProcs.map((p) => renderChip(p, 'main', block.id, d))}</div>
+                  <div className={isHalfDaySplit ? 'flex gap-0.5 items-start' : 'flex flex-col gap-0.5'}>
+                    {mainProcs.map((p) => (
+                      <div key={p.id} className={isHalfDaySplit ? 'flex-1 min-w-0' : ''}>
+                        {renderChip(p, 'main', block.id, d, attachedSubsByMain.get(p.id) ?? [])}
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 <div
                   data-block={block.name}
@@ -779,7 +871,7 @@ export default function GanttChart({
                   className={['border-b border-l border-zinc-200 overflow-y-auto px-1 py-0.5', cellShade, isSubHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
                   style={{ gridColumn: colIndex + 2, gridRow: baseRow + 1 }}
                 >
-                  <div className="flex flex-col gap-0.5">{subProcs.map((p) => renderChip(p, 'sub', block.id, d))}</div>
+                  <div className="flex flex-col gap-0.5">{orphanSubProcs.map((p) => renderChip(p, 'sub', block.id, d))}</div>
                 </div>
                 <div
                   data-block={block.name}
