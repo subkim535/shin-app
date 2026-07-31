@@ -18,23 +18,17 @@ function isPublicHoliday(date: ISODate, holidays: Holiday[]): boolean {
   return isWorkersDay(date) || holidays.some((h) => h.date === date && h.kind !== 'sunday');
 }
 
-// 문서 2.5 휴일 규칙: 타설(토·일·공휴일 금지), 갱폼(일·공휴일 금지).
-// 그 외 공종은 기본적으로 일요일도 휴무로 취급한다. 단, 사용자가 직접 일요일 칸으로
-// 드래그해서 옮긴 경우(allowSunday)는 그 공정 하나만 예외로 허용한다 — 자동 생성/후속
-// 연쇄/전체순연에는 이 예외를 절대 넘기지 않는다(항상 기본값으로 호출).
-export function isBlockedForType(
-  typeCode: string,
-  date: ISODate,
-  holidays: Holiday[],
-  opts: { allowSunday?: boolean } = {},
-): boolean {
+// 문서 2.5 휴일 규칙: 타설(토·일·공휴일 금지), 갱폼(일·공휴일 금지), 그 외 공종은
+// 일·공휴일 금지. 사용자가 직접 드래그해도 예외 없이 항상 이 규칙을 그대로 적용한다 —
+// 어떤 조작(직접 이동/자동 생성/후속 연쇄/전체 순연/연장)으로도 막힌 날짜는 절대 쓰지 않는다.
+export function isBlockedForType(typeCode: string, date: ISODate, holidays: Holiday[]): boolean {
   const dow = dayOfWeek(date);
   const sunday = dow === 0;
   const saturday = dow === 6;
   const publicHoliday = isPublicHoliday(date, holidays);
   if (typeCode === 'POUR') return saturday || sunday || publicHoliday;
   if (typeCode === 'GANGFORM') return sunday || publicHoliday;
-  if (sunday && !opts.allowSunday) return true;
+  if (sunday) return true;
   return publicHoliday;
 }
 
@@ -341,12 +335,8 @@ function rebuildCycleFrom(
   let firstDate = newDate;
   sequenceCodes.forEach((code, i) => {
     const stepDef = PROCESS_TYPE_MAP[code];
-    // 사용자가 직접 드래그한 공정(맨 앞 하나)만 일요일 예외를 허용한다. 이어지는 후속
-    // 공정들(및 도미노로 밀린 다른 사이클)은 계속 기본 휴일 규칙(일요일 포함)을 따른다.
-    const date =
-      i === 0 && !isBlockedForType(code, cursor, holidays, { allowSunday: true })
-        ? cursor
-        : nextWorkableDate(code, cursor, holidays);
+    // 사용자가 직접 드래그해서 옮긴 공정이라도 예외 없이 휴일 규칙을 그대로 적용한다.
+    const date = nextWorkableDate(code, cursor, holidays);
     if (i === 0) firstDate = date;
     const main = makeProcess(blockId, code, date, cycleId, {
       floorLabel: stepDef.showFloorLabel ? floorLabel : undefined,
