@@ -544,6 +544,20 @@ export default function ScheduleApp() {
     return null;
   }
 
+  // "구간 공정 생성" 모달의 "지상층(PIT 없음)" 카테고리: 커스텀 템플릿이 아니라 기준층
+  // 엔진(generateBaseFloorSequence)을 그대로 써서, 색상·보조공정·같은 동 겹침 캐스케이드가
+  // 다른 기준층 공정과 완전히 동일하게 적용되는 진짜 한 층 사이클을 만든다.
+  function handleGenerateBaseFloorFromModal(targetBlockId: string, floorLabel: string, startDate: ISODate): string | null {
+    const generated = generateBaseFloorSequence(targetBlockId, floorLabel, startDate, holidays, processGapDays);
+    const collisions = findMainCollisions([...processes, ...generated]).filter((c) => c.blockId === targetBlockId);
+    if (collisions.length > 0) {
+      const list = collisions.map((c) => `${c.date} ${c.labels.join('/')}`).join(', ');
+      return `이 시작일로 생성하면 기존 공정과 겹치게 되어 만들 수 없습니다: ${list}`;
+    }
+    setProcesses((cur) => recomputeConflicts([...cur, ...generated]));
+    return null;
+  }
+
   function handleToggleActualDone(processId: string) {
     setProcesses((cur) => cur.map((p) => (p.id === processId ? { ...p, actualDone: !p.actualDone } : p)));
   }
@@ -652,13 +666,16 @@ export default function ScheduleApp() {
       }
     } else {
       const proc = processes.find((p) => p.id === pendingDrop.processId);
-      const next = moveSubProcess(processes, pendingDrop.processId, pendingDrop.date);
-      setProcesses(recomputeConflicts(next));
+      const result = moveSubProcess(processes, pendingDrop.processId, pendingDrop.date, holidays);
+      setProcesses(recomputeConflicts(result.processes));
       if (proc) {
         setChangeHistory((h) => [
           ...h,
-          { id: crypto.randomUUID(), processId: pendingDrop.processId, previousDate: proc.date, newDate: pendingDrop.date, reason },
+          { id: crypto.randomUUID(), processId: pendingDrop.processId, previousDate: proc.date, newDate: result.date, reason },
         ]);
+      }
+      if (result.sundaySkipped) {
+        setWarning(`일요일로는 옮길 수 없어 ${result.date}(으)로 자동 순연되었습니다.`);
       }
     }
     resetDropFlow();
@@ -1193,6 +1210,7 @@ export default function ScheduleApp() {
           templates={templates}
           holidays={holidays}
           onSubmit={handleGenerateFromCustomOrder}
+          onSubmitBaseFloor={handleGenerateBaseFloorFromModal}
           onClose={() => setTemplateGenOpen(false)}
         />
       )}

@@ -2,10 +2,16 @@
 
 import { useMemo, useState } from 'react';
 import { ISODate, todayISO } from '@/lib/domain/dateUtils';
-import { generateFromTemplate } from '@/lib/domain/schedule';
+import { generateBaseFloorSequence, generateFromTemplate, processLabel } from '@/lib/domain/schedule';
 import { Block, Holiday, ProcessTemplate, TemplateStepDef } from '@/lib/domain/types';
 
-const TEMPLATE_CATEGORIES = ['기초공사', '지하층공사', '지상 PIT층', '주차장', '부속건물', '옥탑'];
+// 지상층(PIT 없음)은 기초/지하/주차장 등과 달리 순서를 자유롭게 고르는 커스텀 공정이
+// 아니라, 기준층 엔진 그대로(갱폼→W_철근→AL→S_철근→타설 + 박리제/전기설비/철근검측/
+// 먹메김 자동 부착, 같은 동 겹침 캐스케이드 적용)를 쓴다 — 그래서 이 카테고리만 순서
+// 선택 UI 대신 "시작 층" 입력만 받는 별도 화면을 보여준다.
+const GROUND_FLOOR_CATEGORY = '지상층(PIT 없음)';
+
+const TEMPLATE_CATEGORIES = ['기초공사', '지하층공사', '지상 PIT층', GROUND_FLOOR_CATEGORY, '주차장', '부속건물', '옥탑'];
 
 // 지하층공사/지상 PIT층/부속건물은 같은 구성이라 공유한다.
 const BASEMENT_STYLE_STEPS = [
@@ -73,15 +79,18 @@ interface TemplateGenModalProps {
   templates: ProcessTemplate[];
   holidays: Holiday[];
   onSubmit: (blockId: string, categoryName: string, steps: TemplateStepDef[], startDate: ISODate) => string | null;
+  onSubmitBaseFloor: (blockId: string, floorLabel: string, startDate: ISODate) => string | null;
   onClose: () => void;
 }
 
-export default function TemplateGenModal({ blocks, templates, holidays, onSubmit, onClose }: TemplateGenModalProps) {
+export default function TemplateGenModal({ blocks, templates, holidays, onSubmit, onSubmitBaseFloor, onClose }: TemplateGenModalProps) {
   const [category, setCategory] = useState(TEMPLATE_CATEGORIES[0]);
   const [blockId, setBlockId] = useState(blocks[0]?.id ?? '');
   const [startDate, setStartDate] = useState<ISODate>(todayISO());
   const [orderedIndices, setOrderedIndices] = useState<number[]>([]);
+  const [floor, setFloor] = useState('16F');
   const [error, setError] = useState<string | null>(null);
+  const isGroundFloor = category === GROUND_FLOOR_CATEGORY;
 
   const savedTemplate = templates.find((t) => t.name === category);
   // 이 카테고리에 저장해둔 단계가 있으면 그걸, 없으면 기본값을 후보 목록으로 보여준다.
@@ -121,12 +130,18 @@ export default function TemplateGenModal({ blocks, templates, holidays, onSubmit
     setOrderedIndices(baseSteps.map((_, i) => i));
   }
 
+  // 카테고리를 바꾼 직후 한 프레임 동안은(위 render-time reset이 반영되기 전) orderedIndices가
+  // 이전 카테고리의(더 많을 수 있는) 길이를 그대로 들고 있을 수 있다 — baseSteps[idx]가
+  // undefined가 되는 범위를 걸러내지 않으면 그 프레임에서 바로 예외가 나서 화면 전체가
+  // 죽는다(더 적은 단계 수의 카테고리로 바꿀 때 재현됨). 유효한 idx만 남긴다.
   const previewSteps: TemplateStepDef[] = useMemo(
     () =>
-      orderedIndices.map((idx, i) => {
-        const s = baseSteps[idx];
-        return { code: makeStepCode(category, i, s.name), name: s.name, durationDays: s.durationDays, optional: s.optional };
-      }),
+      orderedIndices
+        .filter((idx) => idx < baseSteps.length)
+        .map((idx, i) => {
+          const s = baseSteps[idx];
+          return { code: makeStepCode(category, i, s.name), name: s.name, durationDays: s.durationDays, optional: s.optional };
+        }),
     [orderedIndices, baseSteps, category],
   );
 
@@ -136,9 +151,28 @@ export default function TemplateGenModal({ blocks, templates, holidays, onSubmit
     return generated.map((p) => p.date);
   }, [previewSteps, startDate, holidays, category]);
 
+  const normalizedFloor = /^\d+$/.test(floor.trim()) ? `${floor.trim()}F` : floor.trim();
+  const groundFloorPreview = useMemo(() => {
+    if (!isGroundFloor || !startDate || !normalizedFloor) return [];
+    return generateBaseFloorSequence(blockId || 'preview-block', normalizedFloor, startDate, holidays);
+  }, [isGroundFloor, blockId, normalizedFloor, startDate, holidays]);
+
   function handleSubmit() {
     if (!blockId) {
       setError('동을 선택해주세요.');
+      return;
+    }
+    if (isGroundFloor) {
+      if (!normalizedFloor) {
+        setError('시작 층을 입력해주세요.');
+        return;
+      }
+      const result = onSubmitBaseFloor(blockId, normalizedFloor, startDate);
+      if (result) {
+        setError(result);
+        return;
+      }
+      onClose();
       return;
     }
     if (orderedIndices.length === 0) {
@@ -163,8 +197,9 @@ export default function TemplateGenModal({ blocks, templates, holidays, onSubmit
           </button>
         </div>
         <p className="text-xs text-zinc-500">
-          왼쪽에서 공사 종류를 고르고, 동·시작일을 정한 뒤 오른쪽 목록에서 순서대로 공정을 눌러 순서를 만드세요. 이미
-          순서에 들어간 공정을 다시 누르면 빠집니다.
+          {isGroundFloor
+            ? '왼쪽에서 지상층(PIT 없음)을 고르고, 동·시작일·시작 층을 입력하세요. 기준층 공정을 그대로 생성합니다.'
+            : '왼쪽에서 공사 종류를 고르고, 동·시작일을 정한 뒤 오른쪽 목록에서 순서대로 공정을 눌러 순서를 만드세요. 이미 순서에 들어간 공정을 다시 누르면 빠집니다.'}
         </p>
 
         <div className="flex gap-3">
@@ -198,12 +233,46 @@ export default function TemplateGenModal({ blocks, templates, holidays, onSubmit
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
               />
-              <button className="text-xs px-2 py-1 rounded border border-zinc-300 ml-auto" onClick={resetOrder}>
-                기본 순서로 초기화
-              </button>
+              {isGroundFloor && (
+                <>
+                  <span className="text-zinc-500 ml-2">시작 층</span>
+                  <input
+                    type="text"
+                    placeholder="예: 16 또는 16F"
+                    className="border border-zinc-300 rounded px-2 py-1 w-20"
+                    value={floor}
+                    onChange={(e) => setFloor(e.target.value)}
+                  />
+                </>
+              )}
+              {!isGroundFloor && (
+                <button className="text-xs px-2 py-1 rounded border border-zinc-300 ml-auto" onClick={resetOrder}>
+                  기본 순서로 초기화
+                </button>
+              )}
             </div>
 
-            {baseSteps.length === 0 ? (
+            {isGroundFloor ? (
+              <div className="flex flex-col gap-1">
+                <h3 className="text-xs font-semibold text-zinc-500">미리보기 (갱폼→W_철근→AL→S_철근→타설, 보조공정 자동 부착)</h3>
+                <p className="text-xs text-zinc-400">
+                  기준층 공정은 순서를 자유롭게 바꿀 수 없고, 같은 동의 다른 층과 겹치면 도미노로 밀리거나
+                  이전 층과 겹칠 경우 막힙니다(기준층과 동일한 규칙).
+                </p>
+                {groundFloorPreview.length === 0 ? (
+                  <p className="text-xs text-zinc-400">동·시작일·시작 층을 입력하면 미리보기가 표시됩니다.</p>
+                ) : (
+                  <div className="flex flex-col gap-1 max-w-sm">
+                    {groundFloorPreview.map((p) => (
+                      <div key={p.id} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1">
+                        <span className="flex-1">{processLabel(p)}</span>
+                        <span className="text-xs text-zinc-400 shrink-0">{p.date}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : baseSteps.length === 0 ? (
               <p className="text-xs text-zinc-400">
                 이 공사 종류는 아직 기본 단계가 없습니다. 설정 → 공정 템플릿에서 먼저 단계를 등록해주세요.
               </p>
@@ -213,7 +282,9 @@ export default function TemplateGenModal({ blocks, templates, holidays, onSubmit
                 <div className="flex-1 flex flex-col gap-1">
                   <h3 className="text-xs font-semibold text-zinc-500">선택한 순서</h3>
                   {orderedIndices.length === 0 && <p className="text-xs text-zinc-400">오른쪽 목록에서 공정을 눌러 순서를 만드세요.</p>}
-                  {orderedIndices.map((idx, pos) => (
+                  {orderedIndices
+                    .filter((idx) => idx < baseSteps.length)
+                    .map((idx, pos) => (
                     <div key={`${idx}-${pos}`} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1">
                       <span className="w-5 shrink-0 text-center text-xs font-semibold text-indigo-600">{pos + 1}</span>
                       <span className="flex-1">{baseSteps[idx].name}</span>
@@ -270,7 +341,7 @@ export default function TemplateGenModal({ blocks, templates, holidays, onSubmit
             취소
           </button>
           <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm" onClick={handleSubmit}>
-            복사(이 순서로 저장하고 생성)
+            {isGroundFloor ? '생성' : '복사(이 순서로 저장하고 생성)'}
           </button>
         </div>
       </div>

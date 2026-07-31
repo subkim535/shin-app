@@ -790,10 +790,20 @@ export function extendMainProcess(
   return { processes: nextProcesses, changeHistory: [] };
 }
 
-// 보조공정만 이동: 후속 재계산 없음. 목적지에 다른 보조공정이 있으면 공존(병합) 허용.
-export function moveSubProcess(processes: ProcessInstance[], processId: string, newDate: ISODate): ProcessInstance[] {
-  const updated = processes.map((p) => (p.id === processId ? { ...p, date: newDate } : p));
-  return withArrivals(updated, [processId]);
+// 보조공정(+구간 공정 생성으로 만든 커스텀 공정)만 이동: 후속 재계산 없음. 목적지에
+// 다른 보조공정이 있으면 공존(병합) 허용. 다만 일·공휴일 규칙은 주요공정과 마찬가지로
+// 예외 없이 적용한다 — 어떤 경로로 옮기든 그 날짜에는 절대 놓일 수 없다.
+export function moveSubProcess(
+  processes: ProcessInstance[],
+  processId: string,
+  newDate: ISODate,
+  holidays: Holiday[] = [],
+): { processes: ProcessInstance[]; date: ISODate; sundaySkipped: boolean } {
+  const target = processes.find((p) => p.id === processId);
+  const sundaySkipped = !!target && dayOfWeek(newDate) === 0 && isBlockedForType(target.typeCode, newDate, holidays);
+  const finalDate = target ? nextWorkableDate(target.typeCode, newDate, holidays) : newDate;
+  const updated = processes.map((p) => (p.id === processId ? { ...p, date: finalDate } : p));
+  return { processes: withArrivals(updated, [processId]), date: finalDate, sundaySkipped };
 }
 
 /**
@@ -827,7 +837,7 @@ export function pushProcessesOffHoliday(
       hist = result.changeHistory;
       continue;
     }
-    procs = moveSubProcess(procs, onDate[0].id, addDays(holidayDate, 1));
+    procs = moveSubProcess(procs, onDate[0].id, addDays(holidayDate, 1), holidays).processes;
   }
   return { processes: procs, changeHistory: hist };
 }
