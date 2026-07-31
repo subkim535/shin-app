@@ -32,6 +32,15 @@ export function isBlockedForType(typeCode: string, date: ISODate, holidays: Holi
   return publicHoliday;
 }
 
+// 오전/오후로 반나절씩 나뉜 두 주요공정이 실제로 시간대가 겹치는지 판정한다.
+// timeSlot이 'morning'|'afternoon'이 아닌 값(종일/미지정)은 하루 전체를 차지하는
+// 것으로 보고 항상 겹침 처리한다 — 명시적으로 반나절로 나눈 경우에만 같은 날 공존을 허용한다.
+function slotsOverlap(a: ProcessInstance['timeSlot'], b: ProcessInstance['timeSlot']): boolean {
+  if (a !== 'morning' && a !== 'afternoon') return true;
+  if (b !== 'morning' && b !== 'afternoon') return true;
+  return a === b;
+}
+
 function nextWorkableDate(typeCode: string, date: ISODate, holidays: Holiday[]): ISODate {
   let d = date;
   while (isBlockedForType(typeCode, d, holidays)) {
@@ -245,15 +254,26 @@ export function previewMainMove(processes: ProcessInstance[], processId: string,
   return { collisionCount: collidingProcesses(processes, { ...moved, date: newDate }, newDate).length };
 }
 
-/** 같은 동·같은 날짜에 있는 주요공정 목록 (자기 자신 제외 가능). */
+/**
+ * 같은 동·같은 날짜에 있는 주요공정 목록 (자기 자신 제외 가능).
+ * refSlot을 넘기면 그 timeSlot과 겹치는 것만 돌려준다 — 오전/오후로 반나절씩 나눠서
+ * 겹치지 않는 공정끼리는 "같은 셀"로 취급하지 않기 위함. refSlot을 안 넘기면(=종일과
+ * 동일하게 취급) 기존처럼 그 셀의 모든 주요공정을 돌려준다.
+ */
 export function mainProcessesInCell(
   processes: ProcessInstance[],
   blockId: string,
   date: ISODate,
   excludeId?: string,
+  refSlot?: ProcessInstance['timeSlot'],
 ): ProcessInstance[] {
   return processes.filter(
-    (p) => p.blockId === blockId && p.date === date && p.id !== excludeId && PROCESS_TYPE_MAP[p.typeCode]?.category === 'main',
+    (p) =>
+      p.blockId === blockId &&
+      p.date === date &&
+      p.id !== excludeId &&
+      PROCESS_TYPE_MAP[p.typeCode]?.category === 'main' &&
+      slotsOverlap(p.timeSlot, refSlot),
   );
 }
 
@@ -264,7 +284,7 @@ export function mainProcessesInCell(
  * 두 경우 모두 3개 이상이면 경고가 필요하므로 하나로 합쳐서 반환한다.
  */
 export function collidingProcesses(processes: ProcessInstance[], moved: ProcessInstance, newDate: ISODate): ProcessInstance[] {
-  const sameCell = mainProcessesInCell(processes, moved.blockId, newDate, moved.id);
+  const sameCell = mainProcessesInCell(processes, moved.blockId, newDate, moved.id, moved.timeSlot);
   const group = CONFLICT_GROUP[moved.typeCode];
   const crossBlock = group
     ? processes.filter(
@@ -429,6 +449,15 @@ function cascadePushLaterCycles(
   function latestOf(mp: ProcessInstance[]) {
     return mp.reduce((max, p) => (p.date > max ? p.date : max), mp[0].date);
   }
+  // earliestOf/latestOf와 같은 기준으로 실제 공정 객체를 돌려준다 — 오전/오후로
+  // 나뉜 경우 경계일에 있는 공정끼리 timeSlot이 겹치는지 확인하려면 날짜뿐 아니라
+  // 그 공정 자체(timeSlot)가 필요하다.
+  function earliestProcOf(mp: ProcessInstance[]) {
+    return mp.reduce((min, p) => (p.date < min.date ? p : min), mp[0]);
+  }
+  function latestProcOf(mp: ProcessInstance[]) {
+    return mp.reduce((max, p) => (p.date > max.date ? p : max), mp[0]);
+  }
 
   // 이 동의 모든 사이클을 "원래(이동 전) 층 순서" 그대로 정렬한다 — 이동은 그 사이클이
   // 서 있는 층 순서 자체를 바꾸는 게 아니라 그 자리의 날짜만 바꾸는 것이라, 순서 판단은
@@ -449,11 +478,16 @@ function cascadePushLaterCycles(
   const startEarliest = earliestOf(startProcs);
 
   // 이동한 사이클보다 원래 층 순서가 앞서는(더 이전 층) 사이클과 겹치면 과거를 되돌릴
-  // 수 없으니 여기서 막는다.
+  // 수 없으니 여기서 막는다. 단, 정확히 경계일이 같고(startEarliest === 그 층의
+  // 마지막 날짜) 그날 두 공정이 오전/오후로 나뉘어 시간대가 안 겹치면 진짜 충돌이
+  // 아니므로 막지 않는다.
+  const startEarliestProc = earliestProcOf(startProcs);
   for (let i = 0; i < startIdx; i++) {
     const mp = mainProcsOf(orderedCycleIds[i]);
     if (mp.length === 0) continue;
-    if (startEarliest <= latestOf(mp)) {
+    const earlierLatest = latestOf(mp);
+    const sameDaySplit = startEarliest === earlierLatest && !slotsOverlap(startEarliestProc.timeSlot, latestProcOf(mp).timeSlot);
+    if (startEarliest <= earlierLatest && !sameDaySplit) {
       const gangform = mp.find((p) => p.typeCode === 'GANGFORM');
       return {
         processes,
@@ -464,25 +498,34 @@ function cascadePushLaterCycles(
 
   // 이동한 사이클부터 시작해서 원래 층 순서대로 쭉 훑으며, 각 사이클이 바로 앞 사이클의
   // 마지막 날짜 + gapDays보다 뒤에서 시작하는지 확인한다. 아니면 그만큼만 뒤로 민다 —
-  // 이미 충분히 떨어져 있으면 건드리지 않는다.
+  // 이미 충분히 떨어져 있으면 건드리지 않는다. 다만 바로 앞 사이클의 마지막 공정과
+  // 다음 사이클의 첫 공정이 같은 날 오전/오후로 나뉘어 시간대가 안 겹치면, 하루를
+  // 더 벌리지 않고 그 자리에 그대로 공존시킨다(반나절 압축).
   let cursor = latestOf(startProcs);
+  let cursorProc = latestProcOf(startProcs);
   for (let i = startIdx + 1; i < orderedCycleIds.length; i++) {
     const cid = orderedCycleIds[i];
     const mp = mainProcsOf(cid);
     if (mp.length === 0) continue;
     const earliest = earliestOf(mp);
+    const earliestProc = earliestProcOf(mp);
     const requiredStart = addDays(cursor, gapDays);
-    if (earliest < requiredStart) {
+    const sameDaySplit = earliest === cursor && !slotsOverlap(cursorProc.timeSlot, earliestProc.timeSlot);
+    if (earliest < requiredStart && !sameDaySplit) {
       const gangform = mp.find((p) => p.typeCode === 'GANGFORM');
       if (!gangform) {
         cursor = latestOf(mp);
+        cursorProc = latestProcOf(mp);
         continue;
       }
       const rebuild = rebuildCycleFrom(procs, blockId, cid, 'GANGFORM', gangform.id, requiredStart, holidays, gapDays, undefined);
       procs = reindexCellOrders(rebuild.processes, blockId, earliest);
-      cursor = latestOf(mainProcsOf(cid));
+      const rebuiltMp = mainProcsOf(cid);
+      cursor = latestOf(rebuiltMp);
+      cursorProc = latestProcOf(rebuiltMp);
     } else {
       cursor = latestOf(mp);
+      cursorProc = latestProcOf(mp);
     }
   }
 
@@ -592,8 +635,16 @@ export function previewExtendCollisions(
   let cursor = addDays(moved.date, newDuration - 1 + gapDays);
   laterMainCodes.forEach((code) => {
     const date = nextWorkableDate(code, cursor, holidays);
+    // 연장으로 재배치될 이 단계는 원래 갖고 있던 timeSlot을 그대로 유지하므로, 그
+    // timeSlot과 겹치지 않는(오전/오후로 나뉜) 다른 공정은 진짜 충돌이 아니다.
+    const codeTimeSlot = processes.find((p) => p.blockId === blockId && p.cycleId === cycleId && p.typeCode === code)?.timeSlot;
     const others = processes.filter(
-      (p) => p.blockId === blockId && p.date === date && !ownMainIds.has(p.id) && PROCESS_TYPE_MAP[p.typeCode]?.category === 'main',
+      (p) =>
+        p.blockId === blockId &&
+        p.date === date &&
+        !ownMainIds.has(p.id) &&
+        PROCESS_TYPE_MAP[p.typeCode]?.category === 'main' &&
+        slotsOverlap(codeTimeSlot, p.timeSlot),
     );
     for (const o of others) collisions.push({ date, label: processLabel(o) });
     cursor = addDays(date, gapDays);
@@ -816,6 +867,10 @@ export function findMainCollisions(processes: ProcessInstance[]): { blockId: str
   const collisions: { blockId: string; date: ISODate; labels: string[] }[] = [];
   for (const [key, list] of byKey) {
     if (list.length < 2) continue;
+    // 오전/오후로 서로 겹치지 않게 나뉜 정확히 2개짜리 조합은 겹침으로 보지 않는다.
+    // 시간대가 실제로 겹치는 쌍이 하나라도 있으면 그때만 진짜 충돌로 취급한다.
+    const hasRealOverlap = list.some((a, i) => list.some((b, j) => j > i && slotsOverlap(a.timeSlot, b.timeSlot)));
+    if (!hasRealOverlap) continue;
     const sep = key.indexOf('__');
     collisions.push({ blockId: key.slice(0, sep), date: key.slice(sep + 2), labels: list.map(processLabel) });
   }
@@ -901,7 +956,7 @@ export function reindexCellOrders(processes: ProcessInstance[], blockId: string,
 export function placeIntoCellAsFirst(processes: ProcessInstance[], processId: string): ProcessInstance[] {
   const proc = processes.find((p) => p.id === processId);
   if (!proc) return processes;
-  const others = mainProcessesInCell(processes, proc.blockId, proc.date, processId);
+  const others = mainProcessesInCell(processes, proc.blockId, proc.date, processId, proc.timeSlot);
   if (others.length === 0) {
     return processes.map((p) => (p.id === processId ? { ...p, cellOrder: undefined } : p));
   }
