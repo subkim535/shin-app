@@ -45,7 +45,7 @@ function makeProcess(
   typeCode: string,
   date: ISODate,
   cycleId: string,
-  opts: { floorLabel?: string; linkedMainProcessId?: string; customLabel?: string } = {},
+  opts: { floorLabel?: string; linkedMainProcessId?: string; customLabel?: string; durationDays?: number } = {},
 ): ProcessInstance {
   return {
     id: crypto.randomUUID(),
@@ -56,6 +56,7 @@ function makeProcess(
     floorLabel: opts.floorLabel,
     linkedMainProcessId: opts.linkedMainProcessId,
     customLabel: opts.customLabel,
+    durationDays: opts.durationDays,
   };
 }
 
@@ -163,9 +164,13 @@ export function generateFromTemplate(
   for (const step of template.steps) {
     if (step.optional && opts.skipOptional) continue;
     cursor = nextWorkableDate(step.code, cursor, holidays);
-    const main = makeProcess(blockId, step.code, cursor, cycleId, { customLabel: step.name });
+    const span = Math.max(1, step.durationDays || 1);
+    const main = makeProcess(blockId, step.code, cursor, cycleId, {
+      customLabel: step.name,
+      durationDays: span > 1 ? span : undefined,
+    });
     result.push(main);
-    cursor = addDays(cursor, Math.max(1, step.durationDays || 1));
+    cursor = addDays(cursor, span);
   }
   return result;
 }
