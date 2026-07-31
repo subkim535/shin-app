@@ -548,6 +548,10 @@ export default function ScheduleApp() {
     setProcesses((cur) => cur.map((p) => (p.id === processId ? { ...p, actualDone: !p.actualDone } : p)));
   }
 
+  function handleSetTimeSlot(processId: string, slot: 'morning' | 'afternoon' | undefined) {
+    setProcesses((cur) => cur.map((p) => (p.id === processId ? { ...p, timeSlot: slot } : p)));
+  }
+
   function handleExtendProcess(processId: string, direction: 'extend' | 'shrink') {
     // ⏩/⏪는 연달아 빠르게 눌릴 수 있는 단순 버튼이라, 클로저에 갇힌 processes를 그대로 쓰면
     // 같은 렌더 안에서 여러 번 눌렀을 때 뒤 클릭이 앞 클릭 결과를 덮어써서 클릭 수만큼
@@ -959,6 +963,7 @@ export default function ScheduleApp() {
             onOpenNote={(blockId, date) => setNoteModal({ blockId, date })}
             onShowReason={(label, reason, path) => setReasonPopup({ label, reason, path })}
             onEditCrew={handleOpenCrew}
+            onSetTimeSlot={handleSetTimeSlot}
             onChangeBlockRemark={handleChangeBlockRemark}
             onClickHeaderDate={(date) => setDateChoice(date)}
             viewStartDate={viewStartDate}

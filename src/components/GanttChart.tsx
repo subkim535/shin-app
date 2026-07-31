@@ -27,6 +27,7 @@ interface GanttChartProps {
   onOpenNote: (blockId: string, date: ISODate) => void;
   onShowReason: (label: string, reason: string, path?: string) => void;
   onEditCrew: (processId: string) => void;
+  onSetTimeSlot: (processId: string, slot: 'morning' | 'afternoon' | undefined) => void;
   onChangeBlockRemark: (blockId: string, text: string) => void;
   onClickHeaderDate: (date: ISODate) => void;
   viewStartDate: ISODate;
@@ -70,6 +71,7 @@ export default function GanttChart({
   onOpenNote,
   onShowReason,
   onEditCrew,
+  onSetTimeSlot,
   onChangeBlockRemark,
   onClickHeaderDate,
   viewStartDate,
@@ -593,6 +595,29 @@ export default function GanttChart({
             className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[9px] leading-none px-0.5"
           >
             👷
+          </button>
+        )}
+        {category === 'main' && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              const next = p.timeSlot === 'morning' ? 'afternoon' : p.timeSlot === 'afternoon' ? undefined : 'morning';
+              onSetTimeSlot(p.id, next);
+            }}
+            title="오전/오후 반나절 설정 (설정 시 같은 날 다른 주요공정과 겹침 허용)"
+            data-testid="timeslot-toggle"
+            className={[
+              'shrink-0 text-[9px] leading-none px-1 py-0.5 rounded border',
+              p.timeSlot === 'morning'
+                ? 'bg-sky-100 text-sky-700 border-sky-300'
+                : p.timeSlot === 'afternoon'
+                  ? 'bg-violet-100 text-violet-700 border-violet-300'
+                  : 'text-zinc-400 border-zinc-200 hover:text-zinc-700',
+            ].join(' ')}
+          >
+            {p.timeSlot === 'morning' ? '오전' : p.timeSlot === 'afternoon' ? '오후' : '종일'}
           </button>
         )}
         <button
