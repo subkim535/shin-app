@@ -577,6 +577,21 @@ export default function ScheduleApp() {
     setDirectLabor((cur) => [...cur, entry]);
   }
 
+  // 관리자/공사/직영·용역/안전/안전시설 같은 고정 항목은 날짜당 하나뿐이라 매번 새로
+  // 추가하지 않고, 있으면 고치고 없으면 만들고 비우면 지운다.
+  function handleSetFixedLabor(date: ISODate, category: string, headcount: number, workContent: string) {
+    setDirectLabor((cur) => {
+      const idx = cur.findIndex((d) => d.date === date && d.category === category);
+      const isEmpty = !workContent.trim() && headcount <= 0;
+      if (idx === -1) {
+        if (isEmpty) return cur;
+        return [...cur, { id: crypto.randomUUID(), date, category, workContent: workContent.trim(), headcount }];
+      }
+      if (isEmpty) return cur.filter((_, i) => i !== idx);
+      return cur.map((d, i) => (i === idx ? { ...d, workContent, headcount } : d));
+    });
+  }
+
   function handleRemoveDirectLabor(id: string) {
     setDirectLabor((cur) => cur.filter((d) => d.id !== id));
   }
@@ -1306,6 +1321,7 @@ export default function ScheduleApp() {
           directLabor={directLabor}
           notes={notes}
           onAddDirectLabor={handleAddDirectLabor}
+          onSetFixedLabor={handleSetFixedLabor}
           onRemoveDirectLabor={handleRemoveDirectLabor}
           onClose={() => setReportDate(null)}
         />
