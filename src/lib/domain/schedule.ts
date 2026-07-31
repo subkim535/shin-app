@@ -212,6 +212,7 @@ export interface MoveResult {
   processes: ProcessInstance[];
   changeHistory: ChangeRecord[];
   blockedReason?: string;
+  notice?: string; // 막힌 건 아니지만 사용자에게 알려주면 좋은 정보성 메시지 (예: 일요일이라 자동 순연됨)
 }
 
 interface PreviewResult {
@@ -292,7 +293,7 @@ function rebuildCycleFrom(
   holidays: Holiday[],
   gapDays: number,
   preserveDurationDays: number | undefined,
-): { processes: ProcessInstance[]; firstDate: ISODate } {
+): { processes: ProcessInstance[]; firstDate: ISODate; sundaySkipped?: boolean } {
   const seqIndex = MAIN_SEQUENCE_CODES.indexOf(fromTypeCode);
   const laterMainCodes = MAIN_SEQUENCE_CODES.slice(seqIndex + 1);
   const sequenceCodes = [fromTypeCode, ...laterMainCodes];
@@ -342,9 +343,15 @@ function rebuildCycleFrom(
   const rebuilt: ProcessInstance[] = [];
   let cursor = newDate;
   let firstDate = newDate;
+  // 사용자가 직접 드롭한 자리(맨 앞 단계)가 하필 일요일이라 다음 날로 밀린 경우만 따로
+  // 표시해준다 — 다른 휴일 때문에 밀리는 건 이미 당연한 동작이라 굳이 알릴 필요 없다.
+  let sundaySkipped = false;
   sequenceCodes.forEach((code, i) => {
     const stepDef = PROCESS_TYPE_MAP[code];
     // 사용자가 직접 드래그해서 옮긴 공정이라도 예외 없이 휴일 규칙을 그대로 적용한다.
+    if (i === 0 && dayOfWeek(cursor) === 0 && isBlockedForType(code, cursor, holidays)) {
+      sundaySkipped = true;
+    }
     const date = nextWorkableDate(code, cursor, holidays);
     if (i === 0) firstDate = date;
     const main = makeProcess(blockId, code, date, cycleId, {
@@ -392,7 +399,7 @@ function rebuildCycleFrom(
     cursor = addDays(date, span - 1 + gapDays + extraDays);
   });
 
-  return { processes: [...kept, ...rebuilt], firstDate };
+  return { processes: [...kept, ...rebuilt], firstDate, sundaySkipped };
 }
 
 /**
@@ -540,7 +547,13 @@ export function moveMainProcess(
   let nextProcesses = withArrivals(cascade.processes, [processId]);
   nextProcesses = reindexCellOrders(nextProcesses, blockId, oldDate); // 떠난 셀 정리
   nextProcesses = placeIntoCellAsFirst(nextProcesses, processId); // 새 셀에서 1번으로
-  return { processes: nextProcesses, changeHistory: [...changeHistory, record] };
+  return {
+    processes: nextProcesses,
+    changeHistory: [...changeHistory, record],
+    notice: rebuild.sundaySkipped
+      ? `일요일로는 옮길 수 없어 ${rebuild.firstDate}(으)로 자동 순연되었습니다.`
+      : undefined,
+  };
 }
 
 // 작업이 하루 안에 안 끝나 다음날로 넘어갈 때 쓰는 최대 연장 일수. 그 이상은 실제로는

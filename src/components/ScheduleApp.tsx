@@ -644,6 +644,7 @@ export default function ScheduleApp() {
       } else {
         setProcesses(recomputeConflicts(result.processes));
         setChangeHistory(result.changeHistory);
+        if (result.notice) setWarning(result.notice);
       }
     } else {
       const proc = processes.find((p) => p.id === pendingDrop.processId);
