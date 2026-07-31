@@ -9,10 +9,20 @@ import { Block, DirectLaborEntry, ProcessInstance, SiteInfo } from '@/lib/domain
 // 작업내용을 동별이 아니라 공종별로 묶어서 보여줄 때 쓰는 순서·표기. W_철근/S_철근은
 // "철근" 하나로 합친다 — 현장에서는 동/구간별이 아니라 공종별로 인력을 배치하기 때문에
 // "타설: 11동,16층 / 12동,17층" 식으로 한눈에 보는 게 더 유용하다는 피드백.
-const WORK_GROUP_ORDER = ['GANGFORM', 'REBAR', 'AL', 'POUR', 'RELEASE_AGENT', 'ELECTRIC_FACILITY', 'TROWEL'] as const;
+const WORK_GROUP_ORDER = [
+  'GANGFORM',
+  'REBAR',
+  'REBAR_INSPECTION',
+  'AL',
+  'POUR',
+  'RELEASE_AGENT',
+  'ELECTRIC_FACILITY',
+  'TROWEL',
+] as const;
 const WORK_GROUP_LABEL: Record<string, string> = {
   GANGFORM: '갱폼',
   REBAR: '철근',
+  REBAR_INSPECTION: '철근검측',
   AL: 'AL',
   POUR: '타설',
   RELEASE_AGENT: '박리제',
@@ -25,6 +35,7 @@ const NEUTRAL_COLOR = { bg: 'bg-zinc-200', text: 'text-zinc-700' };
 const WORK_GROUP_COLOR: Record<string, { bg: string; text: string }> = {
   GANGFORM: PROCESS_COLOR.GANGFORM,
   REBAR: PROCESS_COLOR.W_REBAR,
+  REBAR_INSPECTION: NEUTRAL_COLOR,
   AL: PROCESS_COLOR.AL,
   POUR: PROCESS_COLOR.POUR,
   RELEASE_AGENT: NEUTRAL_COLOR,
