@@ -7,7 +7,7 @@ import { isWorkersDay, processLabel } from '@/lib/domain/schedule';
 import { Block, ChangeRecord, Holiday, ProcessInstance } from '@/lib/domain/types';
 
 const HEADER_W = 96;
-const CELL_W = 128;
+const CELL_W = 152;
 const REMARK_W = 140;
 const HEADER_H = 48;
 const ROW_MAIN_H = 52;
