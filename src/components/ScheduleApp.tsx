@@ -7,6 +7,7 @@ import HistoryPanel from '@/components/HistoryPanel';
 import OverviewChart from '@/components/OverviewChart';
 import SettingsPanel from '@/components/SettingsPanel';
 import TeamViewPanel from '@/components/TeamViewPanel';
+import TemplateGenModal from '@/components/TemplateGenModal';
 import { addDays, addMonths, diffDays, endOfMonth, ISODate, mondayOfWeek, todayISO } from '@/lib/domain/dateUtils';
 import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
 import {
@@ -15,6 +16,7 @@ import {
   extendMainProcess,
   findMainCollisions,
   generateBaseFloorSequence,
+  generateFromTemplate,
   generateRepeatingFloors,
   generateRepeatingFromTemplate,
   isKnownType,
@@ -313,6 +315,7 @@ export default function ScheduleApp() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [templateGenOpen, setTemplateGenOpen] = useState(false);
   const [teamViewOpen, setTeamViewOpen] = useState(false);
   const [noteModal, setNoteModal] = useState<{ blockId: string; date: ISODate } | null>(null);
   const [reasonPopup, setReasonPopup] = useState<{ label: string; reason: string; path?: string } | null>(null);
@@ -514,6 +517,31 @@ export default function ScheduleApp() {
       }
       return [...cur, { id: crypto.randomUUID(), name: categoryName, steps }];
     });
+  }
+
+  // "구간 공정 생성" 모달에서 직접 순서를 짜서 만든 경우: 그 순서를 해당 카테고리의
+  // 기본 순서로도 저장해두고(다음에 재사용), 겹침 검사를 통과하면 바로 생성한다.
+  // 반환값이 있으면 그 문자열을 모달에 에러로 보여준다.
+  function handleGenerateFromCustomOrder(
+    targetBlockId: string,
+    categoryName: string,
+    steps: TemplateStepDef[],
+    startDate: ISODate,
+  ): string | null {
+    const template: ProcessTemplate = {
+      id: templates.find((t) => t.name === categoryName)?.id ?? crypto.randomUUID(),
+      name: categoryName,
+      steps,
+    };
+    const generated = generateFromTemplate(template, targetBlockId, startDate, holidays);
+    const collisions = findMainCollisions([...processes, ...generated]).filter((c) => c.blockId === targetBlockId);
+    if (collisions.length > 0) {
+      const list = collisions.map((c) => `${c.date} ${c.labels.join('/')}`).join(', ');
+      return `이 시작일로 생성하면 기존 공정과 겹치게 되어 만들 수 없습니다: ${list}`;
+    }
+    handleSaveTemplateSteps(categoryName, steps);
+    setProcesses((cur) => recomputeConflicts([...cur, ...generated]));
+    return null;
   }
 
   function handleToggleActualDone(processId: string) {
@@ -769,6 +797,13 @@ export default function ScheduleApp() {
             disabled={blocks.length === 0}
           >
             공정 생성
+          </button>
+          <button
+            className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
+            onClick={() => setTemplateGenOpen(true)}
+            disabled={blocks.length === 0}
+          >
+            구간 공정 생성
           </button>
           <button
             className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
@@ -1143,6 +1178,16 @@ export default function ScheduleApp() {
           dateShiftHistory={dateShiftHistory}
           processes={processes}
           blocks={sortedBlocks}
+        />
+      )}
+
+      {templateGenOpen && (
+        <TemplateGenModal
+          blocks={sortedBlocks}
+          templates={templates}
+          holidays={holidays}
+          onSubmit={handleGenerateFromCustomOrder}
+          onClose={() => setTemplateGenOpen(false)}
         />
       )}
 
