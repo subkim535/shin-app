@@ -558,7 +558,7 @@ export default function GanttChart({
     const label = processLabel(p);
     return (
       <div key={p.id} className="flex flex-col w-full min-w-0">
-      <div className="flex items-center gap-0.5 w-full min-w-0">
+      <div className="flex items-center gap-0.5 w-full min-w-0 flex-wrap">
         <button
           type="button"
           onPointerDown={(e) => {
@@ -568,7 +568,7 @@ export default function GanttChart({
           data-process-id={p.id}
           title={p.crew ? `${p.crew.team} · ${p.crew.headcount}명` : undefined}
           className={[
-            'text-left rounded px-1.5 py-0.5 text-xs leading-tight relative flex-1 min-w-0',
+            'text-left rounded px-1.5 py-0.5 text-xs leading-tight relative flex-1 min-w-[44px]',
             category === 'main' ? `font-semibold ${color?.bg ?? ''} ${color?.text ?? ''}` : 'text-zinc-600 bg-zinc-50',
             'cursor-grab active:cursor-grabbing',
             selected ? 'ring-2 ring-indigo-600' : '',
