@@ -77,8 +77,12 @@ function attachSubProcesses(
   if (mainCode === 'GANGFORM') {
     subs.push(makeProcess(blockId, 'RELEASE_AGENT', mainDate, cycleId, { linkedMainProcessId: mainId }));
   }
+  if (mainCode === 'W_REBAR') {
+    subs.push(makeProcess(blockId, 'REBAR_INSPECTION', mainDate, cycleId, { linkedMainProcessId: mainId }));
+  }
   if (mainCode === 'S_REBAR') {
     subs.push(makeProcess(blockId, 'ELECTRIC_FACILITY', mainDate, cycleId, { linkedMainProcessId: mainId }));
+    subs.push(makeProcess(blockId, 'REBAR_INSPECTION', mainDate, cycleId, { linkedMainProcessId: mainId }));
   }
   if (mainCode === 'POUR') {
     subs.push(makeProcess(blockId, 'TROWEL', addDays(mainDate, 1), cycleId, { linkedMainProcessId: mainId }));

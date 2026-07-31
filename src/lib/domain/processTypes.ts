@@ -9,6 +9,7 @@ export const PROCESS_TYPES: ProcessTypeDef[] = [
   { code: 'RELEASE_AGENT', name: '박리제', category: 'sub' },
   { code: 'ELECTRIC_FACILITY', name: '전기·설비', category: 'sub' },
   { code: 'TROWEL', name: '먹메김', category: 'sub' },
+  { code: 'REBAR_INSPECTION', name: '철근검측', category: 'sub' },
 ];
 
 export const PROCESS_TYPE_MAP: Record<string, ProcessTypeDef> = Object.fromEntries(
