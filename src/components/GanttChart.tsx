@@ -525,7 +525,7 @@ export default function GanttChart({
         data-process-id={s.id}
         data-testid="sub-badge"
         className={[
-          'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] leading-tight bg-zinc-100 text-zinc-700 border border-zinc-300 max-w-full',
+          'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] leading-tight bg-zinc-100 text-zinc-700 border border-zinc-300 max-w-full shrink-0',
           'cursor-grab active:cursor-grabbing',
           selectedProcessId === s.id ? 'ring-1 ring-indigo-600' : '',
           isDragSource ? 'opacity-50' : '',
@@ -548,7 +548,7 @@ export default function GanttChart({
         >
           {s.actualDone ? '✓' : ''}
         </span>
-        <span className="truncate">{processLabel(s)}</span>
+        <span className="whitespace-nowrap">{processLabel(s)}</span>
         <span
           role="button"
           tabIndex={0}
