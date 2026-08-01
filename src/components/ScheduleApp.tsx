@@ -922,6 +922,13 @@ export default function ScheduleApp() {
               되돌리기
             </button>
             <button
+              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              onClick={() => setHistoryOpen(true)}
+              data-testid="history-button"
+            >
+              변경이력
+            </button>
+            <button
               className="px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40"
               onClick={() =>
                 setGenFloorForm({
