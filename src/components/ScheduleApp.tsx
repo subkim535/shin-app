@@ -414,6 +414,11 @@ export default function ScheduleApp() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [templateGenOpen, setTemplateGenOpen] = useState(false);
   const [teamViewOpen, setTeamViewOpen] = useState(false);
+  const [excelExportOpen, setExcelExportOpen] = useState(false);
+  const [excelScope, setExcelScope] = useState<'all' | string>('all');
+  const [excelStartDate, setExcelStartDate] = useState<ISODate>(() => mondayOfWeek(todayISO()));
+  const [excelWeeks, setExcelWeeks] = useState('2');
+  const [excelExporting, setExcelExporting] = useState(false);
   const [noteModal, setNoteModal] = useState<{ blockId: string; date: ISODate } | null>(null);
   const [reasonPopup, setReasonPopup] = useState<{ label: string; reason: string; path?: string } | null>(null);
   const [crewModal, setCrewModal] = useState<{ processId: string; team: string; headcount: string; date: string } | null>(
@@ -512,6 +517,26 @@ export default function ScheduleApp() {
     }
 
     setSearchNotFound(true);
+  }
+
+  async function handleExportExcel() {
+    const weeks = Math.min(8, Math.max(1, Number(excelWeeks) || 2));
+    setExcelExporting(true);
+    try {
+      const { downloadWeeklyScheduleExcel } = await import('@/lib/export/scheduleExcel');
+      await downloadWeeklyScheduleExcel({
+        siteName: siteInfo.name,
+        blocks,
+        processes,
+        holidays,
+        startDate: excelStartDate,
+        weeks,
+        scopeBlockId: excelScope,
+      });
+      setExcelExportOpen(false);
+    } finally {
+      setExcelExporting(false);
+    }
   }
 
   function resetDropFlow() {
@@ -958,6 +983,14 @@ export default function ScheduleApp() {
               투입인원
             </button>
             <button
+              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
+              onClick={() => setExcelExportOpen(true)}
+              disabled={blocks.length === 0}
+              data-testid="excel-export-button"
+            >
+              엑셀 내보내기
+            </button>
+            <button
               className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setSettingsOpen(true)}
             >
@@ -1364,6 +1397,59 @@ export default function ScheduleApp() {
           processes={processes}
           blocks={sortedBlocks}
         />
+      )}
+
+      {excelExportOpen && (
+        <Modal>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">엑셀 내보내기</h2>
+            <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={() => setExcelExportOpen(false)}>
+              닫기
+            </button>
+          </div>
+          <label className="text-sm flex flex-col gap-1">
+            대상
+            <select
+              className="border border-zinc-300 rounded px-2 py-1.5"
+              value={excelScope}
+              onChange={(e) => setExcelScope(e.target.value)}
+            >
+              <option value="all">전체 동</option>
+              {sortedBlocks.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm flex flex-col gap-1">
+            시작일
+            <input
+              type="date"
+              className="border border-zinc-300 rounded px-2 py-1.5"
+              value={excelStartDate}
+              onChange={(e) => setExcelStartDate(e.target.value as ISODate)}
+            />
+          </label>
+          <label className="text-sm flex flex-col gap-1">
+            기간 (주)
+            <input
+              type="number"
+              min="1"
+              max="8"
+              className="border border-zinc-300 rounded px-2 py-1.5"
+              value={excelWeeks}
+              onChange={(e) => setExcelWeeks(e.target.value)}
+            />
+          </label>
+          <button
+            className="px-3 py-2 rounded bg-indigo-600 text-white text-sm disabled:opacity-40"
+            onClick={handleExportExcel}
+            disabled={excelExporting}
+          >
+            {excelExporting ? '만드는 중…' : '다운로드'}
+          </button>
+        </Modal>
       )}
 
       {templateGenOpen && (

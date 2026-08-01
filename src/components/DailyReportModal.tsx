@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { ISODate } from '@/lib/domain/dateUtils';
+import { downloadDailyReportExcel } from '@/lib/export/dailyReportExcel';
+import { FILL_HEX, SUB_FILL } from '@/lib/export/scheduleExcel';
 import { PROCESS_COLOR } from '@/lib/domain/processTypes';
 import { isKnownType, processLabel } from '@/lib/domain/schedule';
 import { Block, DirectLaborEntry, ProcessInstance, SiteInfo } from '@/lib/domain/types';
@@ -42,6 +44,17 @@ const WORK_GROUP_COLOR: Record<string, { bg: string; text: string }> = {
   ELECTRIC_FACILITY: NEUTRAL_COLOR,
   TROWEL: NEUTRAL_COLOR,
 };
+// 엑셀 다운로드용 — 위 팔레트를 셀 배경에 쓸 수 있는 ARGB 헥스로 옮긴 것.
+const WORK_GROUP_FILL_HEX: Record<string, string> = {
+  GANGFORM: FILL_HEX.GANGFORM,
+  REBAR: FILL_HEX.W_REBAR,
+  REBAR_INSPECTION: SUB_FILL,
+  AL: FILL_HEX.AL,
+  POUR: FILL_HEX.POUR,
+  RELEASE_AGENT: SUB_FILL,
+  ELECTRIC_FACILITY: SUB_FILL,
+  TROWEL: SUB_FILL,
+};
 
 function workGroupKey(typeCode: string): string {
   if (typeCode === 'W_REBAR' || typeCode === 'S_REBAR') return 'REBAR';
@@ -71,10 +84,6 @@ interface DailyReportModalProps {
   onSetFixedLabor: (date: ISODate, category: string, headcount: number, workContent: string) => void;
   onRemoveDirectLabor: (id: string) => void;
   onClose: () => void;
-}
-
-function csvEscape(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
 }
 
 export default function DailyReportModal({
@@ -125,6 +134,7 @@ export default function DailyReportModal({
     return [...orderedKeys, ...otherKeys].map((key) => ({
       label: WORK_GROUP_LABEL[key] ?? key,
       color: WORK_GROUP_COLOR[key] ?? NEUTRAL_COLOR,
+      colorHex: WORK_GROUP_FILL_HEX[key] ?? SUB_FILL,
       items: map
         .get(key)!
         .sort((a, b) => a.blockName.localeCompare(b.blockName) || a.floor.localeCompare(b.floor)),
@@ -205,44 +215,22 @@ export default function DailyReportModal({
     }
   }
 
-  function downloadExcel() {
-    const rows: string[] = [];
-    rows.push(['현장명', siteInfo.name].map(csvEscape).join(','));
-    rows.push(['일자', date].map(csvEscape).join(','));
-    rows.push(
-      ['총 출력인원', `${totalHeadcount}명 (협력사 ${crewHeadcount}명 + 직영 ${directHeadcount}명)`].map(csvEscape).join(','),
-    );
-    rows.push('');
-    rows.push(['작업내용'].map(csvEscape).join(','));
-    rows.push(['동', '공정', '작업팀', '인원'].map(csvEscape).join(','));
-    for (const p of dayProcesses) {
-      rows.push(
-        [blockNames[p.blockId] ?? '', processLabel(p), p.crew?.team ?? '', p.crew ? String(p.crew.headcount) : '']
-          .map(csvEscape)
-          .join(','),
-      );
-    }
-    rows.push('');
-    rows.push(['특이사항'].map(csvEscape).join(','));
-    rows.push(['동', '내용'].map(csvEscape).join(','));
-    for (const n of dayNotes) {
-      rows.push([n.blockName, n.text].map(csvEscape).join(','));
-    }
-    rows.push('');
-    rows.push(['직영 작업'].map(csvEscape).join(','));
-    rows.push(['구분', '관리자', '작업내용', '인원'].map(csvEscape).join(','));
-    for (const d of dayDirectLabor) {
-      rows.push([d.category, d.manager ?? '', d.workContent, String(d.headcount)].map(csvEscape).join(','));
-    }
-    // 엑셀이 UTF-8 CSV의 한글을 깨뜨리지 않도록 BOM을 붙인다.
-    const csv = '﻿' + rows.join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `작업일보_${date}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  async function downloadExcel() {
+    await downloadDailyReportExcel({
+      siteName: siteInfo.name,
+      date,
+      totalHeadcount,
+      crewHeadcount,
+      directHeadcount,
+      grouped: groupedDayProcesses,
+      notes: dayNotes,
+      labor: dayDirectLabor.map((d) => ({
+        category: d.category,
+        manager: d.manager,
+        workContent: d.workContent,
+        headcount: d.headcount,
+      })),
+    });
   }
 
   return (
