@@ -172,7 +172,7 @@ export default function TemplateGenModal({
   }, [previewSteps, startDate, holidays, category]);
 
   const normalizedFloor = /^\d+$/.test(floor.trim()) ? `${floor.trim()}F` : floor.trim();
-  const parsedRepeatCount = Math.max(1, Number(repeatCount) || 1);
+  const parsedRepeatCount = Math.min(60, Math.max(1, Number(repeatCount) || 1));
   const groundFloorPreview = useMemo(() => {
     if (!isGroundFloor || !startDate || !normalizedFloor) return [];
     return generateRepeatingBaseFloor(blockId || 'preview-block', normalizedFloor, startDate, holidays, parsedRepeatCount);
@@ -313,6 +313,7 @@ export default function TemplateGenModal({
               <input
                 type="number"
                 min="1"
+                max="60"
                 className="border border-zinc-300 rounded px-2 py-1 w-16"
                 value={repeatCount}
                 onChange={(e) => setRepeatCount(e.target.value)}
