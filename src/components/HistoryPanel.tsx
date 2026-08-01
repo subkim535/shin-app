@@ -38,7 +38,8 @@ export default function HistoryPanel({ onClose, changeHistory, dateShiftHistory,
       to: undefined,
       reason: s.reason,
     }));
-    return [...processRows, ...shiftRows];
+    // 최근 변경이 맨 위에 오도록 뒤집는다.
+    return [...processRows, ...shiftRows].reverse();
   }, [changeHistory, dateShiftHistory, processById, blockNames]);
 
   return (

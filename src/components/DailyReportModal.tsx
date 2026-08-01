@@ -145,7 +145,6 @@ export default function DailyReportModal({
   const totalHeadcount = crewHeadcount + directHeadcount;
 
   const [newCategory, setNewCategory] = useState(OPTIONAL_LABOR_CATEGORIES[0]);
-  const [newManager, setNewManager] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newHeadcount, setNewHeadcount] = useState('');
 
@@ -153,7 +152,7 @@ export default function DailyReportModal({
     const content = newContent.trim();
     const count = Number(newHeadcount);
     if (!content || !Number.isFinite(count) || count <= 0) return;
-    onAddDirectLabor(date, newCategory, content, count, newManager.trim() || undefined);
+    onAddDirectLabor(date, newCategory, content, count);
     setNewContent('');
     setNewHeadcount('');
   }
@@ -253,7 +252,7 @@ export default function DailyReportModal({
         className="bg-white rounded-lg shadow-lg w-full max-w-xl max-h-[85vh] overflow-y-auto p-4 flex flex-col gap-4 print:max-w-none print:shadow-none print:rounded-none print:text-black"
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">작업일보</h2>
+          <h2 className="text-lg font-semibold">{date.slice(5)} 작업일보</h2>
           <div className="flex gap-2 print:hidden">
             <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={downloadExcel} data-testid="download-excel">
               엑셀 다운로드
@@ -417,12 +416,6 @@ export default function DailyReportModal({
                 </option>
               ))}
             </select>
-            <input
-              className="border border-zinc-300 rounded px-2 py-1 text-sm w-20 shrink-0"
-              value={newManager}
-              onChange={(e) => setNewManager(e.target.value)}
-              placeholder="관리자"
-            />
             <input
               className="border border-zinc-300 rounded px-2 py-1 text-sm flex-1"
               value={newContent}
