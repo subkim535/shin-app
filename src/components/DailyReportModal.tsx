@@ -287,7 +287,7 @@ export default function DailyReportModal({
             {groupedDayProcesses.map((g) => (
               <div key={g.label} className="flex items-start gap-2 print:border-b print:border-zinc-300 print:pb-1">
                 <span
-                  className={`shrink-0 rounded px-2 py-0.5 text-xs font-semibold ${g.color.bg} ${g.color.text} print:border print:border-zinc-500 print:bg-white print:text-black`}
+                  className={`shrink-0 w-20 rounded px-2 py-0.5 text-center text-xs font-semibold ${g.color.bg} ${g.color.text} print:border print:border-zinc-500 print:bg-white print:text-black`}
                 >
                   {g.label}
                 </span>
