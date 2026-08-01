@@ -2,14 +2,14 @@
 
 import { useMemo, useState } from 'react';
 import { ISODate, todayISO } from '@/lib/domain/dateUtils';
-import { generateBaseFloorSequence, generateFromTemplate, processLabel } from '@/lib/domain/schedule';
+import { generateRepeatingBaseFloor, generateFromTemplate, processLabel } from '@/lib/domain/schedule';
 import { Block, Holiday, ProcessTemplate, TemplateStepDef } from '@/lib/domain/types';
 
 // 지상층(PIT 없음)은 기초/지하/주차장 등과 달리 순서를 자유롭게 고르는 커스텀 공정이
 // 아니라, 기준층 엔진 그대로(갱폼→W_철근→AL→S_철근→타설 + 박리제/전기설비/철근검측/
 // 먹메김 자동 부착, 같은 동 겹침 캐스케이드 적용)를 쓴다 — 그래서 이 카테고리만 순서
 // 선택 UI 대신 "시작 층" 입력만 받는 별도 화면을 보여준다.
-const GROUND_FLOOR_CATEGORY = '지상층(PIT 없음)';
+export const GROUND_FLOOR_CATEGORY = '지상층(PIT 없음)';
 
 const TEMPLATE_CATEGORIES = ['기초공사', '지하층공사', '지상 PIT층', GROUND_FLOOR_CATEGORY, '주차장', '부속건물', '옥탑'];
 
@@ -78,19 +78,39 @@ interface TemplateGenModalProps {
   blocks: Block[];
   templates: ProcessTemplate[];
   holidays: Holiday[];
-  onSubmit: (blockId: string, categoryName: string, steps: TemplateStepDef[], startDate: ISODate) => string | null;
-  onSubmitBaseFloor: (blockId: string, floorLabel: string, startDate: ISODate) => string | null;
+  onSubmit: (blockId: string, categoryName: string, steps: TemplateStepDef[], startDate: ISODate, repeatCount: number) => string | null;
+  onSubmitBaseFloor: (blockId: string, floorLabel: string, startDate: ISODate, repeatCount: number) => string | null;
+  onSaveNewTemplate: (title: string, steps: TemplateStepDef[]) => void;
+  onRemoveTemplate: (id: string) => void;
   onClose: () => void;
+  initialCategory?: string;
+  initialBlockId?: string;
+  initialStartDate?: ISODate;
 }
 
-export default function TemplateGenModal({ blocks, templates, holidays, onSubmit, onSubmitBaseFloor, onClose }: TemplateGenModalProps) {
-  const [category, setCategory] = useState(TEMPLATE_CATEGORIES[0]);
-  const [blockId, setBlockId] = useState(blocks[0]?.id ?? '');
-  const [startDate, setStartDate] = useState<ISODate>(todayISO());
+export default function TemplateGenModal({
+  blocks,
+  templates,
+  holidays,
+  onSubmit,
+  onSubmitBaseFloor,
+  onSaveNewTemplate,
+  onRemoveTemplate,
+  onClose,
+  initialCategory,
+  initialBlockId,
+  initialStartDate,
+}: TemplateGenModalProps) {
+  const [category, setCategory] = useState(initialCategory ?? TEMPLATE_CATEGORIES[0]);
+  const [blockId, setBlockId] = useState(initialBlockId ?? blocks[0]?.id ?? '');
+  const [startDate, setStartDate] = useState<ISODate>(initialStartDate ?? todayISO());
   const [orderedIndices, setOrderedIndices] = useState<number[]>([]);
   const [floor, setFloor] = useState('16F');
+  const [repeatCount, setRepeatCount] = useState('1');
+  const [saveTitle, setSaveTitle] = useState('');
   const [error, setError] = useState<string | null>(null);
   const isGroundFloor = category === GROUND_FLOOR_CATEGORY;
+  const customTemplateNames = templates.map((t) => t.name).filter((n) => !TEMPLATE_CATEGORIES.includes(n));
 
   const savedTemplate = templates.find((t) => t.name === category);
   // 이 카테고리에 저장해둔 단계가 있으면 그걸, 없으면 기본값을 후보 목록으로 보여준다.
@@ -152,10 +172,11 @@ export default function TemplateGenModal({ blocks, templates, holidays, onSubmit
   }, [previewSteps, startDate, holidays, category]);
 
   const normalizedFloor = /^\d+$/.test(floor.trim()) ? `${floor.trim()}F` : floor.trim();
+  const parsedRepeatCount = Math.max(1, Number(repeatCount) || 1);
   const groundFloorPreview = useMemo(() => {
     if (!isGroundFloor || !startDate || !normalizedFloor) return [];
-    return generateBaseFloorSequence(blockId || 'preview-block', normalizedFloor, startDate, holidays);
-  }, [isGroundFloor, blockId, normalizedFloor, startDate, holidays]);
+    return generateRepeatingBaseFloor(blockId || 'preview-block', normalizedFloor, startDate, holidays, parsedRepeatCount);
+  }, [isGroundFloor, blockId, normalizedFloor, startDate, holidays, parsedRepeatCount]);
 
   function handleSubmit() {
     if (!blockId) {
@@ -167,7 +188,7 @@ export default function TemplateGenModal({ blocks, templates, holidays, onSubmit
         setError('시작 층을 입력해주세요.');
         return;
       }
-      const result = onSubmitBaseFloor(blockId, normalizedFloor, startDate);
+      const result = onSubmitBaseFloor(blockId, normalizedFloor, startDate, parsedRepeatCount);
       if (result) {
         setError(result);
         return;
@@ -179,12 +200,27 @@ export default function TemplateGenModal({ blocks, templates, holidays, onSubmit
       setError('순서를 1개 이상 선택해주세요.');
       return;
     }
-    const result = onSubmit(blockId, category, previewSteps, startDate);
+    const result = onSubmit(blockId, category, previewSteps, startDate, parsedRepeatCount);
     if (result) {
       setError(result);
       return;
     }
     onClose();
+  }
+
+  function handleSaveAsNew() {
+    const title = saveTitle.trim();
+    if (!title) {
+      setError('저장할 이름을 입력해주세요.');
+      return;
+    }
+    if (orderedIndices.length === 0) {
+      setError('순서를 1개 이상 선택해주세요.');
+      return;
+    }
+    onSaveNewTemplate(title, previewSteps);
+    setSaveTitle('');
+    setCategory(title);
   }
 
   return (
@@ -214,6 +250,34 @@ export default function TemplateGenModal({ blocks, templates, holidays, onSubmit
                 {c}
               </button>
             ))}
+            {customTemplateNames.length > 0 && (
+              <>
+                <div className="text-[10px] text-zinc-400 mt-2 mb-0.5 px-2">저장한 순서</div>
+                {customTemplateNames.map((c) => (
+                  <div key={c} className="flex items-center gap-1">
+                    <button
+                      className={`flex-1 text-left text-sm px-2 py-1.5 rounded truncate ${
+                        c === category ? 'bg-indigo-600 text-white' : 'hover:bg-zinc-100'
+                      }`}
+                      onClick={() => setCategory(c)}
+                    >
+                      {c}
+                    </button>
+                    <button
+                      className={`shrink-0 text-xs px-1 ${c === category ? 'text-white/70 hover:text-white' : 'text-zinc-400 hover:text-red-600'}`}
+                      title="이 저장된 순서 삭제"
+                      onClick={() => {
+                        const t = templates.find((tpl) => tpl.name === c);
+                        if (t) onRemoveTemplate(t.id);
+                        if (category === c) setCategory(TEMPLATE_CATEGORIES[0]);
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
 
           <div className="flex-1 flex flex-col gap-3">
@@ -245,6 +309,14 @@ export default function TemplateGenModal({ blocks, templates, holidays, onSubmit
                   />
                 </>
               )}
+              <span className="text-zinc-500 ml-2">반복 횟수</span>
+              <input
+                type="number"
+                min="1"
+                className="border border-zinc-300 rounded px-2 py-1 w-16"
+                value={repeatCount}
+                onChange={(e) => setRepeatCount(e.target.value)}
+              />
               {!isGroundFloor && (
                 <button className="text-xs px-2 py-1 rounded border border-zinc-300 ml-auto" onClick={resetOrder}>
                   기본 순서로 초기화
@@ -347,12 +419,26 @@ export default function TemplateGenModal({ blocks, templates, holidays, onSubmit
 
         {error && <p className="text-xs text-red-600">{error}</p>}
 
-        <div className="flex justify-end gap-2">
+        <div className="flex items-center justify-end gap-2">
+          {!isGroundFloor && (
+            <>
+              <input
+                type="text"
+                placeholder="저장할 이름 (예: 기초공사-A동)"
+                className="border border-zinc-300 rounded px-2 py-1 text-sm w-44"
+                value={saveTitle}
+                onChange={(e) => setSaveTitle(e.target.value)}
+              />
+              <button className="px-3 py-1 rounded border border-zinc-300 text-sm" onClick={handleSaveAsNew}>
+                저장
+              </button>
+            </>
+          )}
           <button className="px-3 py-1 rounded border border-zinc-300 text-sm" onClick={onClose}>
             취소
           </button>
           <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm" onClick={handleSubmit}>
-            {isGroundFloor ? '생성' : '복사(이 순서로 저장하고 생성)'}
+            생성
           </button>
         </div>
       </div>

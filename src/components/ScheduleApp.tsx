@@ -7,7 +7,7 @@ import HistoryPanel from '@/components/HistoryPanel';
 import OverviewChart from '@/components/OverviewChart';
 import SettingsPanel from '@/components/SettingsPanel';
 import TeamViewPanel from '@/components/TeamViewPanel';
-import TemplateGenModal from '@/components/TemplateGenModal';
+import TemplateGenModal, { GROUND_FLOOR_CATEGORY } from '@/components/TemplateGenModal';
 import { addDays, addMonths, diffDays, endOfMonth, ISODate, mondayOfWeek, todayISO } from '@/lib/domain/dateUtils';
 import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
 import {
@@ -16,8 +16,7 @@ import {
   extendMainProcess,
   findMainCollisions,
   generateBaseFloorSequence,
-  generateFromTemplate,
-  generateRepeatingFloors,
+  generateRepeatingBaseFloor,
   generateRepeatingFromTemplate,
   isKnownType,
   moveMainProcess,
@@ -399,20 +398,10 @@ export default function ScheduleApp() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [handleUndo]);
 
-  const [genFloorForm, setGenFloorForm] = useState<{
-    blockId: string;
-    floor: string;
-    startDate: ISODate;
-    templateId: string;
-    repeatCount: string;
-    skipOptional: boolean;
-  } | null>(
-    null,
-  );
-
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [templateGenOpen, setTemplateGenOpen] = useState(false);
+  const [templateGenPrefill, setTemplateGenPrefill] = useState<{ blockId: string; startDate: ISODate } | null>(null);
   const [teamViewOpen, setTeamViewOpen] = useState(false);
   const [excelExportOpen, setExcelExportOpen] = useState(false);
   const [excelScope, setExcelScope] = useState<'all' | string>('all');
@@ -682,13 +671,14 @@ export default function ScheduleApp() {
     categoryName: string,
     steps: TemplateStepDef[],
     startDate: ISODate,
+    repeatCount: number,
   ): string | null {
     const template: ProcessTemplate = {
       id: templates.find((t) => t.name === categoryName)?.id ?? crypto.randomUUID(),
       name: categoryName,
       steps,
     };
-    const generated = generateFromTemplate(template, targetBlockId, startDate, holidays);
+    const generated = generateRepeatingFromTemplate(template, targetBlockId, startDate, holidays, repeatCount);
     const collisions = findMainCollisions([...processes, ...generated]).filter((c) => c.blockId === targetBlockId);
     if (collisions.length > 0) {
       const list = collisions.map((c) => `${c.date} ${c.labels.join('/')}`).join(', ');
@@ -699,11 +689,23 @@ export default function ScheduleApp() {
     return null;
   }
 
+  // "구간 공정 생성" 모달의 "저장" 버튼: 지금 짠 순서를 새 이름의 템플릿으로 저장만 하고
+  // (바로 생성하지 않음) 왼쪽 목록에 새 카드로 나타나게 한다.
+  function handleSaveNewTemplate(title: string, steps: TemplateStepDef[]) {
+    handleSaveTemplateSteps(title, steps);
+  }
+
   // "구간 공정 생성" 모달의 "지상층(PIT 없음)" 카테고리: 커스텀 템플릿이 아니라 기준층
   // 엔진(generateBaseFloorSequence)을 그대로 써서, 색상·보조공정·같은 동 겹침 캐스케이드가
-  // 다른 기준층 공정과 완전히 동일하게 적용되는 진짜 한 층 사이클을 만든다.
-  function handleGenerateBaseFloorFromModal(targetBlockId: string, floorLabel: string, startDate: ISODate): string | null {
-    const generated = generateBaseFloorSequence(targetBlockId, floorLabel, startDate, holidays, processGapDays);
+  // 다른 기준층 공정과 완전히 동일하게 적용되는 진짜 기준층 사이클을 만든다. repeatCount가
+  // 1보다 크면 층 번호를 자동으로 올려가며 그만큼 연속 생성한다.
+  function handleGenerateBaseFloorFromModal(
+    targetBlockId: string,
+    floorLabel: string,
+    startDate: ISODate,
+    repeatCount: number,
+  ): string | null {
+    const generated = generateRepeatingBaseFloor(targetBlockId, floorLabel, startDate, holidays, repeatCount, processGapDays);
     const collisions = findMainCollisions([...processes, ...generated]).filter((c) => c.blockId === targetBlockId);
     if (collisions.length > 0) {
       const list = collisions.map((c) => `${c.date} ${c.labels.join('/')}`).join(', ');
@@ -888,33 +890,6 @@ export default function ScheduleApp() {
     setHeaderReasonInput('');
   }
 
-  function submitGenFloor() {
-    if (!genFloorForm) return;
-    let generated: ProcessInstance[];
-    if (genFloorForm.templateId === 'ground') {
-      // 기준층은 한 번으로 끝나지 않으니 시작 층부터 해당월 + 익월 말일까지 자동으로
-      // 한 층씩 올려가며 반복 생성한다. 숫자만 입력했으면(예: "16") 층 표기 규칙에 맞게
-      // "F"를 자동으로 붙인다.
-      const startFloor = /^\d+$/.test(genFloorForm.floor.trim()) ? `${genFloorForm.floor.trim()}F` : genFloorForm.floor;
-      const untilDate = endOfMonth(addMonths(genFloorForm.startDate, 1));
-      generated = generateRepeatingFloors(genFloorForm.blockId, startFloor, genFloorForm.startDate, holidays, untilDate, processGapDays);
-    } else {
-      const template = templates.find((t) => t.id === genFloorForm.templateId);
-      if (!template) return;
-      const repeatCount = Math.max(1, Number(genFloorForm.repeatCount) || 1);
-      generated = generateRepeatingFromTemplate(template, genFloorForm.blockId, genFloorForm.startDate, holidays, repeatCount, {
-        skipOptional: genFloorForm.skipOptional,
-      });
-    }
-    const collisions = findMainCollisions([...processes, ...generated]).filter((c) => c.blockId === genFloorForm.blockId);
-    if (collisions.length > 0) {
-      const list = collisions.map((c) => `${c.date} ${c.labels.join('/')}`).join(', ');
-      setWarning(`이 시작일로 생성하면 기존 공정과 겹치게 되어 만들 수 없습니다: ${list}`);
-      return;
-    }
-    setProcesses((cur) => recomputeConflicts([...cur, ...generated]));
-    setGenFloorForm(null);
-  }
 
   const pendingProcess = pendingDrop ? processes.find((p) => p.id === pendingDrop.processId) : null;
   const collidingList =
@@ -955,22 +930,6 @@ export default function ScheduleApp() {
             </button>
             <button
               className="px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40"
-              onClick={() =>
-                setGenFloorForm({
-                  blockId: sortedBlocks[0]?.id ?? '',
-                  floor: '16F',
-                  startDate: todayISO(),
-                  templateId: 'ground',
-                  repeatCount: '1',
-                  skipOptional: false,
-                })
-              }
-              disabled={blocks.length === 0}
-            >
-              공정 생성
-            </button>
-            <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
               onClick={() => setTemplateGenOpen(true)}
               disabled={blocks.length === 0}
             >
@@ -1062,16 +1021,10 @@ export default function ScheduleApp() {
             </button>
             <button
               className="px-3 py-1 rounded border border-zinc-300"
-              onClick={() =>
-                setGenFloorForm({
-                  blockId: selectedProcess.blockId,
-                  floor: '16F',
-                  startDate: selectedProcess.date,
-                  templateId: 'ground',
-                  repeatCount: '1',
-                  skipOptional: false,
-                })
-              }
+              onClick={() => {
+                setTemplateGenPrefill({ blockId: selectedProcess.blockId, startDate: selectedProcess.date });
+                setTemplateGenOpen(true);
+              }}
             >
               이 동에 기준층 생성
             </button>
@@ -1082,85 +1035,6 @@ export default function ScheduleApp() {
           <span className="text-zinc-400">공정 칩을 드래그해서 같은 행의 다른 날짜로, 날짜 헤더를 드래그해서 전체 일정을 옮기세요.</span>
         )}
       </div>
-
-      {genFloorForm && (
-        <div className="flex items-center gap-2 text-sm border border-zinc-300 bg-white rounded p-2 flex-wrap shrink-0">
-          <span>기준층 생성 — 동:</span>
-          <select
-            className="border border-zinc-300 rounded px-2 py-1"
-            value={genFloorForm.blockId}
-            onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, blockId: e.target.value } : cur))}
-          >
-            {sortedBlocks.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-          <span>템플릿:</span>
-          <select
-            className="border border-zinc-300 rounded px-2 py-1"
-            value={genFloorForm.templateId}
-            onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, templateId: e.target.value } : cur))}
-          >
-            <option value="ground">지상층 기본 (갱폼~타설)</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-          {genFloorForm.templateId === 'ground' && (
-            <>
-              <span>층:</span>
-              <input
-                className="border border-zinc-300 rounded px-2 py-1 w-20"
-                value={genFloorForm.floor}
-                onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, floor: e.target.value } : cur))}
-                onBlur={(e) => {
-                  const trimmed = e.target.value.trim();
-                  if (/^\d+$/.test(trimmed)) {
-                    setGenFloorForm((cur) => (cur ? { ...cur, floor: `${trimmed}F` } : cur));
-                  }
-                }}
-              />
-            </>
-          )}
-          {genFloorForm.templateId !== 'ground' && (
-            <>
-              <span>반복횟수:</span>
-              <input
-                type="number"
-                min="1"
-                className="border border-zinc-300 rounded px-2 py-1 w-16"
-                value={genFloorForm.repeatCount}
-                onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, repeatCount: e.target.value } : cur))}
-              />
-              <label className="flex items-center gap-1 text-xs">
-                <input
-                  type="checkbox"
-                  checked={genFloorForm.skipOptional}
-                  onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, skipOptional: e.target.checked } : cur))}
-                />
-                필요시 단계 제외
-              </label>
-            </>
-          )}
-          <span>시작일:</span>
-          <input
-            type="date"
-            className="border border-zinc-300 rounded px-2 py-1"
-            value={genFloorForm.startDate}
-            onChange={(e) => setGenFloorForm((cur) => (cur ? { ...cur, startDate: e.target.value } : cur))}
-          />
-          <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={submitGenFloor}>
-            생성
-          </button>
-          <button className="px-3 py-1 rounded border border-zinc-300" onClick={() => setGenFloorForm(null)}>
-            취소
-          </button>
-        </div>
-      )}
 
       {viewMode === 'monthly' ? (
         <>
@@ -1459,7 +1333,15 @@ export default function ScheduleApp() {
           holidays={holidays}
           onSubmit={handleGenerateFromCustomOrder}
           onSubmitBaseFloor={handleGenerateBaseFloorFromModal}
-          onClose={() => setTemplateGenOpen(false)}
+          onSaveNewTemplate={handleSaveNewTemplate}
+          onRemoveTemplate={(id) => setTemplates((cur) => cur.filter((t) => t.id !== id))}
+          onClose={() => {
+            setTemplateGenOpen(false);
+            setTemplateGenPrefill(null);
+          }}
+          initialCategory={templateGenPrefill ? GROUND_FLOOR_CATEGORY : undefined}
+          initialBlockId={templateGenPrefill?.blockId}
+          initialStartDate={templateGenPrefill?.startDate}
         />
       )}
 

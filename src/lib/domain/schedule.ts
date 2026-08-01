@@ -131,27 +131,26 @@ function nextFloorLabel(floor: string): string {
 }
 
 /**
- * 기준층은 한 번 만들고 끝나는 게 아니라 층이 계속 반복되므로, 시작 층부터 한 층씩
- * 자동으로 올려가며 해당월 + 익월 말일까지 반복 생성한다. 안전장치로 최대 60개 층까지만
- * 만든다(무한루프 방지 — 날짜가 안 늘어나는 이상 상태가 생겨도 멈추게).
+ * 기준층은 한 번 만들고 끝나는 게 아니라 층이 계속 반복되므로, 지정한 횟수(층 수)만큼
+ * 시작 층부터 한 층씩 자동으로 올려가며 연속 생성한다. 각 사이클은 이전 사이클의 마지막
+ * 공정 다음 날부터 시작한다.
  */
-export function generateRepeatingFloors(
+export function generateRepeatingBaseFloor(
   blockId: string,
   startFloor: string,
   startDate: ISODate,
   holidays: Holiday[],
-  untilDate: ISODate,
+  repeatCount: number,
   gapDays: number = 1,
 ): ProcessInstance[] {
   const result: ProcessInstance[] = [];
   let floor = startFloor;
   let cursor = startDate;
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < Math.max(1, repeatCount); i++) {
     const cycle = generateBaseFloorSequence(blockId, floor, cursor, holidays, gapDays);
     if (cycle.length === 0) break;
     result.push(...cycle);
     const lastDate = cycle.reduce((max, p) => (p.date > max ? p.date : max), cycle[0].date);
-    if (lastDate >= untilDate) break;
     cursor = addDays(lastDate, 1);
     floor = nextFloorLabel(floor);
   }
