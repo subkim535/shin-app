@@ -17,6 +17,7 @@ import {
   deleteProcess,
   deleteProcessCycle,
   extendMainProcess,
+  findTimeSlotConflict,
   findMainCollisions,
   generateBaseFloorSequence,
   generateRepeatingBaseFloor,
@@ -770,6 +771,13 @@ export default function ScheduleApp() {
   }
 
   function handleSetTimeSlot(processId: string, slot: 'morning' | 'afternoon' | undefined) {
+    const conflict = findTimeSlotConflict(processes, processId, slot);
+    if (conflict) {
+      setWarning(
+        `같은 날 ${processLabel(conflict)}과(와) 겹치게 되어 바꿀 수 없습니다. 그 공정도 오전/오후로 나누거나 먼저 다른 날짜로 옮겨주세요.`,
+      );
+      return;
+    }
     setProcesses((cur) => cur.map((p) => (p.id === processId ? { ...p, timeSlot: slot } : p)));
   }
 

@@ -41,6 +41,32 @@ function slotsOverlap(a: ProcessInstance['timeSlot'], b: ProcessInstance['timeSl
   return a === b;
 }
 
+/**
+ * 칩의 오전/오후/종일 토글 버튼은 캐스케이드 재계산 없이 그 공정의 timeSlot만 바로
+ * 바꾸는 단순 조작이라, 같은 동·같은 날짜의 다른 주요공정과 겹치게 되는 조합(예:
+ * 이미 오후로 나뉜 공정이 있는데 다른 하나를 종일로 바꾸는 경우)을 그대로 허용해버리면
+ * slotsOverlap 불변식이 깨진 채로 저장된다. 바꾸기 전에 미리 확인해서, 겹치게 될
+ * 상대 공정이 있으면 그 공정을 돌려준다(없으면 null).
+ */
+export function findTimeSlotConflict(
+  processes: ProcessInstance[],
+  processId: string,
+  newSlot: ProcessInstance['timeSlot'],
+): ProcessInstance | null {
+  const target = processes.find((p) => p.id === processId);
+  if (!target) return null;
+  return (
+    processes.find(
+      (p) =>
+        p.id !== processId &&
+        p.blockId === target.blockId &&
+        p.date === target.date &&
+        PROCESS_TYPE_MAP[p.typeCode]?.category === 'main' &&
+        slotsOverlap(newSlot, p.timeSlot),
+    ) ?? null
+  );
+}
+
 function nextWorkableDate(typeCode: string, date: ISODate, holidays: Holiday[]): ISODate {
   let d = date;
   while (isBlockedForType(typeCode, d, holidays)) {
