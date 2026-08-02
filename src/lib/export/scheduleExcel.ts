@@ -13,6 +13,9 @@ export { FILL_HEX, SUB_FILL } from './weeklyScheduleData';
 
 const THIN_BORDER = { style: 'thin' as const, color: { argb: 'FFD4D4D8' } };
 const FULL_BORDER = { top: THIN_BORDER, left: THIN_BORDER, bottom: THIN_BORDER, right: THIN_BORDER };
+// 동이 바뀌는 경계 — 화면(GanttChart)의 검정 굵은 선과 맞춰서 표에서도 동 구간이
+// 한눈에 구분되게 한다.
+const BLOCK_BOUNDARY_BORDER = { style: 'medium' as const, color: { argb: 'FF18181B' } };
 
 export interface WeeklyScheduleExportParams {
   siteName: string;
@@ -70,6 +73,7 @@ export async function downloadWeeklyScheduleExcel(params: WeeklyScheduleExportPa
   });
 
   let rowIdx = 3;
+  const blockEndRows: number[] = [];
   for (const row of data.rows) {
     sheet.mergeCells(rowIdx, 1, rowIdx + 1, 1);
     const nameCell = sheet.getCell(rowIdx, 1);
@@ -98,6 +102,7 @@ export async function downloadWeeklyScheduleExcel(params: WeeklyScheduleExportPa
       }
     });
 
+    blockEndRows.push(rowIdx + 1);
     rowIdx += 2;
   }
 
@@ -113,6 +118,14 @@ export async function downloadWeeklyScheduleExcel(params: WeeklyScheduleExportPa
       }
     }
     if (r >= 3) sheet.getRow(r).height = 32;
+  }
+
+  // 동이 바뀌는 경계(각 동의 마지막 행)에 굵은 검은 선을 덧그린다.
+  for (const endRow of blockEndRows) {
+    for (let c = 1; c <= lastCol; c++) {
+      const cell = sheet.getCell(endRow, c);
+      cell.border = { ...cell.border, bottom: BLOCK_BOUNDARY_BORDER };
+    }
   }
 
   // 범례: 표 아래에 공정별 색상이 뭘 뜻하는지 두 줄로 적어둔다.

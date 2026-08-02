@@ -60,48 +60,55 @@ export default function WeeklyScheduleTable({ siteName, scopeLabel, data, holida
           </tr>
         </thead>
         <tbody>
-          {data.rows.map((row) => (
-            <tr key={row.blockId}>
-              <td className="border border-zinc-400 px-1 py-0.5 font-semibold text-center" style={{ background: argbToCss(BLOCK_NAME_FILL) }}>
-                {row.blockName}
-                {row.blockInfo && (
-                  <>
-                    <br />
-                    <span className="font-normal">{row.blockInfo}</span>
-                  </>
-                )}
-              </td>
-              {row.cells.map((cell) =>
-                cell.merged ? (
-                  <td
-                    key={cell.date}
-                    colSpan={2}
-                    className="border border-zinc-400 px-1 py-0.5 text-center whitespace-pre-line"
-                    style={cell.am.fillArgb ? { background: argbToCss(cell.am.fillArgb) } : undefined}
-                  >
-                    {cell.am.text}
-                  </td>
-                ) : (
-                  <Fragment key={cell.date}>
+          {data.rows.map((row) => {
+            // 동이 바뀌는 경계 — 화면(GanttChart)의 검정 굵은 선과 맞춰서 표에서도 구분되게 한다.
+            const boundaryStyle = { borderBottom: '2px solid #18181b' };
+            return (
+              <tr key={row.blockId}>
+                <td
+                  className="border border-zinc-400 px-1 py-0.5 font-semibold text-center"
+                  style={{ background: argbToCss(BLOCK_NAME_FILL), ...boundaryStyle }}
+                >
+                  {row.blockName}
+                  {row.blockInfo && (
+                    <>
+                      <br />
+                      <span className="font-normal">{row.blockInfo}</span>
+                    </>
+                  )}
+                </td>
+                {row.cells.map((cell) =>
+                  cell.merged ? (
                     <td
-                      key={`${cell.date}-am`}
+                      key={cell.date}
+                      colSpan={2}
                       className="border border-zinc-400 px-1 py-0.5 text-center whitespace-pre-line"
-                      style={cell.am.fillArgb ? { background: argbToCss(cell.am.fillArgb) } : undefined}
+                      style={{ ...(cell.am.fillArgb ? { background: argbToCss(cell.am.fillArgb) } : undefined), ...boundaryStyle }}
                     >
                       {cell.am.text}
                     </td>
-                    <td
-                      key={`${cell.date}-pm`}
-                      className="border border-zinc-400 px-1 py-0.5 text-center whitespace-pre-line"
-                      style={cell.pm.fillArgb ? { background: argbToCss(cell.pm.fillArgb) } : undefined}
-                    >
-                      {cell.pm.text}
-                    </td>
-                  </Fragment>
-                ),
-              )}
-            </tr>
-          ))}
+                  ) : (
+                    <Fragment key={cell.date}>
+                      <td
+                        key={`${cell.date}-am`}
+                        className="border border-zinc-400 px-1 py-0.5 text-center whitespace-pre-line"
+                        style={{ ...(cell.am.fillArgb ? { background: argbToCss(cell.am.fillArgb) } : undefined), ...boundaryStyle }}
+                      >
+                        {cell.am.text}
+                      </td>
+                      <td
+                        key={`${cell.date}-pm`}
+                        className="border border-zinc-400 px-1 py-0.5 text-center whitespace-pre-line"
+                        style={{ ...(cell.pm.fillArgb ? { background: argbToCss(cell.pm.fillArgb) } : undefined), ...boundaryStyle }}
+                      >
+                        {cell.pm.text}
+                      </td>
+                    </Fragment>
+                  ),
+                )}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
