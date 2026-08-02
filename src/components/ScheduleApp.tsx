@@ -8,7 +8,9 @@ import OverviewChart from '@/components/OverviewChart';
 import SettingsPanel from '@/components/SettingsPanel';
 import TeamViewPanel from '@/components/TeamViewPanel';
 import TemplateGenModal, { GROUND_FLOOR_CATEGORY } from '@/components/TemplateGenModal';
+import WeeklyScheduleTable from '@/components/WeeklyScheduleTable';
 import { addDays, addMonths, diffDays, endOfMonth, ISODate, mondayOfWeek, todayISO } from '@/lib/domain/dateUtils';
+import { buildWeeklyScheduleData } from '@/lib/export/weeklyScheduleData';
 import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
 import {
   collidingProcesses,
@@ -498,6 +500,18 @@ export default function ScheduleApp() {
       return;
     }
 
+    // 기초공사/지하층공사 등 구간공정(층수가 없는 커스텀 단계)은 이름으로 찾는다.
+    const labelMatch = processes
+      .filter((p) => processLabel(p).includes(q))
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))[0];
+    if (labelMatch) {
+      setViewStartDate(mondayOfWeek(labelMatch.date));
+      setSelectedProcessId(labelMatch.id);
+      setScrollToBlockId({ blockId: labelMatch.blockId, nonce: Date.now() });
+      setSearchNotFound(false);
+      return;
+    }
+
     const blockMatch = sortedBlocks.find((b) => b.name.includes(q));
     if (blockMatch) {
       setScrollToBlockId({ blockId: blockMatch.id, nonce: Date.now() });
@@ -507,6 +521,20 @@ export default function ScheduleApp() {
 
     setSearchNotFound(true);
   }
+
+  const excelExportWeeks = Math.min(8, Math.max(1, Number(excelWeeks) || 2));
+  const excelScopeLabel = excelScope === 'all' ? '전체' : sortedBlocks.find((b) => b.id === excelScope)?.name ?? excelScope;
+  const weeklyPrintData = useMemo(() => {
+    if (!excelExportOpen) return null;
+    return buildWeeklyScheduleData({
+      blocks,
+      processes,
+      holidays,
+      startDate: excelStartDate,
+      weeks: excelExportWeeks,
+      scopeBlockId: excelScope,
+    });
+  }, [excelExportOpen, blocks, processes, holidays, excelStartDate, excelExportWeeks, excelScope]);
 
   async function handleExportExcel() {
     const weeks = Math.min(8, Math.max(1, Number(excelWeeks) || 2));
@@ -987,7 +1015,7 @@ export default function ScheduleApp() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSearch();
               }}
-              placeholder="동 이름 또는 층수"
+              placeholder="동 이름 · 층수 · 공정명"
               data-testid="block-search-input"
               className="ml-3 px-2 py-1.5 rounded border border-zinc-300 text-sm w-32"
             />
@@ -1316,14 +1344,23 @@ export default function ScheduleApp() {
               onChange={(e) => setExcelWeeks(e.target.value)}
             />
           </label>
-          <button
-            className="px-3 py-2 rounded bg-indigo-600 text-white text-sm disabled:opacity-40"
-            onClick={handleExportExcel}
-            disabled={excelExporting}
-          >
-            {excelExporting ? '만드는 중…' : '다운로드'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              className="flex-1 px-3 py-2 rounded bg-indigo-600 text-white text-sm disabled:opacity-40"
+              onClick={handleExportExcel}
+              disabled={excelExporting}
+            >
+              {excelExporting ? '만드는 중…' : '엑셀 다운로드'}
+            </button>
+            <button className="flex-1 px-3 py-2 rounded border border-zinc-300 text-sm" onClick={() => window.print()}>
+              PDF/인쇄
+            </button>
+          </div>
         </Modal>
+      )}
+
+      {excelExportOpen && weeklyPrintData && (
+        <WeeklyScheduleTable siteName={siteInfo.name} scopeLabel={excelScopeLabel} data={weeklyPrintData} holidays={holidays} />
       )}
 
       {templateGenOpen && (

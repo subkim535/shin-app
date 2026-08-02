@@ -235,10 +235,7 @@ export default function DailyReportModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 print:bg-white print:p-0">
-      <div
-        id="daily-report-printable"
-        className="bg-white rounded-lg shadow-lg w-full max-w-xl max-h-[85vh] overflow-y-auto p-4 flex flex-col gap-4 print:max-w-none print:shadow-none print:rounded-none print:text-black"
-      >
+      <div className="print-area bg-white rounded-lg shadow-lg w-full max-w-xl max-h-[85vh] overflow-y-auto p-4 flex flex-col gap-4 print:max-w-none print:shadow-none print:rounded-none print:text-black">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{date.slice(5)} 작업일보</h2>
           <div className="flex gap-2 print:hidden">

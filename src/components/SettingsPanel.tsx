@@ -86,6 +86,8 @@ export default function SettingsPanel({
 
   const activeTemplate = templates.find((t) => t.name === activeCategory);
   const activeSteps = activeTemplate?.steps ?? [];
+  // "구간 공정 생성" 모달에서 이름 붙여 저장한 순서 — 고정 6개 카테고리 밖의 템플릿.
+  const customTemplateNames = templates.map((t) => t.name).filter((n) => !TEMPLATE_CATEGORIES.includes(n));
 
   const [newTeamName, setNewTeamName] = useState('');
 
@@ -151,6 +153,7 @@ export default function SettingsPanel({
 
   function resetCategory() {
     if (activeTemplate) onRemoveTemplate(activeTemplate.id);
+    if (!TEMPLATE_CATEGORIES.includes(activeCategory)) setActiveCategory(TEMPLATE_CATEGORIES[0]);
   }
 
   return (
@@ -381,6 +384,25 @@ export default function SettingsPanel({
                 {templates.some((t) => t.name === c) ? '' : ' (미설정)'}
               </button>
             ))}
+            {customTemplateNames.length > 0 && (
+              <>
+                <span className="w-full text-[10px] text-zinc-400 mt-1">
+                  구간 공정 생성에서 저장한 순서
+                </span>
+                {customTemplateNames.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setActiveCategory(c)}
+                    className={[
+                      'px-2 py-1 rounded text-xs',
+                      activeCategory === c ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200',
+                    ].join(' ')}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -450,7 +472,7 @@ export default function SettingsPanel({
 
             {activeTemplate && (
               <button className="self-end text-xs text-red-600" onClick={resetCategory}>
-                이 공사종류 전체 초기화
+                {TEMPLATE_CATEGORIES.includes(activeCategory) ? '이 공사종류 전체 초기화' : '이 저장된 순서 삭제'}
               </button>
             )}
           </div>

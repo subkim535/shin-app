@@ -1,34 +1,18 @@
-import { addDays, dayOfWeek, formatMonthDay, ISODate, weekdayLabelKo } from '@/lib/domain/dateUtils';
-import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
-import { processLabel } from '@/lib/domain/schedule';
+import { formatMonthDay, ISODate, weekdayLabelKo } from '@/lib/domain/dateUtils';
 import { Block, Holiday, ProcessInstance } from '@/lib/domain/types';
+import {
+  buildWeeklyScheduleData,
+  HEADER_FILL,
+  HOLIDAY_FILL,
+  BLOCK_NAME_FILL,
+  LEGEND_ITEMS,
+  isWeeklyHoliday,
+} from './weeklyScheduleData';
 
-// PROCESS_COLOR(Tailwind 클래스)와 같은 팔레트를 ARGB 헥스로 옮긴 것 — 엑셀 셀 배경은
-// Tailwind 클래스를 못 쓰므로 별도로 들고 있는다.
-export const FILL_HEX: Record<string, string> = {
-  GANGFORM: 'FFFDBA74', // orange-300
-  W_REBAR: 'FF93C5FD', // blue-300
-  S_REBAR: 'FF93C5FD',
-  AL: 'FFF59E0B', // amber-500
-  POUR: 'FFF87171', // red-400
-};
-export const SUB_FILL = 'FFE4E4E7'; // zinc-200 — 보조공정/커스텀공정
-const HOLIDAY_FILL = 'FFFEF3C7'; // amber-100 — 일요일/공휴일 날짜 헤더
-const HEADER_FILL = 'FFF4F4F5'; // zinc-100 — 평일 날짜 헤더
-const BLOCK_NAME_FILL = 'FFFEF9C3'; // yellow-100 — 동 이름 칸
+export { FILL_HEX, SUB_FILL } from './weeklyScheduleData';
 
 const THIN_BORDER = { style: 'thin' as const, color: { argb: 'FFD4D4D8' } };
 const FULL_BORDER = { top: THIN_BORDER, left: THIN_BORDER, bottom: THIN_BORDER, right: THIN_BORDER };
-
-function floorNumberLabel(floorLabel?: string): string {
-  if (!floorLabel) return '';
-  const digits = floorLabel.match(/^\d+/)?.[0];
-  return digits ? `${digits}층` : floorLabel;
-}
-
-function isHolidayDate(date: ISODate, holidays: Holiday[]): boolean {
-  return dayOfWeek(date) === 0 || holidays.some((h) => h.date === date);
-}
 
 export interface WeeklyScheduleExportParams {
   siteName: string;
@@ -44,17 +28,8 @@ export async function downloadWeeklyScheduleExcel(params: WeeklyScheduleExportPa
   const { siteName, blocks, processes, holidays, startDate, weeks, scopeBlockId } = params;
   const ExcelJS = (await import('exceljs')).default;
 
-  const dayCount = Math.max(1, weeks) * 7;
-  const dates: ISODate[] = Array.from({ length: dayCount }, (_, i) => addDays(startDate, i));
-  const targetBlocks = (scopeBlockId === 'all' ? blocks : blocks.filter((b) => b.id === scopeBlockId))
-    .slice()
-    .sort((a, b) => a.sortOrder - b.sortOrder);
-
-  // 층수는 갱폼 공정에만 붙어 있으므로(showFloorLabel), 같은 cycleId의 다른 공정에도 그대로 적용한다.
-  const floorByCycle = new Map<string, string>();
-  for (const p of processes) {
-    if (p.typeCode === 'GANGFORM' && p.floorLabel) floorByCycle.set(p.cycleId, p.floorLabel);
-  }
+  const data = buildWeeklyScheduleData({ blocks, processes, holidays, startDate, weeks, scopeBlockId });
+  const dayCount = data.dates.length;
 
   const wb = new ExcelJS.Workbook();
   const sheet = wb.addWorksheet('주간공정표', { views: [{ state: 'frozen', xSplit: 1, ySplit: 2 }] });
@@ -72,11 +47,10 @@ export async function downloadWeeklyScheduleExcel(params: WeeklyScheduleExportPa
   cornerCell.font = { bold: true };
   cornerCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } };
 
-  dates.forEach((d, i) => {
+  data.dates.forEach((d, i) => {
     const col1 = 2 + i * 2;
     const col2 = col1 + 1;
-    const holiday = isHolidayDate(d, holidays);
-    const fill = holiday ? HOLIDAY_FILL : HEADER_FILL;
+    const fill = isWeeklyHoliday(d, holidays) ? HOLIDAY_FILL : HEADER_FILL;
 
     sheet.mergeCells(1, col1, 1, col2);
     const dateCell = sheet.getCell(1, col1);
@@ -96,56 +70,31 @@ export async function downloadWeeklyScheduleExcel(params: WeeklyScheduleExportPa
   });
 
   let rowIdx = 3;
-  for (const block of targetBlocks) {
+  for (const row of data.rows) {
     sheet.mergeCells(rowIdx, 1, rowIdx + 1, 1);
     const nameCell = sheet.getCell(rowIdx, 1);
-    nameCell.value = block.info ? `${block.name}\n${block.info}` : block.name;
+    nameCell.value = row.blockInfo ? `${row.blockName}\n${row.blockInfo}` : row.blockName;
     nameCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     nameCell.font = { bold: true };
     nameCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BLOCK_NAME_FILL } };
 
-    const blockProcesses = processes.filter((p) => p.blockId === block.id);
-
-    function labelFor(p: ProcessInstance): string {
-      const floor = floorNumberLabel(p.typeCode === 'GANGFORM' ? p.floorLabel : floorByCycle.get(p.cycleId));
-      return floor ? `${floor} ${processLabel(p)}` : processLabel(p);
-    }
-
-    function fillFor(list: ProcessInstance[]): string | undefined {
-      const main = list.find((p) => PROCESS_TYPE_MAP[p.typeCode]?.category === 'main');
-      if (main) return FILL_HEX[main.typeCode] ?? SUB_FILL;
-      return list.length > 0 ? SUB_FILL : undefined;
-    }
-
-    dates.forEach((d, i) => {
+    row.cells.forEach((cellData, i) => {
       const col1 = 2 + i * 2;
       const col2 = col1 + 1;
-      const dayProcs = blockProcesses.filter((p) => p.date === d);
-      const morning = dayProcs.filter((p) => p.timeSlot === 'morning');
-      const afternoon = dayProcs.filter((p) => p.timeSlot === 'afternoon');
-      const wholeDay = dayProcs.filter((p) => p.timeSlot !== 'morning' && p.timeSlot !== 'afternoon');
 
-      if (morning.length || afternoon.length) {
-        const mList = [...morning, ...wholeDay];
-        const mCell = sheet.getCell(rowIdx + 1, col1);
-        if (mList.length) mCell.value = mList.map(labelFor).join('\n');
-        const mFill = fillFor(mList);
-        if (mFill) mCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: mFill } };
-
-        const aCell = sheet.getCell(rowIdx + 1, col2);
-        if (afternoon.length) aCell.value = afternoon.map(labelFor).join('\n');
-        const aFill = fillFor(afternoon);
-        if (aFill) aCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: aFill } };
-      } else {
+      if (cellData.merged) {
         sheet.mergeCells(rowIdx + 1, col1, rowIdx + 1, col2);
         const cell = sheet.getCell(rowIdx + 1, col1);
-        if (wholeDay.length) {
-          cell.value = wholeDay.map(labelFor).join('\n');
-          const fill = fillFor(wholeDay);
-          if (fill) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
-        } else if (isHolidayDate(d, holidays)) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HOLIDAY_FILL } };
-        }
+        if (cellData.am.text) cell.value = cellData.am.text;
+        if (cellData.am.fillArgb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cellData.am.fillArgb } };
+      } else {
+        const amCell = sheet.getCell(rowIdx + 1, col1);
+        if (cellData.am.text) amCell.value = cellData.am.text;
+        if (cellData.am.fillArgb) amCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cellData.am.fillArgb } };
+
+        const pmCell = sheet.getCell(rowIdx + 1, col2);
+        if (cellData.pm.text) pmCell.value = cellData.pm.text;
+        if (cellData.pm.fillArgb) pmCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cellData.pm.fillArgb } };
       }
     });
 
@@ -164,6 +113,24 @@ export async function downloadWeeklyScheduleExcel(params: WeeklyScheduleExportPa
       }
     }
     if (r >= 3) sheet.getRow(r).height = 32;
+  }
+
+  // 범례: 표 아래에 공정별 색상이 뭘 뜻하는지 두 줄로 적어둔다.
+  let legendRow = rowIdx + 1;
+  sheet.mergeCells(legendRow, 1, legendRow, lastCol);
+  sheet.getCell(legendRow, 1).value = '범례';
+  sheet.getCell(legendRow, 1).font = { bold: true };
+  legendRow += 1;
+  for (const item of LEGEND_ITEMS) {
+    sheet.mergeCells(legendRow, 1, legendRow, 2);
+    const swatch = sheet.getCell(legendRow, 1);
+    swatch.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: item.argb } };
+    swatch.border = FULL_BORDER;
+    sheet.mergeCells(legendRow, 3, legendRow, Math.min(lastCol, 8));
+    const labelCell = sheet.getCell(legendRow, 3);
+    labelCell.value = item.label;
+    labelCell.font = { size: 9 };
+    legendRow += 1;
   }
 
   const buf = await wb.xlsx.writeBuffer();
