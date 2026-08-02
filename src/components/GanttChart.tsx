@@ -41,6 +41,7 @@ interface GanttChartProps {
   onExtendProcess: (processId: string, direction: 'extend' | 'shrink') => void;
   onDeleteProcess: (processId: string) => void;
   onMoveBlockTo: (draggedBlockId: string, targetBlockId: string) => void;
+  onClickBlockName: (blockId: string) => void;
   // 동/층 검색으로 특정 동 행을 화면에 스크롤해서 보여줄 때 쓴다. nonce를 매번 바꿔서
   // 같은 동을 다시 검색해도(스크롤이 이미 그 위치라 값이 안 바뀌어도) 매번 스크롤이
   // 다시 실행되게 한다.
@@ -89,6 +90,7 @@ export default function GanttChart({
   onExtendProcess,
   onDeleteProcess,
   onMoveBlockTo,
+  onClickBlockName,
   scrollToBlockId,
 }: GanttChartProps) {
   const dates = useMemo(() => datesInRange(viewStartDate, dayCount), [viewStartDate, dayCount]);
@@ -152,6 +154,8 @@ export default function GanttChart({
       const hb = hoverBlockIdRef.current;
       if (hb && hb !== d.id) {
         onMoveBlockTo(d.id, hb);
+      } else {
+        onClickBlockName(d.id);
       }
     }
     dragRef.current = null;
@@ -786,7 +790,7 @@ export default function GanttChart({
               onPointerDown={() => startDragBlock(block.id)}
               onPointerEnter={() => updateHoverBlock(block.id)}
               data-block-row={block.name}
-              title="드래그해서 동 순서 변경"
+              title="드래그해서 동 순서 변경 / 클릭: PDF·엑셀 내보내기"
               className={[
                 'sticky left-0 z-20 bg-white border-b-2 border-r border-zinc-200 border-b-zinc-900 flex flex-col justify-center px-2 font-medium whitespace-nowrap cursor-grab active:cursor-grabbing',
                 isDragSource ? 'opacity-50' : '',

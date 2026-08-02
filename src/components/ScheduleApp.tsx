@@ -463,10 +463,11 @@ export default function ScheduleApp() {
       const toIdx = sorted.findIndex((b) => b.id === targetId);
       if (fromIdx === -1 || toIdx === -1) return cur;
       const [moved] = sorted.splice(fromIdx, 1);
-      // fromIdx보다 뒤로 옮길 때는 방금 제거한 자리만큼 뒤쪽 인덱스가 하나씩 당겨졌으므로
-      // 보정해야, dragged 동이 정확히 target 동의 원래 자리(그 앞)에 들어간다.
-      const insertAt = fromIdx < toIdx ? toIdx - 1 : toIdx;
-      sorted.splice(insertAt, 0, moved);
+      // splice로 이미 fromIdx 자리를 뺐으므로, toIdx(원래 배열 기준 인덱스)에 그대로
+      // 다시 끼워 넣으면 dragged 동이 target 동의 원래 자리를 차지하고 target은 밀려난다.
+      // 아래로 옮길 때(fromIdx < toIdx)는 이 방식이 target 바로 뒤에 꽂히는 것과 같아서,
+      // 바로 다음 동을 대상으로 드래그해도(가장 작은 이동) 한 칸 밀리는 게 보장된다.
+      sorted.splice(toIdx, 0, moved);
       const orderMap = new Map(sorted.map((b, i) => [b.id, i + 1]));
       return cur.map((block) => ({ ...block, sortOrder: orderMap.get(block.id) ?? block.sortOrder }));
     });
@@ -522,7 +523,8 @@ export default function ScheduleApp() {
     setSearchNotFound(true);
   }
 
-  const excelExportWeeks = Math.min(8, Math.max(1, Number(excelWeeks) || 2));
+  const EXCEL_WEEKS_MAX = 104; // 최대 2년치 — 안전장치일 뿐 실사용은 보통 전체 기간을 그대로 씀
+  const excelExportWeeks = Math.min(EXCEL_WEEKS_MAX, Math.max(1, Number(excelWeeks) || 2));
   const excelScopeLabel = excelScope === 'all' ? '전체' : sortedBlocks.find((b) => b.id === excelScope)?.name ?? excelScope;
   const weeklyPrintData = useMemo(() => {
     if (!excelExportOpen) return null;
@@ -536,8 +538,27 @@ export default function ScheduleApp() {
     });
   }, [excelExportOpen, blocks, processes, holidays, excelStartDate, excelExportWeeks, excelScope]);
 
+  // 지정한 범위(전체 동이면 scopeBlockId 없음)에 실제로 공정이 걸쳐 있는 첫 날짜~마지막
+  // 날짜를 찾아서, 사용자가 아무것도 따로 설정하지 않아도 "엑셀 내보내기"를 누르면 바로
+  // 작업 전체 기간이 다 보이도록 시작일·기간을 미리 채워준다.
+  function openExcelExport(scopeBlockId: 'all' | string) {
+    const target = scopeBlockId === 'all' ? processes : processes.filter((p) => p.blockId === scopeBlockId);
+    if (target.length === 0) {
+      setWarning('이 동에는 아직 생성된 공정이 없습니다.');
+      return;
+    }
+    const dates = target.map((p) => p.date);
+    const minDate = dates.reduce((a, b) => (a < b ? a : b));
+    const maxDate = dates.reduce((a, b) => (a > b ? a : b));
+    const weeks = Math.min(EXCEL_WEEKS_MAX, Math.max(1, Math.ceil((diffDays(minDate, maxDate) + 1) / 7)));
+    setExcelScope(scopeBlockId);
+    setExcelStartDate(minDate);
+    setExcelWeeks(String(weeks));
+    setExcelExportOpen(true);
+  }
+
   async function handleExportExcel() {
-    const weeks = Math.min(8, Math.max(1, Number(excelWeeks) || 2));
+    const weeks = excelExportWeeks;
     setExcelExporting(true);
     try {
       const { downloadWeeklyScheduleExcel } = await import('@/lib/export/scheduleExcel');
@@ -971,7 +992,7 @@ export default function ScheduleApp() {
             </button>
             <button
               className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
-              onClick={() => setExcelExportOpen(true)}
+              onClick={() => openExcelExport('all')}
               disabled={blocks.length === 0}
               data-testid="excel-export-button"
             >
@@ -1090,6 +1111,7 @@ export default function ScheduleApp() {
             onExtendProcess={handleExtendProcess}
             onDeleteProcess={handleDeleteProcess}
             onMoveBlockTo={handleMoveBlockTo}
+            onClickBlockName={openExcelExport}
             scrollToBlockId={scrollToBlockId}
           />
           <p className="text-xs text-zinc-500 shrink-0">
@@ -1309,6 +1331,9 @@ export default function ScheduleApp() {
               닫기
             </button>
           </div>
+          <p className="text-xs text-zinc-500 -mt-2">
+            공정이 실제로 있는 전체 기간으로 자동으로 채워져 있습니다. 필요하면 아래에서 바꿀 수 있어요.
+          </p>
           <label className="text-sm flex flex-col gap-1">
             대상
             <select
@@ -1338,7 +1363,7 @@ export default function ScheduleApp() {
             <input
               type="number"
               min="1"
-              max="8"
+              max="104"
               className="border border-zinc-300 rounded px-2 py-1.5"
               value={excelWeeks}
               onChange={(e) => setExcelWeeks(e.target.value)}
