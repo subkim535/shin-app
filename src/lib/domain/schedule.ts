@@ -892,8 +892,16 @@ export function deleteProcess(processes: ProcessInstance[], processId: string): 
 export function deleteProcessCycle(processes: ProcessInstance[], processId: string): ProcessInstance[] {
   const target = processes.find((p) => p.id === processId);
   if (!target) return processes;
-  const remaining = processes.filter((p) => !(p.blockId === target.blockId && p.cycleId === target.cycleId));
-  return reindexCellOrders(remaining, target.blockId, target.date);
+  const removedDates = new Set(
+    processes.filter((p) => p.blockId === target.blockId && p.cycleId === target.cycleId).map((p) => p.date),
+  );
+  let remaining = processes.filter((p) => !(p.blockId === target.blockId && p.cycleId === target.cycleId));
+  // 세트가 여러 날짜에 걸쳐 있으면(예: 기초공사 13단계), 그 세트와 같은 셀에 있던
+  // 다른(별개 사이클) 주요공정의 순번 배지에 구멍이 생기지 않도록 날짜마다 다시 정리한다.
+  for (const date of removedDates) {
+    remaining = reindexCellOrders(remaining, target.blockId, date);
+  }
+  return remaining;
 }
 
 /**
