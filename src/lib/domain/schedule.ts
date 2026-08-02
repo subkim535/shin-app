@@ -588,6 +588,21 @@ export function moveMainProcess(
   const cycleId = moved.cycleId;
   const oldDate = moved.date;
 
+  // 후행 주요공정을 같은 사이클의 선행 공정과 "같은 날"에 드롭하는 경우(예: AL(종일)을
+  // W_철근이 있는 날로) 그대로 두면 slotsOverlap 불변식이 깨진 채 같은 셀에 겹쳐 공존해
+  // 버린다. 오전/오후로 정확히 나뉘어 시간대가 안 겹치는 경우만 같은 날 공존을 허용하고,
+  // 그 외(한쪽이 종일이거나 같은 반나절인 등)에는 선행 공정 바로 다음 작업 가능일로 밀어
+  // 배치한다 — 사용자 규칙: "오전/오후 짝일 때만 겹치고, 그 외엔 밀려야 한다".
+  let targetDate = newDate;
+  const seqIdx = MAIN_SEQUENCE_CODES.indexOf(moved.typeCode);
+  if (seqIdx > 0) {
+    const prevCode = MAIN_SEQUENCE_CODES[seqIdx - 1];
+    const prevInCycle = processes.find((p) => p.cycleId === cycleId && p.blockId === blockId && p.typeCode === prevCode);
+    if (prevInCycle && targetDate === prevInCycle.date && slotsOverlap(moved.timeSlot, prevInCycle.timeSlot)) {
+      targetDate = nextWorkableDate(moved.typeCode, addDays(prevInCycle.date, gapDays), holidays);
+    }
+  }
+
   // 이번 이동이 시작되기 전, 같은 동 안 사이클들의 원래 층 순서(가장 이른 날짜 기준)를
   // 기록해둔다 — 도미노 연쇄가 "이후 층"만 밀 수 있게 판별하는 기준이 된다.
   const originalOrder = new Map<string, ISODate>();
@@ -597,7 +612,7 @@ export function moveMainProcess(
     if (!cur || p.date < cur) originalOrder.set(p.cycleId, p.date);
   }
 
-  const rebuild = rebuildCycleFrom(processes, blockId, cycleId, moved.typeCode, processId, newDate, holidays, gapDays, moved.durationDays);
+  const rebuild = rebuildCycleFrom(processes, blockId, cycleId, moved.typeCode, processId, targetDate, holidays, gapDays, moved.durationDays);
 
   const cascade = cascadePushLaterCycles(rebuild.processes, blockId, cycleId, originalOrder, holidays, gapDays);
   if (cascade.blockedReason) {
