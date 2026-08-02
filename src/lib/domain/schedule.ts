@@ -513,10 +513,12 @@ function cascadePushLaterCycles(
     const earlierLatest = latestOf(mp);
     const sameDaySplit = startEarliest === earlierLatest && !slotsOverlap(startEarliestProc.timeSlot, latestProcOf(mp).timeSlot);
     if (startEarliest <= earlierLatest && !sameDaySplit) {
-      const gangform = mp.find((p) => p.typeCode === 'GANGFORM');
+      // 보통은 갱폼이 이 사이클의 첫 단계지만, 갱폼만 개별 삭제된 사이클이면 실제로
+      // 남아있는 것 중 가장 이른 공정 이름을 대신 보여준다.
+      const anchorProc = mp.find((p) => p.typeCode === 'GANGFORM') ?? earliestProcOf(mp);
       return {
         processes,
-        blockedReason: `이 이동은 이전 층 공정과 겹치게 되어 이동할 수 없습니다: ${earliestOf(mp)} ${gangform ? processLabel(gangform) : ''}`,
+        blockedReason: `이 이동은 이전 층 공정과 겹치게 되어 이동할 수 없습니다: ${earliestOf(mp)} ${processLabel(anchorProc)}`,
       };
     }
   }
@@ -537,13 +539,11 @@ function cascadePushLaterCycles(
     const requiredStart = addDays(cursor, gapDays);
     const sameDaySplit = earliest === cursor && !slotsOverlap(cursorProc.timeSlot, earliestProc.timeSlot);
     if (earliest < requiredStart && !sameDaySplit) {
-      const gangform = mp.find((p) => p.typeCode === 'GANGFORM');
-      if (!gangform) {
-        cursor = latestOf(mp);
-        cursorProc = latestProcOf(mp);
-        continue;
-      }
-      const rebuild = rebuildCycleFrom(procs, blockId, cid, 'GANGFORM', gangform.id, requiredStart, holidays, gapDays, undefined);
+      // 보통은 갱폼이 이 사이클의 첫 단계지만, 갱폼만 개별 삭제된 사이클이어도 밀어야
+      // 할 때 조용히 건너뛰지 않도록, 실제로 남아있는 것 중 가장 이른 공정(earliestProc)을
+      // 앵커로 삼아 재계산한다 — rebuildCycleFrom은 anchor 타입 뒤로 이어지는 코드만
+      // 다시 만들기 때문에 갱폼이 없어도 그대로 잘 동작한다.
+      const rebuild = rebuildCycleFrom(procs, blockId, cid, earliestProc.typeCode, earliestProc.id, requiredStart, holidays, gapDays, undefined);
       procs = reindexCellOrders(rebuild.processes, blockId, earliest);
       const rebuiltMp = mainProcsOf(cid);
       cursor = latestOf(rebuiltMp);
