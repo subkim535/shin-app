@@ -859,6 +859,18 @@ export function deleteProcess(processes: ProcessInstance[], processId: string): 
 }
 
 /**
+ * 공정 하나가 아니라, 그 공정과 같은 호출로 함께 만들어진 세트 전체(같은 cycleId)를
+ * 지운다 — 기준층이면 갱폼~타설 5개 주요공정과 딸린 보조공정 전부, 구간 공정 생성으로
+ * 만든 커스텀 순서면 그 순서에 속한 단계 전부.
+ */
+export function deleteProcessCycle(processes: ProcessInstance[], processId: string): ProcessInstance[] {
+  const target = processes.find((p) => p.id === processId);
+  if (!target) return processes;
+  const remaining = processes.filter((p) => !(p.blockId === target.blockId && p.cycleId === target.cycleId));
+  return reindexCellOrders(remaining, target.blockId, target.date);
+}
+
+/**
  * 드래그 이동/연장이 아닌 경로(공정 생성, 전체 일정 순연 등)로 주요공정이 겹치게
  * 되는지 확인한다. 같은 동·같은 날짜에 주요공정이 2개 이상이면 겹침으로 본다 —
  * previewCascadeCollisions와 같은 "같은 동에서는 주요공정끼리 절대 안 겹친다" 규칙을

@@ -40,6 +40,7 @@ interface GanttChartProps {
   onToggleActualDone: (processId: string) => void;
   onExtendProcess: (processId: string, direction: 'extend' | 'shrink') => void;
   onDeleteProcess: (processId: string) => void;
+  onDeleteProcessCycle: (processId: string) => void;
   onMoveBlockTo: (draggedBlockId: string, targetBlockId: string) => void;
   onClickBlockName: (blockId: string) => void;
   // 동/층 검색으로 특정 동 행을 화면에 스크롤해서 보여줄 때 쓴다. nonce를 매번 바꿔서
@@ -89,6 +90,7 @@ export default function GanttChart({
   onToggleActualDone,
   onExtendProcess,
   onDeleteProcess,
+  onDeleteProcessCycle,
   onMoveBlockTo,
   onClickBlockName,
   scrollToBlockId,
@@ -1036,7 +1038,18 @@ export default function GanttChart({
                 setChipMenu(null);
               }}
             >
-              삭제
+              삭제 (이 공정만)
+            </button>
+            <button
+              type="button"
+              data-testid="menu-delete-cycle"
+              className="block w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-600 border-t border-zinc-100"
+              onClick={() => {
+                onDeleteProcessCycle(chipMenu.processId);
+                setChipMenu(null);
+              }}
+            >
+              이 세트 전체 삭제 (같이 생성된 공정 전부)
             </button>
           </div>
         )}

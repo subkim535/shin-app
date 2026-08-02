@@ -15,6 +15,7 @@ import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
 import {
   collidingProcesses,
   deleteProcess,
+  deleteProcessCycle,
   extendMainProcess,
   findMainCollisions,
   generateBaseFloorSequence,
@@ -795,6 +796,11 @@ export default function ScheduleApp() {
     setSelectedProcessId((cur) => (cur === processId ? null : cur));
   }
 
+  function handleDeleteProcessCycle(processId: string) {
+    setProcesses((prev) => recomputeConflicts(deleteProcessCycle(prev, processId)));
+    setSelectedProcessId((cur) => (cur === processId ? null : cur));
+  }
+
   function handleAddHoliday(date: ISODate, kind: HolidayKind) {
     if (holidays.some((h) => h.date === date)) return;
     const nextHolidays = [...holidays, { date, kind }];
@@ -1110,6 +1116,7 @@ export default function ScheduleApp() {
             onToggleActualDone={handleToggleActualDone}
             onExtendProcess={handleExtendProcess}
             onDeleteProcess={handleDeleteProcess}
+            onDeleteProcessCycle={handleDeleteProcessCycle}
             onMoveBlockTo={handleMoveBlockTo}
             onClickBlockName={openExcelExport}
             scrollToBlockId={scrollToBlockId}
