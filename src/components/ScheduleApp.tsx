@@ -761,8 +761,9 @@ export default function ScheduleApp() {
     floorLabel: string,
     startDate: ISODate,
     repeatCount: number,
+    stepGaps?: number[],
   ): string | null {
-    const generated = generateRepeatingBaseFloor(targetBlockId, floorLabel, startDate, holidays, repeatCount, processGapDays);
+    const generated = generateRepeatingBaseFloor(targetBlockId, floorLabel, startDate, holidays, repeatCount, processGapDays, stepGaps);
     const collisions = findMainCollisions([...processes, ...generated]).filter((c) => c.blockId === targetBlockId);
     if (collisions.length > 0) {
       const list = collisions.map((c) => `${c.date} ${c.labels.join('/')}`).join(', ');
@@ -1449,6 +1450,7 @@ export default function ScheduleApp() {
           holidays={holidays}
           onSubmit={handleGenerateFromCustomOrder}
           onSubmitBaseFloor={handleGenerateBaseFloorFromModal}
+          processGapDays={processGapDays}
           onSaveNewTemplate={handleSaveNewTemplate}
           onRemoveTemplate={(id) => setTemplates((cur) => cur.filter((t) => t.id !== id))}
           onClose={() => {

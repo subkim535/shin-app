@@ -134,18 +134,22 @@ export function generateBaseFloorSequence(
   startDate: ISODate,
   holidays: Holiday[],
   gapDays: number = 1,
+  // 각 주요공정(갱폼→W_철근→AL→S_철근→타설)에서 다음 공정까지의 일수(간격)를 공정별로
+  // 지정할 수 있다. 넘기지 않으면 모든 공정에 gapDays를 균일하게 적용한다(기존 동작).
+  stepGaps?: number[],
 ): ProcessInstance[] {
   const cycleId = crypto.randomUUID();
   const result: ProcessInstance[] = [];
   let cursor = startDate;
-  for (const code of MAIN_SEQUENCE_CODES) {
+  MAIN_SEQUENCE_CODES.forEach((code, i) => {
     const def = PROCESS_TYPE_MAP[code];
     const date = nextWorkableDate(code, cursor, holidays);
     const main = makeProcess(blockId, code, date, cycleId, { floorLabel: def.showFloorLabel ? floor : undefined });
     result.push(main);
     result.push(...attachSubProcesses(blockId, code, date, main.id, cycleId));
-    cursor = addDays(date, gapDays);
-  }
+    const gap = stepGaps && stepGaps[i] != null ? Math.max(1, Math.floor(stepGaps[i])) : gapDays;
+    cursor = addDays(date, gap);
+  });
   return result;
 }
 
@@ -168,16 +172,20 @@ export function generateRepeatingBaseFloor(
   holidays: Holiday[],
   repeatCount: number,
   gapDays: number = 1,
+  stepGaps?: number[],
 ): ProcessInstance[] {
   const result: ProcessInstance[] = [];
   let floor = startFloor;
   let cursor = startDate;
+  // 층과 층 사이 간격: 공정별 일수를 지정했으면 마지막 공정(타설)의 일수를, 아니면 기존처럼 1일.
+  const lastGap =
+    stepGaps && stepGaps[stepGaps.length - 1] != null ? Math.max(1, Math.floor(stepGaps[stepGaps.length - 1])) : 1;
   for (let i = 0; i < Math.max(1, repeatCount); i++) {
-    const cycle = generateBaseFloorSequence(blockId, floor, cursor, holidays, gapDays);
+    const cycle = generateBaseFloorSequence(blockId, floor, cursor, holidays, gapDays, stepGaps);
     if (cycle.length === 0) break;
     result.push(...cycle);
     const lastDate = cycle.reduce((max, p) => (p.date > max ? p.date : max), cycle[0].date);
-    cursor = addDays(lastDate, 1);
+    cursor = addDays(lastDate, lastGap);
     floor = nextFloorLabel(floor);
   }
   return result;

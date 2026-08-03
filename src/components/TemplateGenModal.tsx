@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { ISODate, todayISO } from '@/lib/domain/dateUtils';
 import { generateRepeatingBaseFloor, generateFromTemplate, processLabel } from '@/lib/domain/schedule';
+import { MAIN_SEQUENCE_CODES, PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
 import { Block, Holiday, ProcessTemplate, TemplateStepDef } from '@/lib/domain/types';
 
 // 지상층(PIT 없음)은 기초/지하/주차장 등과 달리 순서를 자유롭게 고르는 커스텀 공정이
@@ -82,13 +83,14 @@ interface TemplateGenModalProps {
   templates: ProcessTemplate[];
   holidays: Holiday[];
   onSubmit: (blockId: string, categoryName: string, steps: TemplateStepDef[], startDate: ISODate, repeatCount: number) => string | null;
-  onSubmitBaseFloor: (blockId: string, floorLabel: string, startDate: ISODate, repeatCount: number) => string | null;
+  onSubmitBaseFloor: (blockId: string, floorLabel: string, startDate: ISODate, repeatCount: number, stepGaps: number[]) => string | null;
   onSaveNewTemplate: (title: string, steps: TemplateStepDef[]) => void;
   onRemoveTemplate: (id: string) => void;
   onClose: () => void;
   initialCategory?: string;
   initialBlockId?: string;
   initialStartDate?: ISODate;
+  processGapDays?: number;
 }
 
 export default function TemplateGenModal({
@@ -103,6 +105,7 @@ export default function TemplateGenModal({
   initialCategory,
   initialBlockId,
   initialStartDate,
+  processGapDays = 1,
 }: TemplateGenModalProps) {
   const [category, setCategory] = useState(initialCategory ?? TEMPLATE_CATEGORIES[0]);
   const [blockId, setBlockId] = useState(initialBlockId ?? blocks[0]?.id ?? '');
@@ -126,6 +129,16 @@ export default function TemplateGenModal({
   const [editSteps, setEditSteps] = useState<EditStep[]>([]);
   const [newStepName, setNewStepName] = useState('');
   const [newStepDays, setNewStepDays] = useState('1');
+
+  // 지상층(기준층) 전용: 각 주요공정(갱폼→W_철근→AL→S_철근→타설)에서 다음 공정까지의
+  // 일수만 편집한다. 순서·구성·보조공정·도미노 밀림은 기준층 엔진 그대로 유지된다.
+  const [baseFloorGaps, setBaseFloorGaps] = useState<number[]>(() =>
+    MAIN_SEQUENCE_CODES.map(() => Math.max(1, Math.floor(processGapDays || 1))),
+  );
+  function setBaseGap(i: number, val: string) {
+    const days = Math.max(1, Math.floor(Number(val) || 1));
+    setBaseFloorGaps((cur) => cur.map((g, idx) => (idx === i ? days : g)));
+  }
 
   // 카테고리를 바꾸면(처음 마운트될 때도 포함) 그 카테고리의 기본 단계·순서로 다시 채운다.
   // 렌더 중에 바로 반영해서(useEffect 없이) 예전 카테고리의 값이 한 프레임이라도 잘못
@@ -207,8 +220,16 @@ export default function TemplateGenModal({
   const parsedRepeatCount = Math.min(60, Math.max(1, Number(repeatCount) || 1));
   const groundFloorPreview = useMemo(() => {
     if (!isGroundFloor || !startDate || !normalizedFloor) return [];
-    return generateRepeatingBaseFloor(blockId || 'preview-block', normalizedFloor, startDate, holidays, parsedRepeatCount);
-  }, [isGroundFloor, blockId, normalizedFloor, startDate, holidays, parsedRepeatCount]);
+    return generateRepeatingBaseFloor(
+      blockId || 'preview-block',
+      normalizedFloor,
+      startDate,
+      holidays,
+      parsedRepeatCount,
+      processGapDays,
+      baseFloorGaps,
+    );
+  }, [isGroundFloor, blockId, normalizedFloor, startDate, holidays, parsedRepeatCount, processGapDays, baseFloorGaps]);
 
   function handleSubmit() {
     if (!blockId) {
@@ -220,7 +241,7 @@ export default function TemplateGenModal({
         setError('시작 층을 입력해주세요.');
         return;
       }
-      const result = onSubmitBaseFloor(blockId, normalizedFloor, startDate, parsedRepeatCount);
+      const result = onSubmitBaseFloor(blockId, normalizedFloor, startDate, parsedRepeatCount, baseFloorGaps);
       if (result) {
         setError(result);
         return;
@@ -266,7 +287,7 @@ export default function TemplateGenModal({
         </div>
         <p className="text-xs text-zinc-500">
           {isGroundFloor
-            ? '왼쪽에서 지상층(PIT 없음)을 고르고, 동·시작일·시작 층을 입력하세요. 기준층 공정을 그대로 생성합니다.'
+            ? '왼쪽에서 지상층(PIT 없음)을 고르고, 동·시작일·시작 층을 입력하세요. 순서·구성은 기준층 그대로이고, 각 공정의 일수(다음 공정까지 간격)만 조절할 수 있습니다.'
             : '왼쪽에서 공사 종류를 고르고, 동·시작일을 정한 뒤 오른쪽 목록에서 순서대로 공정을 눌러 순서를 만드세요. 이미 순서에 들어간 공정을 다시 누르면 빠집니다.'}
         </p>
 
@@ -352,32 +373,64 @@ export default function TemplateGenModal({
                 value={repeatCount}
                 onChange={(e) => setRepeatCount(e.target.value)}
               />
-              {!isGroundFloor && (
-                <button className="text-xs px-2 py-1 rounded border border-zinc-300 ml-auto" onClick={resetOrder}>
-                  기본 순서로 초기화
-                </button>
-              )}
+              <button
+                className="text-xs px-2 py-1 rounded border border-zinc-300 ml-auto"
+                onClick={
+                  isGroundFloor
+                    ? () => setBaseFloorGaps(MAIN_SEQUENCE_CODES.map(() => Math.max(1, Math.floor(processGapDays || 1))))
+                    : resetOrder
+                }
+              >
+                {isGroundFloor ? '일수 초기화' : '기본 순서로 초기화'}
+              </button>
             </div>
 
             {isGroundFloor ? (
-              <div className="flex flex-col gap-1">
-                <h3 className="text-xs font-semibold text-zinc-500">미리보기 (갱폼→W_철근→AL→S_철근→타설, 보조공정 자동 부착)</h3>
-                <p className="text-xs text-zinc-400">
-                  기준층 공정은 순서를 자유롭게 바꿀 수 없고, 같은 동의 다른 층과 겹치면 도미노로 밀리거나
-                  이전 층과 겹칠 경우 막힙니다(기준층과 동일한 규칙).
-                </p>
-                {groundFloorPreview.length === 0 ? (
-                  <p className="text-xs text-zinc-400">동·시작일·시작 층을 입력하면 미리보기가 표시됩니다.</p>
-                ) : (
-                  <div className="flex flex-col gap-1 max-w-sm">
-                    {groundFloorPreview.map((p) => (
-                      <div key={p.id} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1">
-                        <span className="flex-1">{processLabel(p)}</span>
-                        <span className="text-xs text-zinc-400 shrink-0">{p.date}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div className="flex gap-3">
+                {/* 왼쪽: 기준층 공정 순서 (고정) + 일수만 편집 */}
+                <div className="flex-1 flex flex-col gap-1">
+                  <h3 className="text-xs font-semibold text-zinc-500">공정 순서 · 일수 (순서 고정 — 일수만 편집)</h3>
+                  {MAIN_SEQUENCE_CODES.map((code, i) => (
+                    <div
+                      key={code}
+                      className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1 min-h-[36px]"
+                    >
+                      <span className="w-5 shrink-0 text-center text-xs font-semibold text-indigo-600">{i + 1}</span>
+                      <span className="flex-1">{PROCESS_TYPE_MAP[code]?.name ?? code}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={baseFloorGaps[i]}
+                        onChange={(e) => setBaseGap(i, e.target.value)}
+                        className="w-11 border border-zinc-300 rounded px-1 py-0.5 text-xs text-center"
+                        title="다음 공정까지 일수"
+                      />
+                      <span className="text-[10px] text-zinc-400">일</span>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-zinc-400 leading-snug mt-1">
+                    기준층은 순서·구성이 정해져 있어 단계 추가·삭제·순서변경은 없고, 각 공정의 일수(다음 공정까지 간격)만
+                    조절해요. 박리제·전기·설비·철근검측·먹메김은 자동 부착되고, 도미노 밀림·오전/오후 규칙도 그대로
+                    적용됩니다.
+                  </p>
+                </div>
+
+                {/* 오른쪽: 실제 생성 결과 미리보기 (날짜 포함) */}
+                <div className="flex-1 flex flex-col gap-1">
+                  <h3 className="text-xs font-semibold text-zinc-500">미리보기 (실제 생성 결과 · 날짜)</h3>
+                  {groundFloorPreview.length === 0 ? (
+                    <p className="text-xs text-zinc-400">동·시작일·시작 층을 입력하면 미리보기가 표시됩니다.</p>
+                  ) : (
+                    <div className="flex flex-col gap-1">
+                      {groundFloorPreview.map((p) => (
+                        <div key={p.id} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1">
+                          <span className="flex-1">{processLabel(p)}</span>
+                          <span className="text-xs text-zinc-400 shrink-0">{p.date}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="flex gap-3">
