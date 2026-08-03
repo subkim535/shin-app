@@ -150,9 +150,6 @@ export default function TemplateGenModal({
     const days = Math.max(1, Math.floor(Number(val) || 1));
     setEditSteps((cur) => cur.map((s, idx) => (idx === i ? { ...s, durationDays: days } : s)));
   }
-  function toggleStepOptional(i: number) {
-    setEditSteps((cur) => cur.map((s, idx) => (idx === i ? { ...s, optional: !s.optional } : s)));
-  }
   function deleteStep(i: number) {
     setEditSteps((cur) => cur.filter((_, idx) => idx !== i));
     // 삭제된 인덱스를 순서에서 빼고, 그보다 뒤 인덱스는 한 칸씩 당긴다.
@@ -458,10 +455,6 @@ export default function TemplateGenModal({
                           title="소요 일수"
                         />
                         <span className="text-[10px] text-zinc-400">일</span>
-                        <label className="flex items-center gap-0.5 text-[10px] text-zinc-500 shrink-0" title="상황에 따라 생성 시 뺄 수 있는 단계">
-                          <input type="checkbox" checked={!!s.optional} onChange={() => toggleStepOptional(i)} />
-                          필요시
-                        </label>
                         <button
                           type="button"
                           className="text-xs text-zinc-400 hover:text-red-600 shrink-0 px-0.5"
