@@ -25,7 +25,7 @@ interface GanttChartProps {
   notes: Record<string, string>;
   onChangeNote: (blockId: string, date: ISODate, text: string) => void;
   onOpenNote: (blockId: string, date: ISODate) => void;
-  onShowReason: (label: string, reason: string, path?: string) => void;
+  onShowReason: (label: string, reason: string, path: string | undefined, processId: string) => void;
   onEditCrew: (processId: string) => void;
   onSetTimeSlot: (processId: string, slot: 'morning' | 'afternoon' | undefined) => void;
   onChangeBlockRemark: (blockId: string, text: string) => void;
@@ -362,6 +362,7 @@ export default function GanttChart({
       label: string;
       reason: string;
       path: string;
+      processId: string;
       colIndex: number;
       rowIndex: number;
       rowType: RowType;
@@ -379,6 +380,7 @@ export default function GanttChart({
       label: string;
       reason: string;
       path: string;
+      processId: string;
     }[] = [];
     for (const info of infos) {
       if (info.originCol === undefined) continue;
@@ -405,6 +407,7 @@ export default function GanttChart({
         label: info.label,
         reason: info.record.reason,
         path: info.path,
+        processId: info.proc.id,
         colIndex: info.originCol,
         rowIndex: info.rowIndex,
         rowType: info.rowType,
@@ -427,6 +430,7 @@ export default function GanttChart({
           label: info.label,
           reason: info.record.reason,
           path: info.path,
+          processId: info.proc.id,
         });
       }
     }
@@ -534,7 +538,7 @@ export default function GanttChart({
       const base = a.rowType === 'main' ? ROW_MAIN_H : ROW_SUB_H;
       const baseY = rowTopFor(a.rowIndex, a.rowType) + base - 6 - GHOST_BOX_H / 2;
       const y = baseY + a.lane * LANE_STEP; // 같은 행에서 겹치는 화살표끼리 살짝 어긋나게 (고스트와 같은 간격을 써야 레인이 맞는다)
-      return { x1, y1: y, x2, y2: y, label: a.label, reason: a.reason, path: a.path };
+      return { x1, y1: y, x2, y2: y, label: a.label, reason: a.reason, path: a.path, processId: a.processId };
     });
     return { ghosts, arrows };
   }, [rawVisuals, rowMetrics]);
@@ -988,7 +992,7 @@ export default function GanttChart({
           >
             <button
               type="button"
-              onClick={() => onShowReason(g.label, g.reason, g.path)}
+              onClick={() => onShowReason(g.label, g.reason, g.path, g.processId)}
               title={`이동 사유: ${g.reason}`}
               className="text-xs leading-tight text-zinc-400 bg-zinc-100/80 hover:bg-zinc-200 rounded px-1.5 py-0.5 text-left whitespace-nowrap"
             >
@@ -1018,7 +1022,7 @@ export default function GanttChart({
                 stroke="transparent"
                 strokeWidth={10}
                 style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
-                onClick={() => onShowReason(a.label, a.reason, a.path)}
+                onClick={() => onShowReason(a.label, a.reason, a.path, a.processId)}
               >
                 <title>이동 사유: {a.reason}</title>
               </line>

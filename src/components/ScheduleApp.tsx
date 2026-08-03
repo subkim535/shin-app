@@ -416,7 +416,7 @@ export default function ScheduleApp() {
   const [excelWeeks, setExcelWeeks] = useState('2');
   const [excelExporting, setExcelExporting] = useState(false);
   const [noteModal, setNoteModal] = useState<{ blockId: string; date: ISODate } | null>(null);
-  const [reasonPopup, setReasonPopup] = useState<{ label: string; reason: string; path?: string } | null>(null);
+  const [reasonPopup, setReasonPopup] = useState<{ label: string; reason: string; path?: string; processId: string } | null>(null);
   const [crewModal, setCrewModal] = useState<{ processId: string; team: string; headcount: string; date: string } | null>(
     null,
   );
@@ -1151,7 +1151,7 @@ export default function ScheduleApp() {
             notes={notes}
             onChangeNote={handleChangeNote}
             onOpenNote={(blockId, date) => setNoteModal({ blockId, date })}
-            onShowReason={(label, reason, path) => setReasonPopup({ label, reason, path })}
+            onShowReason={(label, reason, path, processId) => setReasonPopup({ label, reason, path, processId })}
             onEditCrew={handleOpenCrew}
             onSetTimeSlot={handleSetTimeSlot}
             onChangeBlockRemark={handleChangeBlockRemark}
@@ -1504,7 +1504,19 @@ export default function ScheduleApp() {
               이동 경로: <span className="font-mono">{reasonPopup.path}</span>
             </p>
           )}
-          <div className="flex justify-end text-sm">
+          <p className="text-[11px] text-zinc-400">
+            &lsquo;흔적 지우기&rsquo;는 이 회색 이력 표시만 지웁니다 (공정 위치는 그대로예요).
+          </p>
+          <div className="flex justify-between text-sm">
+            <button
+              className="px-3 py-1 rounded border border-red-300 text-red-600 hover:bg-red-50"
+              onClick={() => {
+                setChangeHistory((cur) => cur.filter((r) => r.processId !== reasonPopup.processId));
+                setReasonPopup(null);
+              }}
+            >
+              이 이동 흔적 지우기
+            </button>
             <button className="px-3 py-1 rounded border border-zinc-300" onClick={() => setReasonPopup(null)}>
               닫기
             </button>
