@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { datesInRange, dayOfWeek, diffDays, formatMonthDay, ISODate, todayISO, weekdayLabelKo } from '@/lib/domain/dateUtils';
-import { PROCESS_COLOR, PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
+import { PROCESS_COLOR, PROCESS_TYPE_MAP, customProcessColor } from '@/lib/domain/processTypes';
 import { isWorkersDay, processLabel } from '@/lib/domain/schedule';
 import { Block, ChangeRecord, Holiday, ProcessInstance } from '@/lib/domain/types';
 
@@ -615,7 +615,7 @@ export default function GanttChart({
   function renderChip(p: ProcessInstance, blockId: string, date: ISODate) {
     const def = PROCESS_TYPE_MAP[p.typeCode];
     const selected = p.id === selectedProcessId;
-    const color = PROCESS_COLOR[p.typeCode] ?? FALLBACK_COLOR;
+    const color = PROCESS_COLOR[p.typeCode] ?? (p.customLabel ? customProcessColor(p.customLabel) : FALLBACK_COLOR);
     const isDragSource = dragging?.type === 'process' && dragging.id === p.id;
     const label = processLabel(p);
     return (

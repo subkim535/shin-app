@@ -1,5 +1,5 @@
 import { addDays, dayOfWeek, ISODate } from '@/lib/domain/dateUtils';
-import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
+import { PROCESS_TYPE_MAP, customProcessArgb } from '@/lib/domain/processTypes';
 import { processLabel } from '@/lib/domain/schedule';
 import { Block, Holiday, ProcessInstance } from '@/lib/domain/types';
 
@@ -27,7 +27,7 @@ export const LEGEND_ITEMS: { label: string; argb: string }[] = [
   { label: '철근 (W_철근/S_철근)', argb: FILL_HEX.W_REBAR },
   { label: 'AL', argb: FILL_HEX.AL },
   { label: '타설', argb: FILL_HEX.POUR },
-  { label: '보조공정 · 기초/지하층 등 구간공정', argb: SUB_FILL },
+  { label: '보조공정 (박리제·검측 등)', argb: SUB_FILL },
   { label: '일요일 · 공휴일', argb: HOLIDAY_FILL },
 ];
 
@@ -103,6 +103,9 @@ export function buildWeeklyScheduleData(params: WeeklyScheduleParams): WeeklySch
   function fillFor(list: ProcessInstance[]): string | null {
     const main = list.find((p) => PROCESS_TYPE_MAP[p.typeCode]?.category === 'main');
     if (main) return FILL_HEX[main.typeCode] ?? SUB_FILL;
+    // 구간공정(커스텀 단계)은 단계 이름별 팔레트 색으로 칠한다. 실제 보조공정(박리제 등)만 회색.
+    const custom = list.find((p) => p.customLabel && PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub');
+    if (custom?.customLabel) return customProcessArgb(custom.customLabel);
     return list.length > 0 ? SUB_FILL : null;
   }
 
