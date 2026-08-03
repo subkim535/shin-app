@@ -619,7 +619,10 @@ export default function GanttChart({
     const isDragSource = dragging?.type === 'process' && dragging.id === p.id;
     const label = processLabel(p);
     return (
-      <div key={p.id} className="flex items-center gap-0.5 w-full min-w-0 flex-wrap">
+      // 칩 "그림"만 변경이력 고스트/화살표 레이어(z5)보다 위(z10)로 올린다. 셀 전체가
+      // 아니라 칩 박스만 올리므로, 회색 고스트/점선 화살표가 칩을 가리지는 않으면서도
+      // 빈 칸을 지나는 화살표는 끊기지 않고 그대로 이어져 보인다.
+      <div key={p.id} className="relative z-10 flex items-center gap-0.5 w-full min-w-0 flex-wrap">
         <button
           type="button"
           onPointerDown={(e) => {
@@ -903,11 +906,8 @@ export default function GanttChart({
                   data-date={d}
                   data-row="main"
                   onPointerEnter={() => updateHoverCell(block.id, d, 'main')}
-                  className={['relative border-b border-l border-zinc-200 overflow-y-auto overflow-x-hidden px-1 py-0.5', cellShade, isMainHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
-                  // 공정 칩이 있는 셀은 변경이력 고스트/화살표 레이어(z5)보다 위에 그려서,
-                  // 회색 고스트나 점선 화살표가 칩을 가리거나 관통하지 않게 한다. 빈 셀은
-                  // z-index를 두지 않아, 고스트는 원래 자리(빈 칸)에서 계속 보인다.
-                  style={{ gridColumn: colIndex + 2, gridRow: baseRow, zIndex: mainProcs.length > 0 ? 10 : undefined }}
+                  className={['border-b border-l border-zinc-200 overflow-y-auto overflow-x-hidden px-1 py-0.5', cellShade, isMainHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
+                  style={{ gridColumn: colIndex + 2, gridRow: baseRow }}
                 >
                   <div className={isHalfDaySplit ? 'flex gap-0.5 items-start' : 'flex flex-col gap-0.5'}>
                     {mainProcs.map((p) => (
