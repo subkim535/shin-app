@@ -864,8 +864,11 @@ export default function GanttChart({
                   data-date={d}
                   data-row="main"
                   onPointerEnter={() => updateHoverCell(block.id, d, 'main')}
-                  className={['border-b border-l border-zinc-200 overflow-y-auto px-1 py-0.5', cellShade, isMainHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
-                  style={{ gridColumn: colIndex + 2, gridRow: baseRow }}
+                  className={['relative border-b border-l border-zinc-200 overflow-y-auto px-1 py-0.5', cellShade, isMainHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
+                  // 공정 칩이 있는 셀은 변경이력 고스트/화살표 레이어(z5)보다 위에 그려서,
+                  // 회색 고스트나 점선 화살표가 칩을 가리거나 관통하지 않게 한다. 빈 셀은
+                  // z-index를 두지 않아, 고스트는 원래 자리(빈 칸)에서 계속 보인다.
+                  style={{ gridColumn: colIndex + 2, gridRow: baseRow, zIndex: mainProcs.length > 0 ? 10 : undefined }}
                 >
                   <div className={isHalfDaySplit ? 'flex gap-0.5 items-start' : 'flex flex-col gap-0.5'}>
                     {mainProcs.map((p) => (
