@@ -41,8 +41,14 @@ export function isWeeklyHoliday(date: ISODate, holidays: Holiday[]): boolean {
   return dayOfWeek(date) === 0 || holidays.some((h) => h.date === date);
 }
 
-export interface WeeklyCellGroup {
+export interface WeeklyCellLine {
   text: string;
+  sub: boolean; // 보조공정 여부 — 엑셀/인쇄에서 주공정과 다르게(작게·들여쓰기) 그린다
+}
+
+export interface WeeklyCellGroup {
+  text: string; // 전체 텍스트(줄바꿈) — 폴백/하위호환용
+  lines: WeeklyCellLine[];
   fillArgb: string | null;
 }
 
@@ -100,6 +106,20 @@ export function buildWeeklyScheduleData(params: WeeklyScheduleParams): WeeklySch
     return list.length > 0 ? SUB_FILL : null;
   }
 
+  function groupFor(list: ProcessInstance[]): WeeklyCellGroup {
+    // 주공정을 먼저, 보조공정을 뒤로 정렬해서 표에서도 "주공정 아래에 보조공정"이 되게 한다.
+    const sorted = [...list].sort((a, b) => {
+      const sa = PROCESS_TYPE_MAP[a.typeCode]?.category === 'sub' ? 1 : 0;
+      const sb = PROCESS_TYPE_MAP[b.typeCode]?.category === 'sub' ? 1 : 0;
+      return sa - sb;
+    });
+    const lines: WeeklyCellLine[] = sorted.map((p) => ({
+      text: labelFor(p),
+      sub: PROCESS_TYPE_MAP[p.typeCode]?.category === 'sub',
+    }));
+    return { text: lines.map((l) => l.text).join('\n'), lines, fillArgb: fillFor(list) };
+  }
+
   const rows: WeeklyBlockRow[] = targetBlocks.map((block) => {
     const blockProcesses = processes.filter((p) => p.blockId === block.id);
     const cells: WeeklyDayCell[] = dates.map((d) => {
@@ -109,14 +129,15 @@ export function buildWeeklyScheduleData(params: WeeklyScheduleParams): WeeklySch
       const wholeDay = dayProcs.filter((p) => p.timeSlot !== 'morning' && p.timeSlot !== 'afternoon');
       const holiday = isWeeklyHoliday(d, holidays);
 
+      const emptyGroup = (fillArgb: string | null): WeeklyCellGroup => ({ text: '', lines: [], fillArgb });
+
       if (morning.length || afternoon.length) {
-        const mList = [...morning, ...wholeDay];
         return {
           date: d,
           isHoliday: holiday,
           merged: false,
-          am: { text: mList.map(labelFor).join('\n'), fillArgb: fillFor(mList) },
-          pm: { text: afternoon.map(labelFor).join('\n'), fillArgb: fillFor(afternoon) },
+          am: groupFor([...morning, ...wholeDay]),
+          pm: groupFor(afternoon),
         };
       }
       if (wholeDay.length) {
@@ -124,16 +145,16 @@ export function buildWeeklyScheduleData(params: WeeklyScheduleParams): WeeklySch
           date: d,
           isHoliday: holiday,
           merged: true,
-          am: { text: wholeDay.map(labelFor).join('\n'), fillArgb: fillFor(wholeDay) },
-          pm: { text: '', fillArgb: null },
+          am: groupFor(wholeDay),
+          pm: emptyGroup(null),
         };
       }
       return {
         date: d,
         isHoliday: holiday,
         merged: true,
-        am: { text: '', fillArgb: holiday ? HOLIDAY_FILL : null },
-        pm: { text: '', fillArgb: null },
+        am: emptyGroup(holiday ? HOLIDAY_FILL : null),
+        pm: emptyGroup(null),
       };
     });
     return { blockId: block.id, blockName: block.name, blockInfo: block.info, cells };

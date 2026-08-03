@@ -3,7 +3,23 @@
 import { Fragment } from 'react';
 import { formatMonthDay, weekdayLabelKo } from '@/lib/domain/dateUtils';
 import { Holiday } from '@/lib/domain/types';
-import { argbToCss, HEADER_FILL, HOLIDAY_FILL, BLOCK_NAME_FILL, LEGEND_ITEMS, isWeeklyHoliday, WeeklyScheduleData } from '@/lib/export/weeklyScheduleData';
+import { argbToCss, HEADER_FILL, HOLIDAY_FILL, BLOCK_NAME_FILL, LEGEND_ITEMS, isWeeklyHoliday, WeeklyScheduleData, WeeklyCellLine } from '@/lib/export/weeklyScheduleData';
+
+// 한 칸 안에서 주공정은 굵게, 보조공정은 작게·기울임·회색에 "└ " 들여쓰기로 그려서
+// 엑셀과 똑같이 주/보조가 한눈에 구분되게 한다.
+function CellLines({ lines }: { lines: WeeklyCellLine[] }) {
+  return (
+    <>
+      {lines.map((l, i) =>
+        l.sub ? (
+          <div key={i} className="text-[9px] italic text-zinc-500 leading-tight">└ {l.text}</div>
+        ) : (
+          <div key={i} className="font-semibold leading-tight">{l.text}</div>
+        ),
+      )}
+    </>
+  );
+}
 
 interface WeeklyScheduleTableProps {
   siteName: string;
@@ -82,26 +98,26 @@ export default function WeeklyScheduleTable({ siteName, scopeLabel, data, holida
                     <td
                       key={cell.date}
                       colSpan={2}
-                      className="border border-zinc-400 px-1 py-0.5 text-center whitespace-pre-line"
+                      className="border border-zinc-400 px-1 py-0.5 text-center"
                       style={{ ...(cell.am.fillArgb ? { background: argbToCss(cell.am.fillArgb) } : undefined), ...boundaryStyle }}
                     >
-                      {cell.am.text}
+                      <CellLines lines={cell.am.lines} />
                     </td>
                   ) : (
                     <Fragment key={cell.date}>
                       <td
                         key={`${cell.date}-am`}
-                        className="border border-zinc-400 px-1 py-0.5 text-center whitespace-pre-line"
+                        className="border border-zinc-400 px-1 py-0.5 text-center"
                         style={{ ...(cell.am.fillArgb ? { background: argbToCss(cell.am.fillArgb) } : undefined), ...boundaryStyle }}
                       >
-                        {cell.am.text}
+                        <CellLines lines={cell.am.lines} />
                       </td>
                       <td
                         key={`${cell.date}-pm`}
-                        className="border border-zinc-400 px-1 py-0.5 text-center whitespace-pre-line"
+                        className="border border-zinc-400 px-1 py-0.5 text-center"
                         style={{ ...(cell.pm.fillArgb ? { background: argbToCss(cell.pm.fillArgb) } : undefined), ...boundaryStyle }}
                       >
-                        {cell.pm.text}
+                        <CellLines lines={cell.pm.lines} />
                       </td>
                     </Fragment>
                   ),

@@ -17,6 +17,19 @@ const FULL_BORDER = { top: THIN_BORDER, left: THIN_BORDER, bottom: THIN_BORDER, 
 // 한눈에 구분되게 한다.
 const BLOCK_BOUNDARY_BORDER = { style: 'medium' as const, color: { argb: 'FF18181B' } };
 
+// 한 셀 안에서 주공정과 보조공정을 다르게 그린다: 주공정은 굵게, 보조공정은 한 단계
+// 작게·기울임·회색에 "└ " 들여쓰기를 붙여, 색칠된 칸에서도 뭐가 주/보조인지 한눈에 구분된다.
+function richTextCell(lines: { text: string; sub: boolean }[]) {
+  return {
+    richText: lines.map((l, i) => {
+      const nl = i > 0 ? '\n' : '';
+      return l.sub
+        ? { text: `${nl}└ ${l.text}`, font: { size: 8, italic: true, color: { argb: 'FF52525B' } } }
+        : { text: `${nl}${l.text}`, font: { size: 9, bold: true } };
+    }),
+  };
+}
+
 export interface WeeklyScheduleExportParams {
   siteName: string;
   blocks: Block[];
@@ -89,15 +102,15 @@ export async function downloadWeeklyScheduleExcel(params: WeeklyScheduleExportPa
       if (cellData.merged) {
         sheet.mergeCells(rowIdx + 1, col1, rowIdx + 1, col2);
         const cell = sheet.getCell(rowIdx + 1, col1);
-        if (cellData.am.text) cell.value = cellData.am.text;
+        if (cellData.am.lines.length) cell.value = richTextCell(cellData.am.lines);
         if (cellData.am.fillArgb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cellData.am.fillArgb } };
       } else {
         const amCell = sheet.getCell(rowIdx + 1, col1);
-        if (cellData.am.text) amCell.value = cellData.am.text;
+        if (cellData.am.lines.length) amCell.value = richTextCell(cellData.am.lines);
         if (cellData.am.fillArgb) amCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cellData.am.fillArgb } };
 
         const pmCell = sheet.getCell(rowIdx + 1, col2);
-        if (cellData.pm.text) pmCell.value = cellData.pm.text;
+        if (cellData.pm.lines.length) pmCell.value = richTextCell(cellData.pm.lines);
         if (cellData.pm.fillArgb) pmCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cellData.pm.fillArgb } };
       }
     });
