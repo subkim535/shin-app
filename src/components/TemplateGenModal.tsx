@@ -282,33 +282,35 @@ export default function TemplateGenModal({
                 {c}
               </button>
             ))}
-            {customTemplateNames.length > 0 && (
-              <>
-                <div className="text-[10px] text-zinc-400 mt-2 mb-0.5 px-2">저장한 순서</div>
-                {customTemplateNames.map((c) => (
-                  <div key={c} className="flex items-center gap-1">
-                    <button
-                      className={`flex-1 text-left text-sm px-2 py-1.5 rounded truncate ${
-                        c === category ? 'bg-indigo-600 text-white' : 'hover:bg-zinc-100'
-                      }`}
-                      onClick={() => setCategory(c)}
-                    >
-                      {c}
-                    </button>
-                    <button
-                      className={`shrink-0 text-xs px-1 ${c === category ? 'text-white/70 hover:text-white' : 'text-zinc-400 hover:text-red-600'}`}
-                      title="이 저장된 순서 삭제"
-                      onClick={() => {
-                        const t = templates.find((tpl) => tpl.name === c);
-                        if (t) onRemoveTemplate(t.id);
-                        if (category === c) setCategory(TEMPLATE_CATEGORIES[0]);
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </>
+            <div className="text-[10px] font-semibold text-zinc-500 mt-3 mb-0.5 px-2 border-t border-zinc-200 pt-2">저장한 순서</div>
+            {customTemplateNames.length === 0 ? (
+              <p className="text-[10px] text-zinc-400 px-2 leading-snug">
+                아래 &lsquo;저장&rsquo;에 이름을 넣고 저장하면 여기 나타나요 — 그걸 누르면 다시 불러와서 쓸 수 있어요.
+              </p>
+            ) : (
+              customTemplateNames.map((c) => (
+                <div key={c} className="flex items-center gap-1">
+                  <button
+                    className={`flex-1 text-left text-sm px-2 py-1.5 rounded truncate ${
+                      c === category ? 'bg-indigo-600 text-white' : 'hover:bg-zinc-100'
+                    }`}
+                    onClick={() => setCategory(c)}
+                  >
+                    {c}
+                  </button>
+                  <button
+                    className={`shrink-0 text-xs px-1 ${c === category ? 'text-white/70 hover:text-white' : 'text-zinc-400 hover:text-red-600'}`}
+                    title="이 저장된 순서 삭제"
+                    onClick={() => {
+                      const t = templates.find((tpl) => tpl.name === c);
+                      if (t) onRemoveTemplate(t.id);
+                      if (category === c) setCategory(TEMPLATE_CATEGORIES[0]);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))
             )}
           </div>
 
