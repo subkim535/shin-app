@@ -449,6 +449,45 @@ export default function GanttChart({
       const key = `${a.rowIndex}_${a.rowType}`;
       extra.set(key, Math.max(extra.get(key) ?? 0, neededBottom - base));
     }
+
+    // 보조공정 배지가 한 셀에서 여러 줄로 늘어나는(특히 오전/오후로 반씩 나뉘어 칸이
+    // 좁아진) 경우, 28px 고정 높이에선 잘려서 스크롤된다. 동별로 셀마다 필요한 보조공정
+    // 줄 수를 세어, 가장 많이 필요한 만큼 그 동의 보조 행 높이를 늘린다.
+    const SUB_LINE_H = 22; // 배지 한 줄이 차지하는 높이(약 20px) + 줄 간격
+    const subContentExtra: number[] = [];
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      let maxLines = 1;
+      for (const d of dates) {
+        const key = `${block.id}__${d}`;
+        const subs = byBlockDateSub.get(key) ?? [];
+        if (subs.length === 0) continue;
+        const mains = byBlockDateMain.get(key) ?? [];
+        const mainIds = new Set(mains.map((m) => m.id));
+        const half =
+          mains.length === 2 &&
+          (mains[0].timeSlot === 'morning' || mains[0].timeSlot === 'afternoon') &&
+          (mains[1].timeSlot === 'morning' || mains[1].timeSlot === 'afternoon') &&
+          mains[0].timeSlot !== mains[1].timeSlot;
+        let lines: number;
+        if (half) {
+          // 반나절 분할: 각 주공정의 보조공정이 좁은 칸에 한 줄씩 쌓인다 → 양쪽 중 많은 쪽
+          const perMain = new Map<string, number>();
+          for (const s of subs) {
+            if (s.linkedMainProcessId && mainIds.has(s.linkedMainProcessId))
+              perMain.set(s.linkedMainProcessId, (perMain.get(s.linkedMainProcessId) ?? 0) + 1);
+          }
+          lines = Math.max(1, ...perMain.values());
+        } else {
+          // 일반(넓은 칸): 배지 하나가 꽤 넓어(전기·설비 등 ~90px) 한 칸(152px)에 두 개를
+          // 다 못 넣고 줄바꿈되는 경우가 많다. 잘림을 막으려고 배지 하나당 한 줄로 넉넉히 잡는다.
+          lines = Math.max(1, subs.length);
+        }
+        if (lines > maxLines) maxLines = lines;
+      }
+      subContentExtra.push(Math.max(0, maxLines * SUB_LINE_H + 6 - ROW_SUB_H));
+    }
+
     const mainH: number[] = [];
     const subH: number[] = [];
     const blockTop: number[] = [];
@@ -456,13 +495,13 @@ export default function GanttChart({
     for (let i = 0; i < blocks.length; i++) {
       blockTop.push(cursor);
       const mh = ROW_MAIN_H + (extra.get(`${i}_main`) ?? 0);
-      const sh = ROW_SUB_H + (extra.get(`${i}_sub`) ?? 0);
+      const sh = ROW_SUB_H + Math.max(extra.get(`${i}_sub`) ?? 0, subContentExtra[i] ?? 0);
       mainH.push(mh);
       subH.push(sh);
       cursor += mh + sh + ROW_NOTE_H;
     }
     return { mainH, subH, blockTop, totalHeight: cursor };
-  }, [rawVisuals, blocks.length]);
+  }, [rawVisuals, blocks, dates, byBlockDateMain, byBlockDateSub]);
 
   function rowTopFor(rowIndex: number, rowType: RowType): number {
     // rawVisuals/rowMetrics는 같은 blocks 값에서 계산되지만, 다른 사용자가 동에서 실시간으로
@@ -864,7 +903,7 @@ export default function GanttChart({
                   data-date={d}
                   data-row="main"
                   onPointerEnter={() => updateHoverCell(block.id, d, 'main')}
-                  className={['relative border-b border-l border-zinc-200 overflow-y-auto px-1 py-0.5', cellShade, isMainHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
+                  className={['relative border-b border-l border-zinc-200 overflow-y-auto overflow-x-hidden px-1 py-0.5', cellShade, isMainHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
                   // 공정 칩이 있는 셀은 변경이력 고스트/화살표 레이어(z5)보다 위에 그려서,
                   // 회색 고스트나 점선 화살표가 칩을 가리거나 관통하지 않게 한다. 빈 셀은
                   // z-index를 두지 않아, 고스트는 원래 자리(빈 칸)에서 계속 보인다.
@@ -883,7 +922,7 @@ export default function GanttChart({
                   data-date={d}
                   data-row="sub"
                   onPointerEnter={() => updateHoverCell(block.id, d, 'sub')}
-                  className={['border-b border-l border-zinc-200 overflow-y-auto px-1 py-0.5', cellShade, isSubHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
+                  className={['border-b border-l border-zinc-200 overflow-y-auto overflow-x-hidden px-1 py-0.5', cellShade, isSubHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
                   style={{ gridColumn: colIndex + 2, gridRow: baseRow + 1 }}
                 >
                   {isHalfDaySplit ? (
