@@ -2,16 +2,7 @@
 
 import { useState } from 'react';
 import { ISODate } from '@/lib/domain/dateUtils';
-import {
-  Block,
-  CrewTeam,
-  FacilityType,
-  Holiday,
-  HolidayKind,
-  ProcessTemplate,
-  SiteInfo,
-  TemplateStepDef,
-} from '@/lib/domain/types';
+import { Block, CrewTeam, FacilityType, Holiday, HolidayKind, SiteInfo } from '@/lib/domain/types';
 
 const HOLIDAY_KIND_LABEL: Record<HolidayKind, string> = {
   sunday: '일요일',
@@ -21,10 +12,6 @@ const HOLIDAY_KIND_LABEL: Record<HolidayKind, string> = {
   vacation: '휴가',
   site_shutdown: '현장 셧다운',
 };
-
-// 문서 기획서의 대공종 분류 — 각 이름을 그대로 템플릿 이름으로 사용한다.
-// 지상 기본층(갱폼~타설)은 별도 전용 엔진이라 여기 포함하지 않는다.
-const TEMPLATE_CATEGORIES = ['기초공사', '지하층공사', '지상 PIT층', '주차장', '부속건물', '옥탑'];
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -36,9 +23,6 @@ interface SettingsPanelProps {
   onReorderBlock: (id: string, direction: 'up' | 'down') => void;
   onChangeBlockType: (id: string, facilityType: FacilityType) => void;
   onChangeBlockInfo: (id: string, info: string) => void;
-  templates: ProcessTemplate[];
-  onSaveTemplateSteps: (categoryName: string, steps: TemplateStepDef[]) => void;
-  onRemoveTemplate: (id: string) => void;
   crewTeams: CrewTeam[];
   onAddCrewTeam: (name: string) => void;
   onRemoveCrewTeam: (id: string) => void;
@@ -61,9 +45,6 @@ export default function SettingsPanel({
   onReorderBlock,
   onChangeBlockType,
   onChangeBlockInfo,
-  templates,
-  onSaveTemplateSteps,
-  onRemoveTemplate,
   crewTeams,
   onAddCrewTeam,
   onRemoveCrewTeam,
@@ -78,16 +59,6 @@ export default function SettingsPanel({
   const [newBlockName, setNewBlockName] = useState('');
   const [newBlockType, setNewBlockType] = useState<FacilityType>('building');
   const [newBlockInfo, setNewBlockInfo] = useState('');
-
-  const [activeCategory, setActiveCategory] = useState(TEMPLATE_CATEGORIES[0]);
-  const [stepInput, setStepInput] = useState('');
-  const [stepDuration, setStepDuration] = useState('1');
-  const [stepOptional, setStepOptional] = useState(false);
-
-  const activeTemplate = templates.find((t) => t.name === activeCategory);
-  const activeSteps = activeTemplate?.steps ?? [];
-  // "구간 공정 생성" 모달에서 이름 붙여 저장한 순서 — 고정 6개 카테고리 밖의 템플릿.
-  const customTemplateNames = templates.map((t) => t.name).filter((n) => !TEMPLATE_CATEGORIES.includes(n));
 
   const [newTeamName, setNewTeamName] = useState('');
 
@@ -113,47 +84,6 @@ export default function SettingsPanel({
     onAddBlock(name, newBlockType, newBlockInfo.trim());
     setNewBlockName('');
     setNewBlockInfo('');
-  }
-
-  function addStep() {
-    const name = stepInput.trim();
-    if (!name) return;
-    const durationDays = Math.max(1, Number(stepDuration) || 1);
-    const code = `CUSTOM_${activeCategory}_${activeSteps.length}_${name}`.replace(/\s+/g, '_');
-    onSaveTemplateSteps(activeCategory, [
-      ...activeSteps,
-      { code, name, durationDays, optional: stepOptional || undefined },
-    ]);
-    setStepInput('');
-    setStepDuration('1');
-    setStepOptional(false);
-  }
-
-  function updateStep(idx: number, patch: Partial<TemplateStepDef>) {
-    onSaveTemplateSteps(
-      activeCategory,
-      activeSteps.map((s, i) => (i === idx ? { ...s, ...patch } : s)),
-    );
-  }
-
-  function removeStep(idx: number) {
-    onSaveTemplateSteps(
-      activeCategory,
-      activeSteps.filter((_, i) => i !== idx),
-    );
-  }
-
-  function moveStep(idx: number, dir: 'up' | 'down') {
-    const target = dir === 'up' ? idx - 1 : idx + 1;
-    if (target < 0 || target >= activeSteps.length) return;
-    const next = [...activeSteps];
-    [next[idx], next[target]] = [next[target], next[idx]];
-    onSaveTemplateSteps(activeCategory, next);
-  }
-
-  function resetCategory() {
-    if (activeTemplate) onRemoveTemplate(activeTemplate.id);
-    if (!TEMPLATE_CATEGORIES.includes(activeCategory)) setActiveCategory(TEMPLATE_CATEGORIES[0]);
   }
 
   return (
@@ -360,121 +290,6 @@ export default function SettingsPanel({
               onChange={(e) => onChangeProcessGapDays(Math.min(14, Math.max(1, Number(e.target.value) || 1)))}
             />
             <span className="text-xs text-zinc-500">일</span>
-          </div>
-        </section>
-
-        <section className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold text-zinc-700">공정 템플릿 (기초·지하층 등)</h3>
-          <p className="text-xs text-zinc-500">
-            지상층(갱폼~타설)은 기존 방식 그대로이고, 여기서는 기초·지하층처럼 순서가 다른 구간의 공정 순서를
-            공사종류별로 직접 정의합니다. 여기서 만든 공정은 후속 자동 재계산 없이 자유롭게 이동합니다.
-          </p>
-
-          <div className="flex flex-wrap gap-1 border-b border-zinc-200 pb-2">
-            {TEMPLATE_CATEGORIES.map((c) => (
-              <button
-                key={c}
-                onClick={() => setActiveCategory(c)}
-                className={[
-                  'px-2 py-1 rounded text-xs',
-                  activeCategory === c ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200',
-                ].join(' ')}
-              >
-                {c}
-                {templates.some((t) => t.name === c) ? '' : ' (미설정)'}
-              </button>
-            ))}
-            {customTemplateNames.length > 0 && (
-              <>
-                <span className="w-full text-[10px] text-zinc-400 mt-1">
-                  구간 공정 생성에서 저장한 순서
-                </span>
-                {customTemplateNames.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setActiveCategory(c)}
-                    className={[
-                      'px-2 py-1 rounded text-xs',
-                      activeCategory === c ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200',
-                    ].join(' ')}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            {activeSteps.length === 0 && (
-              <p className="text-xs text-zinc-400">아직 등록된 단계가 없습니다. 아래에서 단계를 추가해주세요.</p>
-            )}
-            {activeSteps.map((s, idx) => (
-              <div key={idx} className="flex items-center gap-2 text-xs border border-zinc-200 rounded px-2 py-1.5">
-                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 shrink-0 font-semibold">
-                  {idx + 1}
-                </span>
-                <span className="flex-1 min-w-0 truncate">{s.name}</span>
-                <input
-                  type="number"
-                  min="1"
-                  className="border border-zinc-300 rounded px-1 py-0.5 text-xs w-12 shrink-0"
-                  value={s.durationDays}
-                  onChange={(e) => updateStep(idx, { durationDays: Math.max(1, Number(e.target.value) || 1) })}
-                />
-                <span className="text-zinc-400 shrink-0">일</span>
-                <label className="flex items-center gap-0.5 text-zinc-500 shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={!!s.optional}
-                    onChange={(e) => updateStep(idx, { optional: e.target.checked || undefined })}
-                  />
-                  필요시
-                </label>
-                <button onClick={() => moveStep(idx, 'up')} disabled={idx === 0}>
-                  ▲
-                </button>
-                <button onClick={() => moveStep(idx, 'down')} disabled={idx === activeSteps.length - 1}>
-                  ▼
-                </button>
-                <button className="text-red-600" onClick={() => removeStep(idx)}>
-                  삭제
-                </button>
-              </div>
-            ))}
-
-            <div className="flex items-center gap-2 pt-1 border-t border-zinc-200">
-              <input
-                className="border border-zinc-300 rounded px-2 py-1 text-sm flex-1"
-                value={stepInput}
-                onChange={(e) => setStepInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') addStep();
-                }}
-                placeholder="공정 단계 이름 (예: 터파기)"
-              />
-              <input
-                type="number"
-                min="1"
-                className="border border-zinc-300 rounded px-2 py-1 text-sm w-14 shrink-0"
-                value={stepDuration}
-                onChange={(e) => setStepDuration(e.target.value)}
-                placeholder="일수"
-              />
-              <label className="flex items-center gap-1 text-xs shrink-0">
-                <input type="checkbox" checked={stepOptional} onChange={(e) => setStepOptional(e.target.checked)} />
-                필요시
-              </label>
-              <button className="px-2 py-1 rounded border border-zinc-300 text-sm" onClick={addStep}>
-                단계 추가
-              </button>
-            </div>
-
-            {activeTemplate && (
-              <button className="self-end text-xs text-red-600" onClick={resetCategory}>
-                {TEMPLATE_CATEGORIES.includes(activeCategory) ? '이 공사종류 전체 초기화' : '이 저장된 순서 삭제'}
-              </button>
-            )}
           </div>
         </section>
       </div>

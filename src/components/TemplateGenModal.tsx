@@ -400,7 +400,7 @@ export default function TemplateGenModal({
                   {orderedIndices
                     .filter((idx) => idx < editSteps.length)
                     .map((idx, pos) => (
-                    <div key={`${idx}-${pos}`} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1">
+                    <div key={`${idx}-${pos}`} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1 min-h-[36px]">
                       <span className="w-5 shrink-0 text-center text-xs font-semibold text-indigo-600">{pos + 1}</span>
                       <span className="flex-1">
                         {editSteps[idx].name} <span className="text-[10px] text-zinc-400">{editSteps[idx].durationDays}일</span>
@@ -436,7 +436,7 @@ export default function TemplateGenModal({
                     return (
                       <div
                         key={i}
-                        className={`flex items-center gap-1 border rounded px-1.5 py-1 text-sm ${
+                        className={`flex items-center gap-1 border rounded px-1.5 py-1 text-sm min-h-[36px] ${
                           picked ? 'border-indigo-300 bg-indigo-50' : 'border-zinc-200'
                         }`}
                       >

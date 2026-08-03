@@ -1354,9 +1354,6 @@ export default function ScheduleApp() {
             setBlocks((cur) => cur.map((b) => (b.id === id ? { ...b, facilityType } : b)))
           }
           onChangeBlockInfo={(id, info) => setBlocks((cur) => cur.map((b) => (b.id === id ? { ...b, info } : b)))}
-          templates={templates}
-          onSaveTemplateSteps={handleSaveTemplateSteps}
-          onRemoveTemplate={(id) => setTemplates((cur) => cur.filter((t) => t.id !== id))}
           crewTeams={crewTeams}
           onAddCrewTeam={handleAddCrewTeam}
           onRemoveCrewTeam={handleRemoveCrewTeam}
