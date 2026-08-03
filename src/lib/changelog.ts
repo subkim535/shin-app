@@ -1,0 +1,24 @@
+// 화면 제목 옆 "#번호" 뱃지에 표시되는 수정 내역.
+// 새로 수정할 때마다 맨 위에 no를 1 올려서 한 줄 추가한다. 배포가 반영되면
+// 화면의 번호가 바뀌므로, 사용자가 최신 버전이 적용됐는지 눈으로 확인할 수 있다.
+export interface ChangeLogEntry {
+  no: number;
+  date: string; // YYYY-MM-DD
+  text: string;
+}
+
+export const CHANGELOG: ChangeLogEntry[] = [
+  { no: 10, date: '2026-08-03', text: '제목 옆에 수정 번호·내역 표시 기능 추가 (지금 이 창)' },
+  { no: 9, date: '2026-08-03', text: '종일이 낀 공정을 같은 칸에 끌어놔도 자동으로 다음 날로 밀림 (오전+오후일 때만 같은 칸 공존)' },
+  { no: 8, date: '2026-08-03', text: '갱폼 없는 사이클을 안 밀던 도미노(캐스케이드) 버그 수정' },
+  { no: 7, date: '2026-08-03', text: '세트 전체 삭제 시 순번 배지에 구멍이 남던 버그 수정' },
+  { no: 6, date: '2026-08-03', text: '오전/오후/종일 토글로 다른 주요공정과 겹치게 되는 것 방지' },
+  { no: 5, date: '2026-08-02', text: '주간공정표 엑셀/PDF에 동 경계 굵은 검정선 추가' },
+  { no: 4, date: '2026-08-02', text: '공정 칩 메뉴에 "이 세트 전체 삭제" 추가' },
+  { no: 3, date: '2026-08-02', text: '동 순서 아래로 드래그 버그 수정 + 동 이름 클릭 시 엑셀/PDF 바로가기' },
+  { no: 2, date: '2026-08-02', text: '주간공정표 PDF/인쇄 + 엑셀 색상 범례 + 공정명 검색 추가' },
+  { no: 1, date: '2026-08-02', text: '구간 공정 생성 반복 횟수 상한(60) 추가' },
+];
+
+export const APP_REVISION = CHANGELOG[0]?.no ?? 0;
+export const LAST_UPDATED = CHANGELOG[0]?.date ?? '';

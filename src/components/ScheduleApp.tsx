@@ -12,6 +12,7 @@ import WeeklyScheduleTable from '@/components/WeeklyScheduleTable';
 import { addDays, addMonths, diffDays, endOfMonth, ISODate, mondayOfWeek, todayISO } from '@/lib/domain/dateUtils';
 import { buildWeeklyScheduleData } from '@/lib/export/weeklyScheduleData';
 import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
+import { CHANGELOG, APP_REVISION, LAST_UPDATED } from '@/lib/changelog';
 import {
   collidingProcesses,
   deleteProcess,
@@ -142,6 +143,7 @@ function Modal({ children, draggable }: { children: React.ReactNode; draggable?:
 
 export default function ScheduleApp() {
   const [siteInfo, setSiteInfo] = useState<SiteInfo>({ name: 'OO현장', overview: '' });
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [templates, setTemplates] = useState<ProcessTemplate[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
@@ -963,7 +965,38 @@ export default function ScheduleApp() {
       <header className="flex flex-col gap-2 shrink-0">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold">{siteInfo.name} — 전체 공정표</h1>
+            <div className="flex items-center gap-2 relative">
+              <h1 className="text-xl font-semibold">{siteInfo.name} — 전체 공정표</h1>
+              <button
+                type="button"
+                onClick={() => setChangelogOpen((v) => !v)}
+                title="최근 수정 내역 보기"
+                className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 shrink-0"
+                data-testid="changelog-badge"
+              >
+                #{APP_REVISION}차 수정
+              </button>
+              {changelogOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setChangelogOpen(false)} />
+                  <div className="absolute left-0 top-full mt-1 z-50 w-[420px] max-w-[90vw] max-h-[60vh] overflow-y-auto rounded-lg border border-zinc-300 bg-white shadow-lg p-3 text-sm">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-zinc-700">최근 수정 내역</span>
+                      <span className="text-xs text-zinc-400">최종 업데이트 {LAST_UPDATED}</span>
+                    </div>
+                    <ul className="flex flex-col gap-1.5">
+                      {CHANGELOG.map((c) => (
+                        <li key={c.no} className="flex gap-2">
+                          <span className="shrink-0 font-semibold text-blue-600 tabular-nums">#{c.no}</span>
+                          <span className="shrink-0 text-xs text-zinc-400 tabular-nums mt-0.5">{c.date.slice(5)}</span>
+                          <span className="text-zinc-700">{c.text}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </>
+              )}
+            </div>
             {siteInfo.overview && <p className="text-xs text-zinc-500 mt-0.5">{siteInfo.overview}</p>}
             {!loaded && !syncError && <p className="text-xs text-zinc-400 mt-0.5">불러오는 중…</p>}
             {syncError && <p className="text-xs text-red-600 mt-0.5">동기화 오류: {syncError}</p>}
