@@ -21,7 +21,6 @@ import {
   findTimeSlotConflict,
   findMainCollisions,
   generateBaseFloorSequence,
-  generateRepeatingBaseFloor,
   generateRepeatingFromTemplate,
   isKnownType,
   moveMainProcess,
@@ -752,27 +751,6 @@ export default function ScheduleApp() {
     handleSaveTemplateSteps(title, steps);
   }
 
-  // "구간 공정 생성" 모달의 "지상층(PIT 없음)" 카테고리: 커스텀 템플릿이 아니라 기준층
-  // 엔진(generateBaseFloorSequence)을 그대로 써서, 색상·보조공정·같은 동 겹침 캐스케이드가
-  // 다른 기준층 공정과 완전히 동일하게 적용되는 진짜 기준층 사이클을 만든다. repeatCount가
-  // 1보다 크면 층 번호를 자동으로 올려가며 그만큼 연속 생성한다.
-  function handleGenerateBaseFloorFromModal(
-    targetBlockId: string,
-    floorLabel: string,
-    startDate: ISODate,
-    repeatCount: number,
-    stepGaps?: number[],
-  ): string | null {
-    const generated = generateRepeatingBaseFloor(targetBlockId, floorLabel, startDate, holidays, repeatCount, processGapDays, stepGaps);
-    const collisions = findMainCollisions([...processes, ...generated]).filter((c) => c.blockId === targetBlockId);
-    if (collisions.length > 0) {
-      const list = collisions.map((c) => `${c.date} ${c.labels.join('/')}`).join(', ');
-      return `이 시작일로 생성하면 기존 공정과 겹치게 되어 만들 수 없습니다: ${list}`;
-    }
-    setProcesses((cur) => recomputeConflicts([...cur, ...generated]));
-    return null;
-  }
-
   function handleToggleActualDone(processId: string) {
     setProcesses((cur) => cur.map((p) => (p.id === processId ? { ...p, actualDone: !p.actualDone } : p)));
   }
@@ -1449,8 +1427,6 @@ export default function ScheduleApp() {
           templates={templates}
           holidays={holidays}
           onSubmit={handleGenerateFromCustomOrder}
-          onSubmitBaseFloor={handleGenerateBaseFloorFromModal}
-          processGapDays={processGapDays}
           onSaveNewTemplate={handleSaveNewTemplate}
           onRemoveTemplate={(id) => setTemplates((cur) => cur.filter((t) => t.id !== id))}
           onClose={() => {
