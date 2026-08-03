@@ -189,19 +189,52 @@ export function generateRepeatingBaseFloor(
  * 아직 붙이지 않았다 (원 기획서에도 "추후 별도 설계"로 남겨진 영역). 자유공정처럼
  * 각 스텝을 자유롭게 이동할 수 있는 수준으로만 우선 지원한다.
  */
+// 구간공정(커스텀 단계)을 (blockId, fromDate, timeSlot)로 놓을 때, 같은 동에서 이미 차
+// 있는(슬롯이 겹치는) 칸을 피할 수 있는 가장 이른 작업 가능일을 찾는다. 주요공정과
+// 마찬가지로 오전/오후로 정확히 나뉘면 공존을 허용하고(slotsOverlap=false), 종일이거나
+// 같은 반나절이면 겹침으로 보고 다음 날로 넘긴다. 보조공정(배지)은 칸을 차지하지 않는
+// 것으로 본다. occupied에는 기존 공정 + 이번에 이미 놓은 단계들을 넘긴다.
+export function firstFreeDateForCustom(
+  code: string,
+  fromDate: ISODate,
+  timeSlot: ProcessInstance['timeSlot'],
+  occupied: ProcessInstance[],
+  blockId: string,
+  holidays: Holiday[],
+  excludeId?: string,
+): ISODate {
+  const collides = (date: ISODate) =>
+    occupied.some(
+      (p) =>
+        p.id !== excludeId &&
+        p.blockId === blockId &&
+        p.date === date &&
+        PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub' &&
+        slotsOverlap(timeSlot, p.timeSlot),
+    );
+  let d = nextWorkableDate(code, fromDate, holidays);
+  let guard = 0;
+  while (collides(d) && guard++ < 400) {
+    d = nextWorkableDate(code, addDays(d, 1), holidays);
+  }
+  return d;
+}
+
 export function generateFromTemplate(
   template: ProcessTemplate,
   blockId: string,
   startDate: ISODate,
   holidays: Holiday[] = [],
   opts: { skipOptional?: boolean } = {},
+  existing: ProcessInstance[] = [],
 ): ProcessInstance[] {
   const cycleId = crypto.randomUUID();
   const result: ProcessInstance[] = [];
   let cursor = startDate;
   for (const step of template.steps) {
     if (step.optional && opts.skipOptional) continue;
-    cursor = nextWorkableDate(step.code, cursor, holidays);
+    // 기존 공정 + 이번에 이미 놓은 단계와 안 겹치는 가장 이른 날짜로 배치(겹침 방지).
+    cursor = firstFreeDateForCustom(step.code, cursor, undefined, [...existing, ...result], blockId, holidays);
     const span = Math.max(1, step.durationDays || 1);
     const main = makeProcess(blockId, step.code, cursor, cycleId, {
       customLabel: step.name,
@@ -222,11 +255,12 @@ export function generateRepeatingFromTemplate(
   holidays: Holiday[],
   repeatCount: number,
   opts: { skipOptional?: boolean } = {},
+  existing: ProcessInstance[] = [],
 ): ProcessInstance[] {
   const result: ProcessInstance[] = [];
   let cursor = startDate;
   for (let i = 0; i < Math.max(1, repeatCount); i++) {
-    const cycle = generateFromTemplate(template, blockId, cursor, holidays, opts);
+    const cycle = generateFromTemplate(template, blockId, cursor, holidays, opts, [...existing, ...result]);
     result.push(...cycle);
     const lastDate = cycle[cycle.length - 1]?.date ?? cursor;
     cursor = addDays(lastDate, 1);
@@ -844,6 +878,31 @@ export function moveSubProcess(
   const finalDate = target ? nextWorkableDate(target.typeCode, newDate, holidays) : newDate;
   const updated = processes.map((p) => (p.id === processId ? { ...p, date: finalDate } : p));
   return { processes: withArrivals(updated, [processId]), date: finalDate, sundaySkipped };
+}
+
+/**
+ * 구간공정(커스텀 단계) 이동: 보조공정처럼 자유 이동시키던 것을 바꿔, 같은 동에서 이미
+ * 차 있는(슬롯이 겹치는) 칸이면 다음 빈 작업일로 밀어 배치한다. 오전/오후로 정확히 나뉘면
+ * 공존을 허용하고, 종일이거나 같은 반나절이면 겹침으로 보고 민다.
+ */
+export function moveCustomProcess(
+  processes: ProcessInstance[],
+  changeHistory: ChangeRecord[],
+  processId: string,
+  newDate: ISODate,
+  reason: string,
+  holidays: Holiday[] = [],
+): MoveResult {
+  const moved = processes.find((p) => p.id === processId);
+  if (!moved) return { processes, changeHistory };
+  const targetDate = firstFreeDateForCustom(moved.typeCode, newDate, moved.timeSlot, processes, moved.blockId, holidays, processId);
+  const nextProcesses = withArrivals(
+    processes.map((p) => (p.id === processId ? { ...p, date: targetDate } : p)),
+    [processId],
+  );
+  const record: ChangeRecord = { id: crypto.randomUUID(), processId, previousDate: moved.date, newDate: targetDate, reason };
+  const notice = targetDate !== newDate ? `${newDate}은(는) 이미 다른 공정이 있어 ${targetDate}(으)로 밀어 배치했습니다.` : undefined;
+  return { processes: nextProcesses, changeHistory: [...changeHistory, record], notice };
 }
 
 /**

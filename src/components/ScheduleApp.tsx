@@ -26,6 +26,7 @@ import {
   isKnownType,
   moveMainProcess,
   moveSubProcess,
+  moveCustomProcess,
   previewMainMove,
   processLabel,
   pushProcessesOffHoliday,
@@ -89,7 +90,7 @@ interface PendingDrop {
   processId: string;
   blockId: string;
   date: ISODate;
-  kind: 'main' | 'sub';
+  kind: 'main' | 'sub' | 'custom';
   collisionCount: number;
 }
 
@@ -647,9 +648,10 @@ export default function ScheduleApp() {
       return;
     }
 
-    // 지상층 엔진의 주요공정만 불변규칙 검증 대상. 커스텀 템플릿 공정은 자유 이동.
+    // 지상층 엔진의 주요공정만 불변규칙 검증 대상. 구간공정(커스텀 템플릿)은 캐스케이드는
+    // 안 하지만, 같은 동에서 이미 차 있는 칸에 놓으면 다음 빈 날로 밀어 배치한다(kind='custom').
     if (!isKnownType(proc.typeCode)) {
-      setPendingDrop({ processId, blockId, date, kind: 'sub', collisionCount: 0 });
+      setPendingDrop({ processId, blockId, date, kind: 'custom', collisionCount: 0 });
       setDropStage('reason');
       return;
     }
@@ -731,7 +733,9 @@ export default function ScheduleApp() {
       name: categoryName,
       steps,
     };
-    const generated = generateRepeatingFromTemplate(template, targetBlockId, startDate, holidays, repeatCount);
+    // 기존 공정을 넘겨서, 새 구간공정 단계가 이미 차 있는 날을 피해(다음 빈 날로 밀려)
+    // 배치되게 한다 — 겹치면 막지 않고 자동으로 밀어 배치.
+    const generated = generateRepeatingFromTemplate(template, targetBlockId, startDate, holidays, repeatCount, {}, processes);
     const collisions = findMainCollisions([...processes, ...generated]).filter((c) => c.blockId === targetBlockId);
     if (collisions.length > 0) {
       const list = collisions.map((c) => `${c.date} ${c.labels.join('/')}`).join(', ');
@@ -886,6 +890,11 @@ export default function ScheduleApp() {
         setChangeHistory(result.changeHistory);
         if (result.notice) setWarning(result.notice);
       }
+    } else if (pendingDrop.kind === 'custom') {
+      const result = moveCustomProcess(processes, changeHistory, pendingDrop.processId, pendingDrop.date, reason, holidays);
+      setProcesses(recomputeConflicts(result.processes));
+      setChangeHistory(result.changeHistory);
+      if (result.notice) setWarning(result.notice);
     } else {
       const proc = processes.find((p) => p.id === pendingDrop.processId);
       const result = moveSubProcess(processes, pendingDrop.processId, pendingDrop.date, holidays);
