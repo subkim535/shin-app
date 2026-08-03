@@ -431,7 +431,15 @@ function rebuildCycleFrom(
     if (i === 0 && dayOfWeek(cursor) === 0 && isBlockedForType(code, cursor, holidays)) {
       sundaySkipped = true;
     }
-    const date = nextWorkableDate(code, cursor, holidays);
+    let date = nextWorkableDate(code, cursor, holidays);
+    // 자동으로 재배치되는 뒤 단계(i>0)는 다른 공사(구간공정) 날에 겹쳐 오지 않게 다음 빈
+    // 날로 민다 — 사용자가 직접 옮긴 맨 앞 단계(i===0)만 자유롭게 둔다("자동이면 무조건 밀림").
+    if (i > 0) {
+      let guard = 0;
+      while (kept.some((p) => p.blockId === blockId && !!p.customLabel && p.date === date) && guard++ < 400) {
+        date = nextWorkableDate(code, addDays(date, 1), holidays);
+      }
+    }
     if (i === 0) firstDate = date;
     const main = makeProcess(blockId, code, date, cycleId, {
       floorLabel: stepDef.showFloorLabel ? floorLabel : undefined,
