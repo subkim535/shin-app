@@ -18,6 +18,17 @@ const nextConfig: NextConfig = {
       ? "sb_publishable_WyVw0f8Gq5JpWu7kDLwUIA_AFNMb_ZU"
       : "sb_publishable_lulBXkkZyRgjwEmTWJsAHA_MGqLvHlb",
   },
+  // 배포 후에도 "고정 주소"가 옛 화면을 계속 보여주는 문제 대응: HTML 문서는 캐시하지
+  // 않고 매 요청마다 새로 받아오게 한다. (해시가 붙은 /_next/static 자산은 그대로
+  // 영구 캐시되므로 성능 영향은 없다.) 새 배포가 나오면 새로고침만으로 최신이 뜬다.
+  async headers() {
+    return [
+      {
+        source: "/",
+        headers: [{ key: "Cache-Control", value: "no-store, must-revalidate" }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
