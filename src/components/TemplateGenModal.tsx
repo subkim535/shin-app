@@ -74,6 +74,9 @@ function makeStepCode(category: string, index: number, name: string): string {
   return `CUSTOM_${category}_${index}_${name}`.replace(/\s+/g, '_');
 }
 
+// 모달 안에서 직접 편집(일수·필요시·추가·삭제)할 수 있는 단계 한 줄.
+type EditStep = { name: string; durationDays: number; optional?: boolean };
+
 interface TemplateGenModalProps {
   blocks: Block[];
   templates: ProcessTemplate[];
@@ -113,27 +116,57 @@ export default function TemplateGenModal({
   const customTemplateNames = templates.map((t) => t.name).filter((n) => !TEMPLATE_CATEGORIES.includes(n));
 
   const savedTemplate = templates.find((t) => t.name === category);
-  // 이 카테고리에 저장해둔 단계가 있으면 그걸, 없으면 기본값을 후보 목록으로 보여준다.
-  const baseSteps = useMemo(() => {
-    if (savedTemplate && savedTemplate.steps.length > 0) {
-      return savedTemplate.steps.map((s) => ({ name: s.name, durationDays: s.durationDays, optional: s.optional }));
-    }
-    return DEFAULT_STEPS[category] ?? [];
-  }, [savedTemplate, category]);
+  // 이 카테고리의 "기본" 단계 목록 — 저장된 게 있으면 그것, 없으면 DEFAULT_STEPS.
+  function baseStepsFor(): EditStep[] {
+    const src = savedTemplate && savedTemplate.steps.length > 0 ? savedTemplate.steps : DEFAULT_STEPS[category] ?? [];
+    return src.map((s) => ({ name: s.name, durationDays: s.durationDays, optional: s.optional }));
+  }
 
-  // 카테고리를 바꾸면(처음 마운트될 때도 포함) 순서를 그 카테고리의 기본 순서로 다시
-  // 채운다 — 렌더 중에 바로 반영해서(useEffect 없이) 빈 목록이나 예전 카테고리의
-  // 순서가 한 프레임이라도 잘못 보이지 않게 한다. 초기값을 실제 카테고리 이름과 절대
-  // 겹치지 않는 값으로 둬서 첫 렌더에도 이 분기를 반드시 한 번 타게 한다.
+  // editSteps: 모달 안에서 직접 편집 가능한 단계 목록(이름·일수·필요시·추가·삭제).
+  const [editSteps, setEditSteps] = useState<EditStep[]>([]);
+  const [newStepName, setNewStepName] = useState('');
+  const [newStepDays, setNewStepDays] = useState('1');
+
+  // 카테고리를 바꾸면(처음 마운트될 때도 포함) 그 카테고리의 기본 단계·순서로 다시 채운다.
+  // 렌더 중에 바로 반영해서(useEffect 없이) 예전 카테고리의 값이 한 프레임이라도 잘못
+  // 보이지 않게 한다. 초기값을 실제 카테고리 이름과 절대 겹치지 않는 값으로 둔다.
   const [orderedForCategory, setOrderedForCategory] = useState<string | null>(null);
   if (orderedForCategory !== category) {
     setOrderedForCategory(category);
-    setOrderedIndices(baseSteps.map((_, i) => i));
+    const init = baseStepsFor();
+    setEditSteps(init);
+    setOrderedIndices(init.map((_, i) => i));
+    setNewStepName('');
+    setNewStepDays('1');
     setError(null);
   }
 
   function toggleStep(i: number) {
     setOrderedIndices((cur) => (cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i]));
+  }
+
+  // ── 단계 직접 편집 (설정 화면 편집기를 모달 안으로 가져온 것) ──
+  function setStepDays(i: number, val: string) {
+    const days = Math.max(1, Math.floor(Number(val) || 1));
+    setEditSteps((cur) => cur.map((s, idx) => (idx === i ? { ...s, durationDays: days } : s)));
+  }
+  function toggleStepOptional(i: number) {
+    setEditSteps((cur) => cur.map((s, idx) => (idx === i ? { ...s, optional: !s.optional } : s)));
+  }
+  function deleteStep(i: number) {
+    setEditSteps((cur) => cur.filter((_, idx) => idx !== i));
+    // 삭제된 인덱스를 순서에서 빼고, 그보다 뒤 인덱스는 한 칸씩 당긴다.
+    setOrderedIndices((cur) => cur.filter((x) => x !== i).map((x) => (x > i ? x - 1 : x)));
+  }
+  function addStep() {
+    const name = newStepName.trim();
+    if (!name) return;
+    const days = Math.max(1, Math.floor(Number(newStepDays) || 1));
+    const newIdx = editSteps.length;
+    setEditSteps((cur) => [...cur, { name, durationDays: days }]);
+    setOrderedIndices((cur) => [...cur, newIdx]); // 새 단계는 순서 맨 뒤에 자동 추가
+    setNewStepName('');
+    setNewStepDays('1');
   }
 
   function moveSlot(pos: number, dir: 'up' | 'down') {
@@ -147,7 +180,9 @@ export default function TemplateGenModal({
   }
 
   function resetOrder() {
-    setOrderedIndices(baseSteps.map((_, i) => i));
+    const init = baseStepsFor();
+    setEditSteps(init);
+    setOrderedIndices(init.map((_, i) => i));
   }
 
   // 카테고리를 바꾼 직후 한 프레임 동안은(위 render-time reset이 반영되기 전) orderedIndices가
@@ -157,12 +192,12 @@ export default function TemplateGenModal({
   const previewSteps: TemplateStepDef[] = useMemo(
     () =>
       orderedIndices
-        .filter((idx) => idx < baseSteps.length)
+        .filter((idx) => idx < editSteps.length)
         .map((idx, i) => {
-          const s = baseSteps[idx];
+          const s = editSteps[idx];
           return { code: makeStepCode(category, i, s.name), name: s.name, durationDays: s.durationDays, optional: s.optional };
         }),
-    [orderedIndices, baseSteps, category],
+    [orderedIndices, editSteps, category],
   );
 
   const previewDates = useMemo(() => {
@@ -345,10 +380,6 @@ export default function TemplateGenModal({
                   </div>
                 )}
               </div>
-            ) : baseSteps.length === 0 ? (
-              <p className="text-xs text-zinc-400">
-                이 공사 종류는 아직 기본 단계가 없습니다. 설정 → 공정 템플릿에서 먼저 단계를 등록해주세요.
-              </p>
             ) : (
               <div className="flex gap-3">
                 {/* 선택된 순서 */}
@@ -367,11 +398,13 @@ export default function TemplateGenModal({
                   </div>
                   {orderedIndices.length === 0 && <p className="text-xs text-zinc-400">오른쪽 목록에서 공정을 눌러 순서를 만드세요.</p>}
                   {orderedIndices
-                    .filter((idx) => idx < baseSteps.length)
+                    .filter((idx) => idx < editSteps.length)
                     .map((idx, pos) => (
                     <div key={`${idx}-${pos}`} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1">
                       <span className="w-5 shrink-0 text-center text-xs font-semibold text-indigo-600">{pos + 1}</span>
-                      <span className="flex-1">{baseSteps[idx].name}</span>
+                      <span className="flex-1">
+                        {editSteps[idx].name} <span className="text-[10px] text-zinc-400">{editSteps[idx].durationDays}일</span>
+                      </span>
                       <span className="text-xs text-zinc-400 shrink-0">{previewDates[pos] ?? ''}</span>
                       <span className="flex flex-col shrink-0 -my-1">
                         <button className="text-[9px] leading-none px-0.5 disabled:opacity-30" disabled={pos === 0} onClick={() => moveSlot(pos, 'up')}>
@@ -392,26 +425,78 @@ export default function TemplateGenModal({
                   ))}
                 </div>
 
-                {/* 전체 공정 목록 */}
+                {/* 편집 가능한 공정 목록: 이름 눌러 순서 추가 + 일수/필요시/삭제 편집 + 단계 추가 */}
                 <div className="flex-1 flex flex-col gap-1">
-                  <h3 className="text-xs font-semibold text-zinc-500">공정 목록 (눌러서 순서에 추가)</h3>
-                  {baseSteps.map((s, i) => {
+                  <h3 className="text-xs font-semibold text-zinc-500">공정 목록 (이름 눌러 순서 추가 · 일수·삭제 편집)</h3>
+                  {editSteps.length === 0 && (
+                    <p className="text-xs text-zinc-400">아래에서 단계를 직접 추가해 순서를 만드세요.</p>
+                  )}
+                  {editSteps.map((s, i) => {
                     const picked = orderedIndices.includes(i);
                     return (
-                      <button
+                      <div
                         key={i}
-                        onClick={() => toggleStep(i)}
-                        className={`text-left text-sm border rounded px-2 py-1 flex items-center justify-between ${
-                          picked ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-zinc-200 hover:bg-zinc-50'
+                        className={`flex items-center gap-1 border rounded px-1.5 py-1 text-sm ${
+                          picked ? 'border-indigo-300 bg-indigo-50' : 'border-zinc-200'
                         }`}
                       >
-                        <span>
-                          {s.name} {s.optional && <span className="text-[10px] text-zinc-400">(필요시)</span>}
-                        </span>
-                        {picked && <span className="text-xs">{orderedIndices.indexOf(i) + 1}번</span>}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleStep(i)}
+                          className={`flex-1 text-left truncate ${picked ? 'text-indigo-700' : 'hover:text-zinc-900'}`}
+                          title={picked ? '순서에서 빼기' : '순서에 추가'}
+                        >
+                          {picked && <span className="text-[10px] font-semibold mr-1">{orderedIndices.indexOf(i) + 1}번</span>}
+                          {s.name}
+                        </button>
+                        <input
+                          type="number"
+                          min="1"
+                          value={s.durationDays}
+                          onChange={(e) => setStepDays(i, e.target.value)}
+                          className="w-11 border border-zinc-300 rounded px-1 py-0.5 text-xs text-center"
+                          title="소요 일수"
+                        />
+                        <span className="text-[10px] text-zinc-400">일</span>
+                        <label className="flex items-center gap-0.5 text-[10px] text-zinc-500 shrink-0" title="상황에 따라 생성 시 뺄 수 있는 단계">
+                          <input type="checkbox" checked={!!s.optional} onChange={() => toggleStepOptional(i)} />
+                          필요시
+                        </label>
+                        <button
+                          type="button"
+                          className="text-xs text-zinc-400 hover:text-red-600 shrink-0 px-0.5"
+                          title="이 단계 삭제"
+                          onClick={() => deleteStep(i)}
+                        >
+                          ✕
+                        </button>
+                      </div>
                     );
                   })}
+                  {/* 단계 추가 */}
+                  <div className="flex items-center gap-1 mt-1 border-t border-zinc-100 pt-2">
+                    <input
+                      type="text"
+                      placeholder="새 단계 이름 (예: 터파기)"
+                      value={newStepName}
+                      onChange={(e) => setNewStepName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') addStep();
+                      }}
+                      className="flex-1 border border-zinc-300 rounded px-1.5 py-0.5 text-xs"
+                    />
+                    <input
+                      type="number"
+                      min="1"
+                      value={newStepDays}
+                      onChange={(e) => setNewStepDays(e.target.value)}
+                      className="w-11 border border-zinc-300 rounded px-1 py-0.5 text-xs text-center"
+                    />
+                    <span className="text-[10px] text-zinc-400">일</span>
+                    <button type="button" className="text-xs px-2 py-0.5 rounded bg-zinc-700 text-white shrink-0" onClick={addStep}>
+                      단계 추가
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
