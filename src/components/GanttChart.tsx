@@ -283,7 +283,10 @@ export default function GanttChart({
   // 고스트가 시작되는 기준 높이. 'bottom'은 화살표(항상 행 아래쪽에 그린다)와 같은 높이에서
   // 이어져 나오는 것처럼 보이도록, 화살표 높이 바로 위에 고스트 박스가 오게 맞춘다.
   function ghostBaseOffset(anchor: 'top' | 'bottom', base: number): number {
-    return anchor === 'top' ? 0 : base - 6 - GHOST_BOX_H;
+    // 'bottom'(원래 칸에 실제 공정이 남아있는 경우)은 그 공정 칩(약 34~40px)보다 아래에
+    // 오도록 내려서, 회색 고스트가 칩과 겹치지 않게 한다. 행 높이는 rowMetrics에서 그만큼
+    // 자동으로 늘어난다.
+    return anchor === 'top' ? 0 : base - 12;
   }
 
   // 두 구간이 겹치지 않는 첫 번째 레인을 찾아 배정한다(겹치는 화살표만 갈라놓고,
@@ -536,7 +539,7 @@ export default function GanttChart({
       // (글자가 있는 높이)을 지나가게 살짝 위로 올려서, 고스트 글자에서 바로 이어지는
       // 것처럼 보이게 한다.
       const base = a.rowType === 'main' ? ROW_MAIN_H : ROW_SUB_H;
-      const baseY = rowTopFor(a.rowIndex, a.rowType) + base - 6 - GHOST_BOX_H / 2;
+      const baseY = rowTopFor(a.rowIndex, a.rowType) + base - 12 + GHOST_BOX_H / 2;
       const y = baseY + a.lane * LANE_STEP; // 같은 행에서 겹치는 화살표끼리 살짝 어긋나게 (고스트와 같은 간격을 써야 레인이 맞는다)
       return { x1, y1: y, x2, y2: y, label: a.label, reason: a.reason, path: a.path, processId: a.processId };
     });
