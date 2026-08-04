@@ -413,6 +413,7 @@ export default function ScheduleApp() {
   const [excelScope, setExcelScope] = useState<'all' | string>('all');
   const [excelStartDate, setExcelStartDate] = useState<ISODate>(() => mondayOfWeek(todayISO()));
   const [excelWeeks, setExcelWeeks] = useState('2');
+  const [excelFileName, setExcelFileName] = useState('');
   const [excelExporting, setExcelExporting] = useState(false);
   const [noteModal, setNoteModal] = useState<{ blockId: string; date: ISODate } | null>(null);
   const [reasonPopup, setReasonPopup] = useState<{ label: string; reason: string; path?: string; processId: string } | null>(null);
@@ -558,6 +559,8 @@ export default function ScheduleApp() {
     setExcelScope(scopeBlockId);
     setExcelStartDate(minDate);
     setExcelWeeks(String(weeks));
+    const scopeLabel = scopeBlockId === 'all' ? '전체' : blocks.find((b) => b.id === scopeBlockId)?.name ?? scopeBlockId;
+    setExcelFileName(`${siteInfo.name || '현장'}_주간공정표_${scopeLabel}_${minDate}`);
     setExcelExportOpen(true);
   }
 
@@ -574,6 +577,7 @@ export default function ScheduleApp() {
         startDate: excelStartDate,
         weeks,
         scopeBlockId: excelScope,
+        fileName: excelFileName.trim() || undefined,
       });
       setExcelExportOpen(false);
     } finally {
@@ -1401,6 +1405,19 @@ export default function ScheduleApp() {
               value={excelWeeks}
               onChange={(e) => setExcelWeeks(e.target.value)}
             />
+          </label>
+          <label className="text-sm flex flex-col gap-1">
+            파일 이름
+            <div className="flex items-center">
+              <input
+                type="text"
+                className="border border-zinc-300 rounded px-2 py-1.5 flex-1 min-w-0"
+                value={excelFileName}
+                onChange={(e) => setExcelFileName(e.target.value)}
+                placeholder="예: 신현대_주간공정표"
+              />
+              <span className="text-xs text-zinc-400 ml-1 shrink-0">.xlsx</span>
+            </div>
           </label>
           <div className="flex gap-2">
             <button

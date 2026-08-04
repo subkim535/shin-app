@@ -495,13 +495,28 @@ export default function GanttChart({
       subContentExtra.push(Math.max(0, maxLines * SUB_LINE_H + 6 - ROW_SUB_H));
     }
 
+    // 한 칸에 주공정 칩이 여러 개 쌓이면(예: 구간공정 여러 단계가 같은 날) 기본 높이(칩 1개)
+    // 에선 잘려서 칸 안에서 스크롤해야 한다. 동별로 한 칸에 들어가는 주공정 칩의 최대 개수를
+    // 세어, 그만큼 그 동의 주공정 행 높이를 늘려 다 보이게 한다. (칩 1개는 기본 높이가 감당)
+    const MAIN_CHIP_H = 46; // 칩 한 개가 차지하는 높이(컨트롤이 좁은 칸에서 줄바꿈되는 것 포함)
+    const mainContentExtra: number[] = [];
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      let maxChips = 1;
+      for (const d of dates) {
+        const mains = byBlockDateMain.get(`${block.id}__${d}`) ?? [];
+        if (mains.length > maxChips) maxChips = mains.length;
+      }
+      mainContentExtra.push(Math.max(0, (maxChips - 1) * MAIN_CHIP_H));
+    }
+
     const mainH: number[] = [];
     const subH: number[] = [];
     const blockTop: number[] = [];
     let cursor = HEADER_H;
     for (let i = 0; i < blocks.length; i++) {
       blockTop.push(cursor);
-      const mh = ROW_MAIN_H + (extra.get(`${i}_main`) ?? 0);
+      const mh = ROW_MAIN_H + Math.max(extra.get(`${i}_main`) ?? 0, mainContentExtra[i] ?? 0);
       const sh = ROW_SUB_H + Math.max(extra.get(`${i}_sub`) ?? 0, subContentExtra[i] ?? 0);
       mainH.push(mh);
       subH.push(sh);

@@ -38,10 +38,11 @@ export interface WeeklyScheduleExportParams {
   startDate: ISODate;
   weeks: number; // 1~8
   scopeBlockId: 'all' | string;
+  fileName?: string; // 확장자 없는 파일 이름. 없으면 현장명·범위·시작일로 자동 생성.
 }
 
 export async function downloadWeeklyScheduleExcel(params: WeeklyScheduleExportParams) {
-  const { siteName, blocks, processes, holidays, startDate, weeks, scopeBlockId } = params;
+  const { siteName, blocks, processes, holidays, startDate, weeks, scopeBlockId, fileName } = params;
   const ExcelJS = (await import('exceljs')).default;
 
   const data = buildWeeklyScheduleData({ blocks, processes, holidays, startDate, weeks, scopeBlockId });
@@ -165,7 +166,9 @@ export async function downloadWeeklyScheduleExcel(params: WeeklyScheduleExportPa
   const a = document.createElement('a');
   a.href = url;
   const scopeLabel = scopeBlockId === 'all' ? '전체' : blocks.find((b) => b.id === scopeBlockId)?.name ?? scopeBlockId;
-  a.download = `${siteName}_주간공정표_${scopeLabel}_${startDate}.xlsx`;
+  // 사용자가 지정한 이름이 있으면 그걸 쓰고(확장자·경로 문자만 정리), 없으면 기본 규칙으로.
+  const safeName = (fileName ?? '').trim().replace(/\.xlsx$/i, '').replace(/[\\/:*?"<>|]/g, '_');
+  a.download = `${safeName || `${siteName}_주간공정표_${scopeLabel}_${startDate}`}.xlsx`;
   a.click();
   URL.revokeObjectURL(url);
 }

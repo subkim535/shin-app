@@ -126,31 +126,39 @@ export function buildWeeklyScheduleData(params: WeeklyScheduleParams): WeeklySch
   const rows: WeeklyBlockRow[] = targetBlocks.map((block) => {
     const blockProcesses = processes.filter((p) => p.blockId === block.id);
     const cells: WeeklyDayCell[] = dates.map((d) => {
-      const dayProcs = blockProcesses.filter((p) => p.date === d);
-      const morning = dayProcs.filter((p) => p.timeSlot === 'morning');
-      const afternoon = dayProcs.filter((p) => p.timeSlot === 'afternoon');
-      const wholeDay = dayProcs.filter((p) => p.timeSlot !== 'morning' && p.timeSlot !== 'afternoon');
+      const startingHere = blockProcesses.filter((p) => p.date === d);
+      // 여러 날짜짜리 공정(durationDays>1)이 이 날을 "지나가는(연장)" 경우 — 시작일이 아니라
+      // 그 기간 안에 든 날. 라벨은 시작일에만 두고, 연장일에는 색만 이어 칠한다.
+      const spanning = blockProcesses.filter((p) => {
+        const dur = Math.max(1, Math.floor(p.durationDays || 1));
+        return dur > 1 && p.date < d && d <= addDays(p.date, dur - 1);
+      });
+      const morning = startingHere.filter((p) => p.timeSlot === 'morning');
+      const afternoon = startingHere.filter((p) => p.timeSlot === 'afternoon');
+      const wholeDay = startingHere.filter((p) => p.timeSlot !== 'morning' && p.timeSlot !== 'afternoon');
       const holiday = isWeeklyHoliday(d, holidays);
 
       const emptyGroup = (fillArgb: string | null): WeeklyCellGroup => ({ text: '', lines: [], fillArgb });
 
       if (morning.length || afternoon.length) {
-        return {
-          date: d,
-          isHoliday: holiday,
-          merged: false,
-          am: groupFor([...morning, ...wholeDay]),
-          pm: groupFor(afternoon),
-        };
+        const am = groupFor([...morning, ...wholeDay]);
+        // 오전칸이 비었으면 지나가는 공정 색을 얹어 색이 이어지게 한다.
+        const amWithSpan = am.fillArgb ? am : { ...am, fillArgb: fillFor(spanning) };
+        return { date: d, isHoliday: holiday, merged: false, am: amWithSpan, pm: groupFor(afternoon) };
       }
       if (wholeDay.length) {
+        const g = groupFor(wholeDay);
         return {
           date: d,
           isHoliday: holiday,
           merged: true,
-          am: groupFor(wholeDay),
+          am: { ...g, fillArgb: fillFor([...wholeDay, ...spanning]) },
           pm: emptyGroup(null),
         };
+      }
+      if (spanning.length) {
+        // 연장일만 있는 날: 라벨 없이 그 공정 색으로 칸 전체를 칠한다.
+        return { date: d, isHoliday: holiday, merged: true, am: emptyGroup(fillFor(spanning)), pm: emptyGroup(null) };
       }
       return {
         date: d,
