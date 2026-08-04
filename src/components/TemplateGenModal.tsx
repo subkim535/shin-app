@@ -148,6 +148,9 @@ export default function TemplateGenModal({
     setNewStepName('');
     setNewStepDays('1');
     setError(null);
+    // 이미 저장된 프리셋을 불러왔으면 저장칸에 원래 이름을 미리 채워서, 수정 후 "저장"이
+    // 곧 덮어쓰기가 되게 한다. 기본 카테고리(기초공사 등)는 새 이름으로 저장하므로 비운다.
+    setSaveTitle(TEMPLATE_CATEGORIES.includes(category) ? '' : category);
   }
 
   function toggleStep(i: number) {
@@ -241,8 +244,11 @@ export default function TemplateGenModal({
       setError('순서를 1개 이상 선택해주세요.');
       return;
     }
+    // 같은 이름의 프리셋이 이미 있으면 덮어쓰기(같은 이름으로 저장하면 데이터 계층에서
+    // 기존 것을 갱신함) — 실수 방지로 확인 한 번.
+    const isOverwrite = customTemplateNames.includes(title);
+    if (isOverwrite && !confirm(`'${title}' 프리셋을 지금 내용으로 덮어쓸까요?`)) return;
     onSaveNewTemplate(title, previewSteps);
-    setSaveTitle('');
     setCategory(title);
   }
 
@@ -457,6 +463,11 @@ export default function TemplateGenModal({
         {error && <p className="text-xs text-red-600">{error}</p>}
 
         <div className="flex items-center justify-end gap-2">
+          {customTemplateNames.includes(saveTitle.trim()) && (
+            <span className="text-[11px] text-amber-600 mr-auto">
+              &lsquo;{saveTitle.trim()}&rsquo; 프리셋에 덮어쓰기 됩니다
+            </span>
+          )}
           <input
             type="text"
             placeholder="저장할 이름 (예: 기초공사-A동)"
@@ -464,8 +475,15 @@ export default function TemplateGenModal({
             value={saveTitle}
             onChange={(e) => setSaveTitle(e.target.value)}
           />
-          <button className="px-3 py-1 rounded border border-zinc-300 text-sm" onClick={handleSaveAsNew}>
-            저장
+          <button
+            className={`px-3 py-1 rounded text-sm ${
+              customTemplateNames.includes(saveTitle.trim())
+                ? 'bg-amber-500 text-white'
+                : 'border border-zinc-300'
+            }`}
+            onClick={handleSaveAsNew}
+          >
+            {customTemplateNames.includes(saveTitle.trim()) ? '덮어쓰기' : '저장'}
           </button>
           <button className="px-3 py-1 rounded border border-zinc-300 text-sm" onClick={onClose}>
             취소
