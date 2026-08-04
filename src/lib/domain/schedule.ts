@@ -971,10 +971,12 @@ export function moveCustomProcess(
   const newDates = new Map<string, ISODate>([[moved.id, movedStart]]);
   placed.push({ start: movedStart, end: endOf(movedStart, moved), slot: moved.timeSlot });
 
-  // 2) 순서상 뒤 단계를 옮긴 공정 다음부터 차례로 재배치.
+  // 2) 순서상 뒤 단계를 옮긴 공정 다음부터 차례로 재배치. 단, 원래 날짜보다 앞으로는
+  //    당기지 않는다(뒤로 밀기만) — 간격을 두고 멀리 있던 뒤 공정이 확 당겨지지 않게.
   let cursor = addDays(movedStart, spanOf(moved));
   for (const step of afterX) {
-    const start = firstFree(cursor, step);
+    const from = cursor > step.date ? cursor : step.date; // max(cursor, 원래 날짜)
+    const start = firstFree(from, step);
     newDates.set(step.id, start);
     placed.push({ start, end: endOf(start, step), slot: step.timeSlot });
     cursor = addDays(start, spanOf(step));
@@ -992,7 +994,16 @@ export function moveCustomProcess(
 
   const nextProcesses = withArrivals(updated, [...newDates.keys()]);
   const pushedCount = afterX.filter((s) => newDates.get(s.id) !== s.date).length;
-  const notice = pushedCount > 0 ? `뒤 공정 ${pushedCount}개가 함께 밀렸습니다.` : undefined;
+  // 사용자에게 무슨 일이 일어났는지 알려준다: (1)요청한 자리에 다른 공정이 있어 뒤로 밀려
+  // 배치됐거나, (2)앞 순서 공정에 막혀 제자리에 남았거나, (3)뒤 순서 공정이 함께 밀렸거나.
+  const requestedWorkable = nextWorkableDate(moved.typeCode, newDate, holidays);
+  const parts: string[] = [];
+  if (movedStart > requestedWorkable)
+    parts.push(`요청한 자리에 다른 공정이 있어 ${movedStart}(으)로 밀어 배치했어요.`);
+  else if (movedStart === moved.date && requestedWorkable !== moved.date)
+    parts.push('앞 순서 공정이 있어 옮기지 못하고 제자리에 뒀어요.');
+  if (pushedCount > 0) parts.push(`뒤 공정 ${pushedCount}개가 함께 밀렸어요.`);
+  const notice = parts.length ? parts.join(' ') : undefined;
   return { processes: nextProcesses, changeHistory: [...changeHistory, ...records], notice };
 }
 
