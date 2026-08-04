@@ -323,38 +323,38 @@ export default function TemplateGenModal({
           </div>
 
           <div className="flex-1 flex flex-col gap-3">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-zinc-500">동</span>
-              <select className="border border-zinc-300 rounded px-2 py-1" value={blockId} onChange={(e) => setBlockId(e.target.value)}>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-sm">
+              <span className="text-zinc-500 whitespace-nowrap shrink-0">동</span>
+              <select className="border border-zinc-300 rounded px-2 py-1 shrink-0" value={blockId} onChange={(e) => setBlockId(e.target.value)}>
                 {blocks.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
                   </option>
                 ))}
               </select>
-              <span className="text-zinc-500 ml-2">시작일</span>
+              <span className="text-zinc-500 ml-2 whitespace-nowrap shrink-0">시작일</span>
               <input
                 type="date"
-                className="border border-zinc-300 rounded px-2 py-1"
+                className="border border-zinc-300 rounded px-2 py-1 shrink-0"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
               />
-              <span className="text-zinc-500 ml-2">층</span>
+              <span className="text-zinc-500 ml-2 whitespace-nowrap shrink-0">층</span>
               <input
                 type="text"
                 placeholder="예: 3 (→3F)"
-                className="border border-zinc-300 rounded px-2 py-1 w-24"
+                className="border border-zinc-300 rounded px-2 py-1 w-24 shrink-0"
                 value={floor}
                 onChange={(e) => setFloor(e.target.value)}
                 onBlur={() => setFloor((f) => (/^\d+$/.test(f.trim()) ? `${f.trim()}F` : f.trim()))}
                 title="숫자만 넣으면 자동으로 F가 붙어요. 검색에서 이 층수로 찾을 수 있어요."
               />
-              <span className="text-zinc-500 ml-2">반복 횟수</span>
+              <span className="text-zinc-500 ml-2 whitespace-nowrap shrink-0">반복 횟수</span>
               <input
                 type="number"
                 min="1"
                 max="60"
-                className="border border-zinc-300 rounded px-2 py-1 w-16"
+                className="border border-zinc-300 rounded px-2 py-1 w-16 shrink-0"
                 value={repeatCount}
                 onChange={(e) => setRepeatCount(e.target.value)}
               />

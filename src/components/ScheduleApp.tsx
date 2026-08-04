@@ -1128,15 +1128,15 @@ export default function ScheduleApp() {
               title="되돌리기 (Ctrl+Z)"
               data-testid="undo-button"
             >
-              되돌리기
+              ↩ 되돌리기
             </button>
             <button
               className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={handleRedo}
-              title="다시하기 (Ctrl+Shift+Z)"
+              title="앞으로 되돌리기 (Ctrl+Shift+Z)"
               data-testid="redo-button"
             >
-              다시하기
+              앞으로 되돌리기 ↪
             </button>
             <button
               className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
@@ -1193,7 +1193,7 @@ export default function ScheduleApp() {
               className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setViewStartDate((d) => addDays(d, -7))}
             >
-              이전 주
+              ← 이전 주
             </button>
             <button
               className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
@@ -1205,7 +1205,7 @@ export default function ScheduleApp() {
               className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setViewStartDate((d) => addDays(d, 7))}
             >
-              다음 주
+              다음 주 →
             </button>
             <select
               value={searchBlockId}
