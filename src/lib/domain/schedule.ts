@@ -212,14 +212,17 @@ export function firstFreeDateForCustom(
   excludeId?: string,
 ): ISODate {
   const collides = (date: ISODate) =>
-    occupied.some(
-      (p) =>
-        p.id !== excludeId &&
-        p.blockId === blockId &&
-        p.date === date &&
-        PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub' &&
-        slotsOverlap(timeSlot, p.timeSlot),
-    );
+    occupied.some((p) => {
+      if (p.id === excludeId || p.blockId !== blockId) return false;
+      if (PROCESS_TYPE_MAP[p.typeCode]?.category === 'sub') return false;
+      if (!slotsOverlap(timeSlot, p.timeSlot)) return false;
+      // 여러 날짜짜리 공정(durationDays)은 시작일 하루만이 아니라 그 일수만큼을 모두
+      // 점유한 것으로 본다 — 예: 4일짜리 공정이면 시작일부터 4일간을 막고, 새 공정은
+      // 그 다음날부터 놓이게 한다. (ISO 날짜 문자열은 사전식 비교로 대소가 맞다.)
+      const span = Math.max(1, Math.floor(p.durationDays || 1));
+      const endDate = addDays(p.date, span - 1);
+      return date >= p.date && date <= endDate;
+    });
   let d = nextWorkableDate(code, fromDate, holidays);
   let guard = 0;
   while (collides(d) && guard++ < 400) {
