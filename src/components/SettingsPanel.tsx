@@ -26,7 +26,7 @@ interface SettingsPanelProps {
   onAddCrewTeam: (name: string) => void;
   onRemoveCrewTeam: (id: string) => void;
   holidays: Holiday[];
-  onAddHoliday: (date: ISODate, kind: HolidayKind) => void;
+  onAddHoliday: (date: ISODate, kind: HolidayKind, label?: string) => void;
   onRemoveHoliday: (date: ISODate) => void;
   onAddKoreanHolidays: (year: number) => number;
   koreanHolidayYears: number[];
@@ -72,18 +72,20 @@ export default function SettingsPanel({
 
   const [newHolidayDate, setNewHolidayDate] = useState('');
   const [newHolidayKind, setNewHolidayKind] = useState<HolidayKind>('public_holiday');
+  const [newHolidayLabel, setNewHolidayLabel] = useState('');
 
   const [krYear, setKrYear] = useState(() => koreanHolidayYears[Math.floor(koreanHolidayYears.length / 2)] ?? new Date().getFullYear());
   const [krMsg, setKrMsg] = useState<string | null>(null);
   function loadKoreanHolidays() {
     const added = onAddKoreanHolidays(krYear);
-    setKrMsg(added > 0 ? `${krYear}년 공휴일 ${added}개를 등록했어요.` : `${krYear}년 공휴일은 이미 다 등록돼 있어요.`);
+    setKrMsg(added > 0 ? `${krYear}년 공휴일 ${added}개를 등록/갱신했어요(이름 포함).` : `${krYear}년 공휴일은 이미 다 등록돼 있어요.`);
   }
 
   function addHoliday() {
     if (!newHolidayDate) return;
-    onAddHoliday(newHolidayDate, newHolidayKind);
+    onAddHoliday(newHolidayDate, newHolidayKind, newHolidayLabel);
     setNewHolidayDate('');
+    setNewHolidayLabel('');
   }
 
   function addBlock() {
@@ -259,23 +261,36 @@ export default function SettingsPanel({
               .sort((a, b) => a.date.localeCompare(b.date))
               .map((h) => (
                 <div key={h.date} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1">
-                  <span className="flex-1">{h.date}</span>
-                  <span className="text-xs text-zinc-500">{HOLIDAY_KIND_LABEL[h.kind]}</span>
-                  <button className="text-xs text-red-600" onClick={() => onRemoveHoliday(h.date)}>
+                  <span className="shrink-0 tabular-nums">{h.date}</span>
+                  {h.label && <span className="flex-1 truncate text-zinc-700">{h.label}</span>}
+                  <span className={`text-xs text-zinc-500 ${h.label ? 'shrink-0' : 'flex-1 text-right'}`}>
+                    {HOLIDAY_KIND_LABEL[h.kind]}
+                  </span>
+                  <button className="text-xs text-red-600 shrink-0" onClick={() => onRemoveHoliday(h.date)}>
                     삭제
                   </button>
                 </div>
               ))}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <input
               type="date"
-              className="border border-zinc-300 rounded px-2 py-1 text-sm"
+              className="border border-zinc-300 rounded px-2 py-1 text-sm shrink-0"
               value={newHolidayDate}
               onChange={(e) => setNewHolidayDate(e.target.value)}
             />
+            <input
+              type="text"
+              className="border border-zinc-300 rounded px-2 py-1 text-sm flex-1 min-w-[100px]"
+              value={newHolidayLabel}
+              onChange={(e) => setNewHolidayLabel(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') addHoliday();
+              }}
+              placeholder="이름/사유 (예: 신정, 창립일) — 선택"
+            />
             <select
-              className="border border-zinc-300 rounded px-2 py-1 text-sm"
+              className="border border-zinc-300 rounded px-2 py-1 text-sm shrink-0"
               value={newHolidayKind}
               onChange={(e) => setNewHolidayKind(e.target.value as HolidayKind)}
             >
@@ -285,7 +300,7 @@ export default function SettingsPanel({
               <option value="vacation">휴가</option>
               <option value="site_shutdown">현장 셧다운</option>
             </select>
-            <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm" onClick={addHoliday}>
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm shrink-0" onClick={addHoliday}>
               추가
             </button>
           </div>

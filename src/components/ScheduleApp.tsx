@@ -898,9 +898,9 @@ export default function ScheduleApp() {
     setSelectedProcessId((cur) => (cur === processId ? null : cur));
   }
 
-  function handleAddHoliday(date: ISODate, kind: HolidayKind) {
+  function handleAddHoliday(date: ISODate, kind: HolidayKind, label?: string) {
     if (holidays.some((h) => h.date === date)) return;
-    const nextHolidays = [...holidays, { date, kind }];
+    const nextHolidays = [...holidays, { date, kind, label: label?.trim() || undefined }];
     setHolidays(nextHolidays);
     const result = pushProcessesOffHoliday(processes, changeHistory, date, nextHolidays, processGapDays);
     setProcesses(result.processes);
@@ -911,14 +911,26 @@ export default function ScheduleApp() {
     setHolidays((cur) => cur.filter((h) => h.date !== date));
   }
 
-  // 한국 공휴일 한 해치를 한꺼번에 등록한다. 이미 있는 날짜는 건너뛰고, 새로 추가한
-  // 공휴일마다 그날 잡혀 있던 공정을 밀어낸다. 추가한 개수를 반환한다(안내용).
+  // 한국 공휴일 한 해치를 한꺼번에 등록한다. 새 날짜는 추가하고(그날 잡힌 공정은 밀어냄),
+  // 이미 있는 날짜는 이름(label)이 비어 있으면 채워 넣는다. 추가·갱신한 개수를 반환한다.
   function handleAddKoreanHolidays(year: number): number {
     const list = KOREAN_HOLIDAYS[year] ?? [];
-    const existing = new Set(holidays.map((h) => h.date));
-    const toAdd = list.filter((h) => !existing.has(h.date));
-    if (toAdd.length === 0) return 0;
-    const nextHolidays = [...holidays, ...toAdd.map((h) => ({ date: h.date, kind: h.kind }))];
+    const byDate = new Map(list.map((h) => [h.date, h]));
+    const existingDates = new Set(holidays.map((h) => h.date));
+    let touched = 0;
+    // 기존 공휴일에 이름 채워넣기(비어 있을 때만).
+    const updated = holidays.map((h) => {
+      const k = byDate.get(h.date);
+      if (k && !h.label) {
+        touched++;
+        return { ...h, label: k.name };
+      }
+      return h;
+    });
+    const toAdd = list.filter((h) => !existingDates.has(h.date));
+    touched += toAdd.length;
+    if (touched === 0) return 0;
+    const nextHolidays = [...updated, ...toAdd.map((h) => ({ date: h.date, kind: h.kind, label: h.name }))];
     setHolidays(nextHolidays);
     let procs = processes;
     let hist = changeHistory;
@@ -929,7 +941,7 @@ export default function ScheduleApp() {
     }
     setProcesses(procs);
     setChangeHistory(hist);
-    return toAdd.length;
+    return touched;
   }
 
   // 동을 지우면 그 동에 딸린 공정/이동이력/직영작업까지 같이 지운다. 그냥 blocks에서만

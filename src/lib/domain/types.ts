@@ -117,4 +117,5 @@ export type HolidayKind = 'sunday' | 'public_holiday' | 'substitute_holiday' | '
 export interface Holiday {
   date: ISODate;
   kind: HolidayKind;
+  label?: string; // 어떤 공휴일인지 이름/사유 (예: "신정", "회사 창립일")
 }

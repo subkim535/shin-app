@@ -2,11 +2,18 @@
 
 import { useMemo } from 'react';
 import { formatMonthDay, ISODate } from '@/lib/domain/dateUtils';
-import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
+import { PROCESS_COLOR, PROCESS_TYPE_MAP, customProcessColor } from '@/lib/domain/processTypes';
 import { Block, ProcessInstance } from '@/lib/domain/types';
 
+const FALLBACK_COLOR = { bg: 'bg-slate-200', text: 'text-slate-800' };
+
+function processColor(p: ProcessInstance) {
+  return PROCESS_COLOR[p.typeCode] ?? (p.customLabel ? customProcessColor(p.customLabel) : FALLBACK_COLOR);
+}
+
 function completionLabel(p: ProcessInstance): string {
-  return p.floorLabel ?? p.customLabel ?? PROCESS_TYPE_MAP[p.typeCode]?.name ?? p.typeCode;
+  const floor = p.floorLabel ? `${p.floorLabel} ` : '';
+  return floor + (p.customLabel ?? PROCESS_TYPE_MAP[p.typeCode]?.name ?? p.typeCode);
 }
 
 interface OverviewChartProps {
@@ -29,22 +36,15 @@ function nextYearMonth(yearMonth: string): string {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
 }
 
-// 전체공정표: 일단위 월간공정표와 달리 주/월 단위로 훑어볼 수 있게, 각 사이클(기준층 한 층·
-// 구간공정 한 벌)의 "완료 시점"만 월별로 모아 간략하게 보여준다. 예전엔 기준층 타설(POUR)만
-// 봐서 기초/지하/지상층 같은 구간공정이 아예 안 보였는데, 이제 모든 사이클의 마지막 공정을
-// 완료 시점으로 잡아 함께 보여준다. 그 안에서는 며칠에 있었는지 배지로 표시한다.
+// 전체공정표: 월 단위로 훑어볼 수 있게, 모든 주요/구간공정을 월별로 모아 보여준다.
+// (보조공정 배지는 제외.) 예전엔 완료 시점(사이클 마지막 공정)만 봐서 한 동에 타설 하나만
+// 뜨는 것처럼 보였는데, 이제 그 달의 모든 공정을 날짜순 배지로 다 보여준다.
 export default function OverviewChart({ blocks, processes }: OverviewChartProps) {
-  // 사이클(cycleId)별 마지막(가장 늦은 날짜) 주요/커스텀 공정 = 그 사이클의 완료 시점.
-  // 보조공정(배지)은 완료 판단에서 제외한다.
-  const pours = useMemo(() => {
-    const byCycle = new Map<string, ProcessInstance>();
-    for (const p of processes) {
-      if (PROCESS_TYPE_MAP[p.typeCode]?.category === 'sub') continue;
-      const cur = byCycle.get(p.cycleId);
-      if (!cur || p.date > cur.date) byCycle.set(p.cycleId, p);
-    }
-    return [...byCycle.values()];
-  }, [processes]);
+  // 보조공정을 제외한 모든 공정을 대상으로 한다.
+  const pours = useMemo(
+    () => processes.filter((p) => PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub'),
+    [processes],
+  );
 
   const months = useMemo(() => {
     if (pours.length === 0) return [];
@@ -108,15 +108,18 @@ export default function OverviewChart({ blocks, processes }: OverviewChartProps)
                 return (
                   <td key={m} className="border-b border-l border-zinc-200 px-2 py-2 align-top">
                     <div className="flex flex-wrap gap-1">
-                      {list.map((p) => (
-                        <span
-                          key={p.id}
-                          className="inline-block text-[10px] leading-tight px-1.5 py-0.5 rounded bg-red-100 text-red-700 whitespace-nowrap"
-                          title={`${completionLabel(p)} 완료 · ${p.date}`}
-                        >
-                          {formatMonthDay(p.date)} {completionLabel(p)}
-                        </span>
-                      ))}
+                      {list.map((p) => {
+                        const c = processColor(p);
+                        return (
+                          <span
+                            key={p.id}
+                            className={`inline-block text-[10px] leading-tight px-1.5 py-0.5 rounded whitespace-nowrap ${c.bg} ${c.text}`}
+                            title={`${completionLabel(p)} · ${p.date}`}
+                          >
+                            {formatMonthDay(p.date)} {completionLabel(p)}
+                          </span>
+                        );
+                      })}
                     </div>
                   </td>
                 );
