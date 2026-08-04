@@ -2,7 +2,12 @@
 
 import { useMemo } from 'react';
 import { formatMonthDay, ISODate } from '@/lib/domain/dateUtils';
+import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
 import { Block, ProcessInstance } from '@/lib/domain/types';
+
+function completionLabel(p: ProcessInstance): string {
+  return p.floorLabel ?? p.customLabel ?? PROCESS_TYPE_MAP[p.typeCode]?.name ?? p.typeCode;
+}
 
 interface OverviewChartProps {
   blocks: Block[];
@@ -24,10 +29,22 @@ function nextYearMonth(yearMonth: string): string {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
 }
 
-// 전체공정표: 일단위 월간공정표와 달리 주/월 단위로 훑어볼 수 있게, 타설(층 완료 시점)만
-// 월별로 모아 간략하게 보여준다. 그 안에서는 며칠에 있었는지 배지로 표시해 주 단위 감각도 준다.
+// 전체공정표: 일단위 월간공정표와 달리 주/월 단위로 훑어볼 수 있게, 각 사이클(기준층 한 층·
+// 구간공정 한 벌)의 "완료 시점"만 월별로 모아 간략하게 보여준다. 예전엔 기준층 타설(POUR)만
+// 봐서 기초/지하/지상층 같은 구간공정이 아예 안 보였는데, 이제 모든 사이클의 마지막 공정을
+// 완료 시점으로 잡아 함께 보여준다. 그 안에서는 며칠에 있었는지 배지로 표시한다.
 export default function OverviewChart({ blocks, processes }: OverviewChartProps) {
-  const pours = useMemo(() => processes.filter((p) => p.typeCode === 'POUR'), [processes]);
+  // 사이클(cycleId)별 마지막(가장 늦은 날짜) 주요/커스텀 공정 = 그 사이클의 완료 시점.
+  // 보조공정(배지)은 완료 판단에서 제외한다.
+  const pours = useMemo(() => {
+    const byCycle = new Map<string, ProcessInstance>();
+    for (const p of processes) {
+      if (PROCESS_TYPE_MAP[p.typeCode]?.category === 'sub') continue;
+      const cur = byCycle.get(p.cycleId);
+      if (!cur || p.date > cur.date) byCycle.set(p.cycleId, p);
+    }
+    return [...byCycle.values()];
+  }, [processes]);
 
   const months = useMemo(() => {
     if (pours.length === 0) return [];
@@ -57,7 +74,7 @@ export default function OverviewChart({ blocks, processes }: OverviewChartProps)
   if (months.length === 0) {
     return (
       <div className="border border-zinc-200 rounded-md p-8 text-center text-sm text-zinc-400" data-testid="overview-chart">
-        아직 등록된 타설 일정이 없습니다.
+        아직 등록된 공정이 없습니다.
       </div>
     );
   }
@@ -95,10 +112,9 @@ export default function OverviewChart({ blocks, processes }: OverviewChartProps)
                         <span
                           key={p.id}
                           className="inline-block text-[10px] leading-tight px-1.5 py-0.5 rounded bg-red-100 text-red-700 whitespace-nowrap"
-                          title={`타설 ${p.date}${p.floorLabel ? ` (${p.floorLabel})` : ''}`}
+                          title={`${completionLabel(p)} 완료 · ${p.date}`}
                         >
-                          {formatMonthDay(p.date)}
-                          {p.floorLabel ? ` ${p.floorLabel}` : ''}
+                          {formatMonthDay(p.date)} {completionLabel(p)}
                         </span>
                       ))}
                     </div>

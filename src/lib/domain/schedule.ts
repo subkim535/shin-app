@@ -900,10 +900,16 @@ export function moveSubProcess(
 }
 
 /**
- * 구간공정(커스텀 단계) 이동: 옮긴 공정은 사용자가 놓은 그 자리에 두고, 같은 구간공정
- * (같은 cycleId)의 나머지 단계가 겹치면 "점프"가 아니라 "밀림"으로 뒤로 연쇄 이동시켜
- * 1→2→3… 순서를 유지한다. 옮긴 공정 자체는 기준층 등 다른 사이클/다른 공사(장애물)와만
- * 안 겹치게 최소한으로 스냅한다. 공정의 일수(durationDays)만큼 기간 전체를 점유로 본다.
+ * 구간공정(커스텀 단계) 이동: 옮긴 공정은 사용자가 놓은 자리에 두고, "순서상 그 뒤"의 같은
+ * 구간공정 단계들을 옮긴 공정 뒤로 순차 재배치해 1→2→3… 순서를 유지한다("밀림").
+ *
+ * - 순서 기준은 이동 직전의 날짜순(=현재 나열 순서). 옮긴 공정보다 앞 단계는 그대로 두고,
+ *   뒤 단계만 옮긴 공정 다음부터 차례로(겹치면 뒤로) 재배치한다.
+ * - 겹침만 피하던 예전 방식은, 순서상 뒤지만 날짜가 안 겹치는 단계를 안 밀어 순서가 깨졌다.
+ *   이제는 뒤 단계 전체를 순차로 다시 깔아 그 문제를 없앤다.
+ * - 변경 흔적(회색 고스트/화살표)은 사용자가 직접 옮긴 공정 하나만 남긴다 — 딸려 밀린 뒤
+ *   단계마다 고스트가 잔뜩 생기던 것 방지.
+ * - 공정 일수(durationDays)만큼 기간 전체를 점유로 계산하고, 다른 사이클/공사는 고정 장애물로 피한다.
  */
 export function moveCustomProcess(
   processes: ProcessInstance[],
@@ -922,21 +928,26 @@ export function moveCustomProcess(
   const rangesOverlap = (s1: ISODate, e1: ISODate, s2: ISODate, e2: ISODate) => s1 <= e2 && s2 <= e1;
 
   type Slot = { start: ISODate; end: ISODate; slot: ProcessInstance['timeSlot'] };
-  // 장애물: 같은 동이지만 이 구간공정 사이클이 아닌 다른 공정(기준층·다른 구간공정 등).
-  // 이들은 움직이지 않고 고정 장애물로 보고 피한다(보조공정은 칸을 안 차지하므로 제외).
-  const obstacles: Slot[] = processes
-    .filter(
-      (p) =>
-        p.blockId === blockId &&
-        p.cycleId !== moved.cycleId &&
-        PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub',
-    )
-    .map((p) => ({ start: p.date, end: endOf(p.date, p), slot: p.timeSlot }));
 
-  // 이미 이번에 자리 확정한 같은-사이클 단계들.
-  const placed: Slot[] = [];
+  // 같은 사이클 단계들을 이동 직전 날짜순으로 정렬 = 순서. 옮긴 공정의 위치를 찾아 앞/뒤로 가른다.
+  const cycleSorted = processes
+    .filter((p) => p.blockId === blockId && p.cycleId === moved.cycleId && PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub')
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  const xIndex = cycleSorted.findIndex((p) => p.id === processId);
+  const beforeX = cycleSorted.slice(0, xIndex); // 순서상 앞 단계 — 그대로 둔다
+  const afterX = cycleSorted.slice(xIndex + 1); // 순서상 뒤 단계 — 옮긴 공정 뒤로 재배치
+
+  // 고정 장애물: 다른 사이클/다른 공사(같은 동) + 순서상 앞 단계(자리 유지). 보조공정 제외.
+  const fixedObstacles: Slot[] = [
+    ...processes.filter(
+      (p) => p.blockId === blockId && p.cycleId !== moved.cycleId && PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub',
+    ),
+    ...beforeX,
+  ].map((p) => ({ start: p.date, end: endOf(p.date, p), slot: p.timeSlot }));
+
+  const placed: Slot[] = []; // 이번에 재배치 확정한 것들(옮긴 공정 + 뒤 단계)
   const collides = (start: ISODate, p: ProcessInstance) =>
-    [...obstacles, ...placed].some(
+    [...fixedObstacles, ...placed].some(
       (o) => slotsOverlap(p.timeSlot, o.slot) && rangesOverlap(start, endOf(start, p), o.start, o.end),
     );
   const firstFree = (from: ISODate, p: ProcessInstance): ISODate => {
@@ -948,46 +959,32 @@ export function moveCustomProcess(
     return d;
   };
 
-  // 1) 옮긴 공정을 놓은 자리에 배치(다른 사이클/공사 장애물만 피함).
+  // 1) 옮긴 공정을 놓은 자리에.
   const movedStart = firstFree(newDate, moved);
   const newDates = new Map<string, ISODate>([[moved.id, movedStart]]);
   placed.push({ start: movedStart, end: endOf(movedStart, moved), slot: moved.timeSlot });
 
-  // 2) 같은 사이클의 나머지 단계를 현재 날짜순으로, 겹치면 뒤로 밀어 재배치(연쇄).
-  const cycleSteps = processes
-    .filter(
-      (p) =>
-        p.id !== processId &&
-        p.blockId === blockId &&
-        p.cycleId === moved.cycleId &&
-        PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub',
-    )
-    .sort((a, b) => a.date.localeCompare(b.date));
-  for (const step of cycleSteps) {
-    const start = firstFree(step.date, step);
+  // 2) 순서상 뒤 단계를 옮긴 공정 다음부터 차례로 재배치.
+  let cursor = addDays(movedStart, spanOf(moved));
+  for (const step of afterX) {
+    const start = firstFree(cursor, step);
     newDates.set(step.id, start);
     placed.push({ start, end: endOf(start, step), slot: step.timeSlot });
+    cursor = addDays(start, spanOf(step));
   }
 
-  // 3) 실제로 날짜가 바뀐 공정마다 변경 기록을 남긴다.
-  const records: ChangeRecord[] = [];
+  // 3) 날짜 반영. 변경 흔적(고스트)은 사용자가 옮긴 공정 하나만 남긴다.
   const updated = processes.map((p) => {
     const nd = newDates.get(p.id);
-    if (nd && nd !== p.date) {
-      records.push({
-        id: crypto.randomUUID(),
-        processId: p.id,
-        previousDate: p.date,
-        newDate: nd,
-        reason: p.id === processId ? reason : '앞 공정 이동에 따라 함께 밀림',
-      });
-      return { ...p, date: nd };
-    }
-    return p;
+    return nd && nd !== p.date ? { ...p, date: nd } : p;
   });
+  const records: ChangeRecord[] =
+    movedStart !== moved.date
+      ? [{ id: crypto.randomUUID(), processId, previousDate: moved.date, newDate: movedStart, reason }]
+      : [];
 
   const nextProcesses = withArrivals(updated, [...newDates.keys()]);
-  const pushedCount = records.length - (newDates.get(moved.id) !== moved.date ? 1 : 0);
+  const pushedCount = afterX.filter((s) => newDates.get(s.id) !== s.date).length;
   const notice = pushedCount > 0 ? `뒤 공정 ${pushedCount}개가 함께 밀렸습니다.` : undefined;
   return { processes: nextProcesses, changeHistory: [...changeHistory, ...records], notice };
 }
