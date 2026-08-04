@@ -1264,6 +1264,32 @@ export default function ScheduleApp() {
         )}
       </div>
 
+      {viewMode === 'monthly' && (
+        <div className="flex items-center flex-wrap gap-x-4 gap-y-1 px-1 pb-1.5 text-xs text-zinc-600">
+          <span className="font-medium text-zinc-500">공정 상태 — 칩 앞 네모를 클릭해서 바꿔요:</span>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-flex w-3.5 h-3.5 rounded-sm border border-zinc-400 bg-white" />
+            시작 전
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm border border-sky-600 bg-sky-500 text-white text-[9px] font-bold leading-none">
+              ▶
+            </span>
+            진행 중
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm border border-emerald-700 bg-emerald-600 text-white text-[9px] font-bold leading-none">
+              ✓
+            </span>
+            완료
+          </span>
+          <span className="inline-flex items-center gap-1 text-red-600">
+            <span className="font-bold">⚠</span>
+            지연 (계획일이 지났는데 완료 안 됨)
+          </span>
+        </div>
+      )}
+
       {viewMode === 'monthly' ? (
         <>
           <GanttChart
