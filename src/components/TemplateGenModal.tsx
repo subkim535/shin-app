@@ -289,15 +289,17 @@ export default function TemplateGenModal({
                     {c}
                   </button>
                   <button
-                    className={`shrink-0 text-xs px-1 ${c === category ? 'text-white/70 hover:text-white' : 'text-zinc-400 hover:text-red-600'}`}
-                    title="이 저장된 순서 삭제"
+                    className="shrink-0 text-sm leading-none px-1.5 py-1 rounded text-zinc-400 hover:text-white hover:bg-red-600"
+                    title={`저장한 순서 '${c}' 삭제`}
+                    aria-label={`저장한 순서 '${c}' 삭제`}
                     onClick={() => {
+                      if (!confirm(`저장한 순서 '${c}'을(를) 삭제할까요?`)) return;
                       const t = templates.find((tpl) => tpl.name === c);
                       if (t) onRemoveTemplate(t.id);
                       if (category === c) setCategory(TEMPLATE_CATEGORIES[0]);
                     }}
                   >
-                    ×
+                    ✕
                   </button>
                 </div>
               ))
