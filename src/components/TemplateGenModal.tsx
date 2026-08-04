@@ -338,7 +338,16 @@ export default function TemplateGenModal({
                 value={repeatCount}
                 onChange={(e) => setRepeatCount(e.target.value)}
               />
-              <button className="text-xs px-2 py-1 rounded border border-zinc-300 ml-auto" onClick={resetOrder}>
+              <button
+                type="button"
+                className="text-xs px-2 py-1 rounded border border-zinc-300 ml-auto disabled:opacity-40"
+                onClick={() => setOrderedIndices([])}
+                disabled={orderedIndices.length === 0}
+                title="선택한 순서를 모두 비웁니다"
+              >
+                전체 선택 해제
+              </button>
+              <button className="text-xs px-2 py-1 rounded border border-zinc-300" onClick={resetOrder}>
                 기본 순서로 초기화
               </button>
             </div>
