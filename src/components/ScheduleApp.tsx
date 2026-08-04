@@ -474,19 +474,38 @@ export default function ScheduleApp() {
   const statusSummary = useMemo(() => {
     const today = todayISO();
     const countable = (p: ProcessInstance) => PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub';
+    // 진척률은 공정 개수가 아니라 각 공정의 일수(durationDays, 없으면 1일)에 비례해 계산한다.
+    // 예: 전체 10일 중 7일짜리 공정을 완료하면 그 공정이 70%를 차지한다. (건수는 라벨용으로 유지)
+    const weight = (p: ProcessInstance) => Math.max(1, Math.floor(p.durationDays || 1));
+    const sumW = (arr: ProcessInstance[]) => arr.reduce((s, p) => s + weight(p), 0);
     const perBlock = sortedBlocks.map((b) => {
       const ps = processes.filter((p) => p.blockId === b.id && countable(p));
-      const total = ps.length;
-      const done = ps.filter((p) => p.actualDone).length;
-      const inProgress = ps.filter((p) => !p.actualDone && p.inProgress).length;
-      const overdue = ps.filter((p) => !p.actualDone && p.date < today).length;
-      return { blockId: b.id, name: b.name, total, done, inProgress, overdue };
+      const doneList = ps.filter((p) => p.actualDone);
+      const ipList = ps.filter((p) => !p.actualDone && p.inProgress);
+      return {
+        blockId: b.id,
+        name: b.name,
+        total: ps.length,
+        done: doneList.length,
+        inProgress: ipList.length,
+        overdue: ps.filter((p) => !p.actualDone && p.date < today).length,
+        totalWeight: sumW(ps),
+        doneWeight: sumW(doneList),
+        inProgressWeight: sumW(ipList),
+      };
     });
-    const total = perBlock.reduce((s, x) => s + x.total, 0);
-    const done = perBlock.reduce((s, x) => s + x.done, 0);
-    const inProgress = perBlock.reduce((s, x) => s + x.inProgress, 0);
-    const overdue = perBlock.reduce((s, x) => s + x.overdue, 0);
-    return { perBlock, total, done, inProgress, overdue };
+    const sum = (k: 'total' | 'done' | 'inProgress' | 'overdue' | 'totalWeight' | 'doneWeight' | 'inProgressWeight') =>
+      perBlock.reduce((s, x) => s + x[k], 0);
+    return {
+      perBlock,
+      total: sum('total'),
+      done: sum('done'),
+      inProgress: sum('inProgress'),
+      overdue: sum('overdue'),
+      totalWeight: sum('totalWeight'),
+      doneWeight: sum('doneWeight'),
+      inProgressWeight: sum('inProgressWeight'),
+    };
   }, [processes, sortedBlocks]);
 
   function handleReorderBlock(id: string, direction: 'up' | 'down') {
@@ -1534,14 +1553,14 @@ export default function ScheduleApp() {
             </button>
           </div>
           <p className="text-xs text-zinc-500 -mt-2">
-            &ldquo;실제 완료&rdquo; 체크를 기준으로 한 완료율입니다. 지연 = 계획 날짜가 오늘보다 지났는데 완료 체크가
-            안 된 공정 (화면에서 빨간 ⚠ 테두리로도 표시돼요).
+            공정 <span className="font-medium">일수(기간)에 비례</span>한 완료율입니다 — 예: 전체 10일 중 7일짜리 공정을
+            완료하면 70%. 지연 = 계획 날짜가 오늘보다 지났는데 완료 안 된 공정 (화면에서 빨간 ⚠ 테두리로도 표시돼요).
           </p>
 
           {(() => {
-            const { total, done, inProgress, overdue, perBlock } = statusSummary;
-            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-            // 완료(초록) + 진행 중(파랑) 두 구간으로 나눠 그린다. 나머지는 시작 전(회색).
+            const { done, inProgress, overdue, totalWeight, doneWeight, inProgressWeight, perBlock } = statusSummary;
+            const pct = totalWeight > 0 ? Math.round((doneWeight / totalWeight) * 100) : 0;
+            // 완료(초록) + 진행 중(파랑) 두 구간으로 나눠 그린다(일수 가중). 나머지는 시작 전(회색).
             const Bar = ({ d, ip, t }: { d: number; ip: number; t: number }) => (
               <div className="h-2.5 rounded-full bg-zinc-200 overflow-hidden flex">
                 <div className="h-full bg-emerald-500" style={{ width: `${t > 0 ? (d / t) * 100 : 0}%` }} />
@@ -1555,29 +1574,28 @@ export default function ScheduleApp() {
                     <span className="font-semibold">전체</span>
                     <span className="text-xs">
                       <span className="font-semibold text-emerald-700 text-sm">{pct}%</span>
-                      <span className="text-zinc-500 ml-1">완료 {done}</span>
-                      {inProgress > 0 && <span className="text-sky-600 ml-1">· 진행 {inProgress}</span>}
-                      <span className="text-zinc-400 ml-1">/ {total}</span>
+                      <span className="text-zinc-500 ml-1">완료 {done}개</span>
+                      {inProgress > 0 && <span className="text-sky-600 ml-1">· 진행 {inProgress}개</span>}
                       {overdue > 0 && <span className="ml-2 text-red-600 font-semibold">지연 {overdue}건</span>}
                     </span>
                   </div>
-                  <Bar d={done} ip={inProgress} t={total} />
+                  <Bar d={doneWeight} ip={inProgressWeight} t={totalWeight} />
                 </div>
 
                 <div className="flex flex-col gap-2">
                   {perBlock.map((b) => {
-                    const p = b.total > 0 ? Math.round((b.done / b.total) * 100) : 0;
+                    const p = b.totalWeight > 0 ? Math.round((b.doneWeight / b.totalWeight) * 100) : 0;
                     return (
                       <div key={b.blockId} className="flex flex-col gap-1">
                         <div className="flex items-center justify-between text-sm">
                           <span className="font-medium">{b.name}</span>
                           <span className="text-xs text-zinc-500">
                             {p}% (완료 {b.done}
-                            {b.inProgress > 0 && <span className="text-sky-600"> · 진행 {b.inProgress}</span>}/{b.total})
+                            {b.inProgress > 0 && <span className="text-sky-600"> · 진행 {b.inProgress}</span>}/{b.total}개)
                             {b.overdue > 0 && <span className="ml-2 text-red-600 font-semibold">지연 {b.overdue}</span>}
                           </span>
                         </div>
-                        <Bar d={b.done} ip={b.inProgress} t={b.total} />
+                        <Bar d={b.doneWeight} ip={b.inProgressWeight} t={b.totalWeight} />
                       </div>
                     );
                   })}
@@ -1585,8 +1603,8 @@ export default function ScheduleApp() {
                 </div>
 
                 <p className="text-[11px] text-zinc-500 mt-1">
-                  칩의 상태 표시를 클릭하면 <span className="text-zinc-700">시작 전 → 진행 중(파랑 ▶) → 완료(초록 ✓)</span>
-                  로 바뀝니다.
+                  %는 <span className="text-zinc-700">공정 일수 기준</span>이고, 괄호 안 개수는 공정 수예요. 칩의 상태
+                  표시를 클릭하면 <span className="text-zinc-700">시작 전 → 진행 중(파랑 ▶) → 완료(초록 ✓)</span>로 바뀝니다.
                 </p>
               </>
             );
