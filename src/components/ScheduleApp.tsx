@@ -68,10 +68,10 @@ const REASON_PRESETS = [
 ];
 
 const INITIAL_BLOCKS: Block[] = [
-  { id: 'b1', name: '11동', sortOrder: 1, facilityType: 'building' },
-  { id: 'b2', name: '12동', sortOrder: 2, facilityType: 'building' },
-  { id: 'b3', name: '13동', sortOrder: 3, facilityType: 'building' },
-  { id: 'b4', name: '14동', sortOrder: 4, facilityType: 'building' },
+  { id: 'b1', name: '11동', sortOrder: 1 },
+  { id: 'b2', name: '12동', sortOrder: 2 },
+  { id: 'b3', name: '13동', sortOrder: 3 },
+  { id: 'b4', name: '14동', sortOrder: 4 },
 ];
 
 function computeDayCount(viewStartDate: ISODate): number {
@@ -478,13 +478,15 @@ export default function ScheduleApp() {
       const ps = processes.filter((p) => p.blockId === b.id && countable(p));
       const total = ps.length;
       const done = ps.filter((p) => p.actualDone).length;
+      const inProgress = ps.filter((p) => !p.actualDone && p.inProgress).length;
       const overdue = ps.filter((p) => !p.actualDone && p.date < today).length;
-      return { blockId: b.id, name: b.name, total, done, overdue };
+      return { blockId: b.id, name: b.name, total, done, inProgress, overdue };
     });
     const total = perBlock.reduce((s, x) => s + x.total, 0);
     const done = perBlock.reduce((s, x) => s + x.done, 0);
+    const inProgress = perBlock.reduce((s, x) => s + x.inProgress, 0);
     const overdue = perBlock.reduce((s, x) => s + x.overdue, 0);
-    return { perBlock, total, done, overdue };
+    return { perBlock, total, done, inProgress, overdue };
   }, [processes, sortedBlocks]);
 
   function handleReorderBlock(id: string, direction: 'up' | 'down') {
@@ -824,6 +826,18 @@ export default function ScheduleApp() {
 
   function handleToggleActualDone(processId: string) {
     setProcesses((cur) => cur.map((p) => (p.id === processId ? { ...p, actualDone: !p.actualDone } : p)));
+  }
+
+  // 주공정/구간공정 상태를 클릭할 때마다 시작 전 → 진행 중 → 완료 → 시작 전으로 순환한다.
+  function handleCycleStatus(processId: string) {
+    setProcesses((cur) =>
+      cur.map((p) => {
+        if (p.id !== processId) return p;
+        if (!p.actualDone && !p.inProgress) return { ...p, inProgress: true }; // 시작 전 → 진행 중
+        if (p.inProgress && !p.actualDone) return { ...p, inProgress: false, actualDone: true }; // 진행 중 → 완료
+        return { ...p, actualDone: false, inProgress: false }; // 완료 → 시작 전
+      }),
+    );
   }
 
   function handleSetTimeSlot(processId: string, slot: 'morning' | 'afternoon' | undefined) {
@@ -1273,6 +1287,7 @@ export default function ScheduleApp() {
             onDropHeader={handleDropHeader}
             onReorderCellOrder={handleReorderCellOrder}
             onToggleActualDone={handleToggleActualDone}
+            onCycleStatus={handleCycleStatus}
             onExtendProcess={handleExtendProcess}
             onDeleteProcess={handleDeleteProcess}
             onDeleteProcessCycle={handleDeleteProcessCycle}
@@ -1445,23 +1460,19 @@ export default function ScheduleApp() {
           siteInfo={siteInfo}
           onChangeSiteInfo={setSiteInfo}
           blocks={sortedBlocks}
-          onAddBlock={(name, facilityType, info) =>
+          onAddBlock={(name, info) =>
             setBlocks((cur) => [
               ...cur,
               {
                 id: crypto.randomUUID(),
                 name,
                 sortOrder: cur.reduce((max, b) => Math.max(max, b.sortOrder), 0) + 1,
-                facilityType,
                 info: info || undefined,
               },
             ])
           }
           onRemoveBlock={handleRemoveBlock}
           onReorderBlock={handleReorderBlock}
-          onChangeBlockType={(id, facilityType) =>
-            setBlocks((cur) => cur.map((b) => (b.id === id ? { ...b, facilityType } : b)))
-          }
           onChangeBlockInfo={(id, info) => setBlocks((cur) => cur.map((b) => (b.id === id ? { ...b, info } : b)))}
           crewTeams={crewTeams}
           onAddCrewTeam={handleAddCrewTeam}
@@ -1502,14 +1513,13 @@ export default function ScheduleApp() {
           </p>
 
           {(() => {
-            const { total, done, overdue, perBlock } = statusSummary;
+            const { total, done, inProgress, overdue, perBlock } = statusSummary;
             const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-            const Bar = ({ d, t }: { d: number; t: number }) => (
-              <div className="h-2.5 rounded-full bg-zinc-200 overflow-hidden">
-                <div
-                  className="h-full bg-emerald-500 rounded-full"
-                  style={{ width: `${t > 0 ? (d / t) * 100 : 0}%` }}
-                />
+            // 완료(초록) + 진행 중(파랑) 두 구간으로 나눠 그린다. 나머지는 시작 전(회색).
+            const Bar = ({ d, ip, t }: { d: number; ip: number; t: number }) => (
+              <div className="h-2.5 rounded-full bg-zinc-200 overflow-hidden flex">
+                <div className="h-full bg-emerald-500" style={{ width: `${t > 0 ? (d / t) * 100 : 0}%` }} />
+                <div className="h-full bg-sky-400" style={{ width: `${t > 0 ? (ip / t) * 100 : 0}%` }} />
               </div>
             );
             return (
@@ -1517,15 +1527,15 @@ export default function ScheduleApp() {
                 <div className="rounded border border-zinc-200 p-3 flex flex-col gap-1.5">
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-semibold">전체</span>
-                    <span>
-                      <span className="font-semibold text-emerald-700">{pct}%</span>{' '}
-                      <span className="text-zinc-500 text-xs">
-                        ({done}/{total} 완료)
-                      </span>
+                    <span className="text-xs">
+                      <span className="font-semibold text-emerald-700 text-sm">{pct}%</span>
+                      <span className="text-zinc-500 ml-1">완료 {done}</span>
+                      {inProgress > 0 && <span className="text-sky-600 ml-1">· 진행 {inProgress}</span>}
+                      <span className="text-zinc-400 ml-1">/ {total}</span>
                       {overdue > 0 && <span className="ml-2 text-red-600 font-semibold">지연 {overdue}건</span>}
                     </span>
                   </div>
-                  <Bar d={done} t={total} />
+                  <Bar d={done} ip={inProgress} t={total} />
                 </div>
 
                 <div className="flex flex-col gap-2">
@@ -1536,16 +1546,22 @@ export default function ScheduleApp() {
                         <div className="flex items-center justify-between text-sm">
                           <span className="font-medium">{b.name}</span>
                           <span className="text-xs text-zinc-500">
-                            {p}% ({b.done}/{b.total})
+                            {p}% (완료 {b.done}
+                            {b.inProgress > 0 && <span className="text-sky-600"> · 진행 {b.inProgress}</span>}/{b.total})
                             {b.overdue > 0 && <span className="ml-2 text-red-600 font-semibold">지연 {b.overdue}</span>}
                           </span>
                         </div>
-                        <Bar d={b.done} t={b.total} />
+                        <Bar d={b.done} ip={b.inProgress} t={b.total} />
                       </div>
                     );
                   })}
                   {perBlock.length === 0 && <p className="text-xs text-zinc-400">아직 동/공정이 없습니다.</p>}
                 </div>
+
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  칩의 상태 표시를 클릭하면 <span className="text-zinc-700">시작 전 → 진행 중(파랑 ▶) → 완료(초록 ✓)</span>
+                  로 바뀝니다.
+                </p>
               </>
             );
           })()}

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ISODate } from '@/lib/domain/dateUtils';
-import { Block, CrewTeam, FacilityType, Holiday, HolidayKind, SiteInfo } from '@/lib/domain/types';
+import { Block, CrewTeam, Holiday, HolidayKind, SiteInfo } from '@/lib/domain/types';
 
 const HOLIDAY_KIND_LABEL: Record<HolidayKind, string> = {
   sunday: '일요일',
@@ -18,10 +18,9 @@ interface SettingsPanelProps {
   siteInfo: SiteInfo;
   onChangeSiteInfo: (info: SiteInfo) => void;
   blocks: Block[];
-  onAddBlock: (name: string, facilityType: FacilityType, info: string) => void;
+  onAddBlock: (name: string, info: string) => void;
   onRemoveBlock: (id: string) => void;
   onReorderBlock: (id: string, direction: 'up' | 'down') => void;
-  onChangeBlockType: (id: string, facilityType: FacilityType) => void;
   onChangeBlockInfo: (id: string, info: string) => void;
   crewTeams: CrewTeam[];
   onAddCrewTeam: (name: string) => void;
@@ -45,7 +44,6 @@ export default function SettingsPanel({
   onAddBlock,
   onRemoveBlock,
   onReorderBlock,
-  onChangeBlockType,
   onChangeBlockInfo,
   crewTeams,
   onAddCrewTeam,
@@ -61,7 +59,6 @@ export default function SettingsPanel({
   syncError,
 }: SettingsPanelProps) {
   const [newBlockName, setNewBlockName] = useState('');
-  const [newBlockType, setNewBlockType] = useState<FacilityType>('building');
   const [newBlockInfo, setNewBlockInfo] = useState('');
 
   const [newTeamName, setNewTeamName] = useState('');
@@ -92,7 +89,7 @@ export default function SettingsPanel({
   function addBlock() {
     const name = newBlockName.trim();
     if (!name) return;
-    onAddBlock(name, newBlockType, newBlockInfo.trim());
+    onAddBlock(name, newBlockInfo.trim());
     setNewBlockName('');
     setNewBlockInfo('');
   }
@@ -168,14 +165,6 @@ export default function SettingsPanel({
                   onChange={(e) => onChangeBlockInfo(b.id, e.target.value)}
                   placeholder="세대/층수 (예: 5세대/22층)"
                 />
-                <select
-                  className="border border-zinc-300 rounded px-1 py-0.5 text-xs"
-                  value={b.facilityType ?? 'building'}
-                  onChange={(e) => onChangeBlockType(b.id, e.target.value as FacilityType)}
-                >
-                  <option value="building">본동</option>
-                  <option value="auxiliary">부속시설</option>
-                </select>
                 <button className="text-xs text-red-600" onClick={() => onRemoveBlock(b.id)}>
                   삭제
                 </button>
@@ -195,14 +184,6 @@ export default function SettingsPanel({
               onChange={(e) => setNewBlockInfo(e.target.value)}
               placeholder="세대/층수 (선택)"
             />
-            <select
-              className="border border-zinc-300 rounded px-1 py-1 text-xs"
-              value={newBlockType}
-              onChange={(e) => setNewBlockType(e.target.value as FacilityType)}
-            >
-              <option value="building">본동</option>
-              <option value="auxiliary">부속시설</option>
-            </select>
             <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm" onClick={addBlock}>
               추가
             </button>

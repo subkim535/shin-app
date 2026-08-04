@@ -10,13 +10,10 @@ export interface ProcessTypeDef {
   showFloorLabel?: boolean;
 }
 
-export type FacilityType = 'building' | 'auxiliary';
-
 export interface Block {
   id: string;
   name: string;
   sortOrder: number;
-  facilityType?: FacilityType; // 본동(building, 기본) / 부속시설(auxiliary)
   info?: string; // 세대/층수 등 자유텍스트 (예: "5세대/22층")
   remark?: string; // 동 단위 비고 (날짜와 무관, 오른쪽 고정 열에 표시)
 }
@@ -99,7 +96,8 @@ export interface ProcessInstance {
   conflictSeq?: number;
   cellOrder?: number; // 같은 동·같은 날짜에 서로 다른 주요공정이 함께 놓였을 때의 수동 작업 순서
   crew?: CrewAssignment; // 작업팀 + 투입인원
-  actualDone?: boolean; // 계획(예정) 대비 실제 완료 여부 체크
+  actualDone?: boolean; // 실제 완료 여부 (완료 상태). 진행 상태는 시작전→진행중→완료 3단계.
+  inProgress?: boolean; // "진행 중"(시작했지만 아직 완료 아님) 상태. actualDone=true면 무시.
   durationDays?: number; // 하루에 안 끝나 다음날로 넘어간 주요공정의 소요일수 (없으면 1일)
   // 하루 안에서도 오전/오후/조출/야간처럼 시간대를 나눠 배정할 수 있게 대비해둔 필드.
   // 아직 UI는 없고 데이터 구조만 미리 만들어둔 상태 — 값이 없으면 하루 종일로 취급한다.

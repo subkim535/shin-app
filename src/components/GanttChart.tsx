@@ -38,6 +38,7 @@ interface GanttChartProps {
   onDropHeader: (fromDate: ISODate, toDate: ISODate) => void;
   onReorderCellOrder: (processId: string, direction: 'up' | 'down') => void;
   onToggleActualDone: (processId: string) => void;
+  onCycleStatus: (processId: string) => void;
   onExtendProcess: (processId: string, direction: 'extend' | 'shrink') => void;
   onDeleteProcess: (processId: string) => void;
   onDeleteProcessCycle: (processId: string) => void;
@@ -88,6 +89,7 @@ export default function GanttChart({
   onDropHeader,
   onReorderCellOrder,
   onToggleActualDone,
+  onCycleStatus,
   onExtendProcess,
   onDeleteProcess,
   onDeleteProcessCycle,
@@ -670,22 +672,32 @@ export default function GanttChart({
             </span>
           )}
           <span
-            role="checkbox"
-            aria-checked={!!p.actualDone}
+            role="button"
             tabIndex={0}
-            title="실제 완료 여부"
-            data-testid="actual-done-checkbox"
+            title={
+              p.actualDone
+                ? '상태: 완료 (클릭 → 시작 전)'
+                : p.inProgress
+                  ? '상태: 진행 중 (클릭 → 완료)'
+                  : '상태: 시작 전 (클릭 → 진행 중)'
+            }
+            data-testid="status-toggle"
+            data-status={p.actualDone ? 'done' : p.inProgress ? 'in_progress' : 'not_started'}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              onToggleActualDone(p.id);
+              onCycleStatus(p.id);
             }}
             className={[
-              'inline-flex items-center justify-center w-3 h-3 mr-1 rounded-sm border align-middle shrink-0',
-              p.actualDone ? 'bg-emerald-600 border-emerald-700 text-white' : 'border-current bg-white/60',
+              'inline-flex items-center justify-center w-3.5 h-3.5 mr-1 rounded-sm border align-middle shrink-0 text-[9px] leading-none font-bold',
+              p.actualDone
+                ? 'bg-emerald-600 border-emerald-700 text-white'
+                : p.inProgress
+                  ? 'bg-sky-500 border-sky-600 text-white'
+                  : 'border-current bg-white/60',
             ].join(' ')}
           >
-            {p.actualDone ? '✓' : ''}
+            {p.actualDone ? '✓' : p.inProgress ? '▶' : ''}
           </span>
           {def?.showFloorLabel && p.floorLabel ? `${p.floorLabel} ` : ''}
           {label}
