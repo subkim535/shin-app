@@ -236,7 +236,7 @@ export function generateFromTemplate(
   blockId: string,
   startDate: ISODate,
   holidays: Holiday[] = [],
-  opts: { skipOptional?: boolean } = {},
+  opts: { skipOptional?: boolean; floorLabel?: string } = {},
   existing: ProcessInstance[] = [],
 ): ProcessInstance[] {
   const cycleId = crypto.randomUUID();
@@ -250,6 +250,7 @@ export function generateFromTemplate(
     const main = makeProcess(blockId, step.code, cursor, cycleId, {
       customLabel: step.name,
       durationDays: span > 1 ? span : undefined,
+      floorLabel: opts.floorLabel || undefined,
     });
     result.push(main);
     cursor = addDays(cursor, span);
@@ -265,16 +266,22 @@ export function generateRepeatingFromTemplate(
   startDate: ISODate,
   holidays: Holiday[],
   repeatCount: number,
-  opts: { skipOptional?: boolean } = {},
+  opts: { skipOptional?: boolean; floorLabel?: string } = {},
   existing: ProcessInstance[] = [],
 ): ProcessInstance[] {
   const result: ProcessInstance[] = [];
   let cursor = startDate;
+  let floor = opts.floorLabel;
   for (let i = 0; i < Math.max(1, repeatCount); i++) {
-    const cycle = generateFromTemplate(template, blockId, cursor, holidays, opts, [...existing, ...result]);
+    const cycle = generateFromTemplate(template, blockId, cursor, holidays, { ...opts, floorLabel: floor }, [
+      ...existing,
+      ...result,
+    ]);
     result.push(...cycle);
     const lastDate = cycle[cycle.length - 1]?.date ?? cursor;
     cursor = addDays(lastDate, 1);
+    // 반복 생성이면 다음 사이클은 한 층 올린다("3F"→"4F"). 층수가 없으면 그대로 undefined.
+    if (floor) floor = nextFloorLabel(floor);
   }
   return result;
 }

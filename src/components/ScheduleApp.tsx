@@ -363,6 +363,7 @@ export default function ScheduleApp() {
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchBlockId, setSearchBlockId] = useState<'all' | string>('all');
   const [searchNotFound, setSearchNotFound] = useState(false);
   const [scrollToBlockId, setScrollToBlockId] = useState<{ blockId: string; nonce: number } | null>(null);
 
@@ -488,16 +489,30 @@ export default function ScheduleApp() {
   // 보이는 주간으로 날짜도 같이 옮기고 해당 갱폼 공정을 선택 상태로 표시한다.
   function handleSearch() {
     const q = searchQuery.trim();
-    if (!q) return;
+    // 검색 대상: 동을 골랐으면 그 동 안에서만, 아니면 전체 동.
+    const scoped = searchBlockId === 'all' ? processes : processes.filter((p) => p.blockId === searchBlockId);
+
+    // 동만 고르고 검색어가 없으면 그 동으로 스크롤만 한다.
+    if (!q) {
+      if (searchBlockId !== 'all') {
+        setScrollToBlockId({ blockId: searchBlockId, nonce: Date.now() });
+        setSearchNotFound(false);
+      }
+      return;
+    }
     const qUpper = q.toUpperCase();
     const qDigits = q.replace(/[^0-9]/g, '');
 
-    const floorMatch = processes.find((p) => {
-      if (p.typeCode !== 'GANGFORM' || !p.floorLabel) return false;
-      const label = p.floorLabel.toUpperCase();
-      if (label === qUpper) return true;
-      return !!qDigits && label.replace(/[^0-9]/g, '') === qDigits;
-    });
+    // 층수 검색: floorLabel이 붙은 모든 공정(기준층 갱폼 + 층수 지정한 구간공정)을 대상으로.
+    // 같은 층이 여러 개면 갱폼을 우선, 없으면 가장 이른 날짜를 대표로 잡는다.
+    const floorMatches = scoped
+      .filter((p) => {
+        if (!p.floorLabel) return false;
+        const label = p.floorLabel.toUpperCase();
+        return label === qUpper || (!!qDigits && label.replace(/[^0-9]/g, '') === qDigits);
+      })
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const floorMatch = floorMatches.find((p) => p.typeCode === 'GANGFORM') ?? floorMatches[0];
     if (floorMatch) {
       setViewStartDate(mondayOfWeek(floorMatch.date));
       setSelectedProcessId(floorMatch.id);
@@ -506,10 +521,10 @@ export default function ScheduleApp() {
       return;
     }
 
-    // 기초공사/지하층공사 등 구간공정(층수가 없는 커스텀 단계)은 이름으로 찾는다.
-    const labelMatch = processes
+    // 공정명(부분 일치)으로 찾는다.
+    const labelMatch = scoped
       .filter((p) => processLabel(p).includes(q))
-      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))[0];
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
     if (labelMatch) {
       setViewStartDate(mondayOfWeek(labelMatch.date));
       setSelectedProcessId(labelMatch.id);
@@ -518,11 +533,14 @@ export default function ScheduleApp() {
       return;
     }
 
-    const blockMatch = sortedBlocks.find((b) => b.name.includes(q));
-    if (blockMatch) {
-      setScrollToBlockId({ blockId: blockMatch.id, nonce: Date.now() });
-      setSearchNotFound(false);
-      return;
+    // 전체 검색일 때만 동 이름으로도 찾아본다(동을 이미 고른 경우엔 불필요).
+    if (searchBlockId === 'all') {
+      const blockMatch = sortedBlocks.find((b) => b.name.includes(q));
+      if (blockMatch) {
+        setScrollToBlockId({ blockId: blockMatch.id, nonce: Date.now() });
+        setSearchNotFound(false);
+        return;
+      }
     }
 
     setSearchNotFound(true);
@@ -730,6 +748,7 @@ export default function ScheduleApp() {
     steps: TemplateStepDef[],
     startDate: ISODate,
     repeatCount: number,
+    floorLabel: string,
   ): string | null {
     const template: ProcessTemplate = {
       id: templates.find((t) => t.name === categoryName)?.id ?? crypto.randomUUID(),
@@ -737,8 +756,11 @@ export default function ScheduleApp() {
       steps,
     };
     // 기존 공정을 넘겨서, 새 구간공정 단계가 이미 차 있는 날을 피해(다음 빈 날로 밀려)
-    // 배치되게 한다 — 겹치면 막지 않고 자동으로 밀어 배치.
-    const generated = generateRepeatingFromTemplate(template, targetBlockId, startDate, holidays, repeatCount, {}, processes);
+    // 배치되게 한다 — 겹치면 막지 않고 자동으로 밀어 배치. floorLabel이 있으면 각 단계에
+    // 그 층수를 붙여, 나중에 검색에서 층수로 찾을 수 있게 한다.
+    const generated = generateRepeatingFromTemplate(template, targetBlockId, startDate, holidays, repeatCount, {
+      floorLabel: floorLabel || undefined,
+    }, processes);
     const collisions = findMainCollisions([...processes, ...generated]).filter((c) => c.blockId === targetBlockId);
     if (collisions.length > 0) {
       const list = collisions.map((c) => `${c.date} ${c.labels.join('/')}`).join(', ');
@@ -1065,6 +1087,23 @@ export default function ScheduleApp() {
             >
               다음 주
             </button>
+            <select
+              value={searchBlockId}
+              onChange={(e) => {
+                setSearchBlockId(e.target.value);
+                setSearchNotFound(false);
+              }}
+              data-testid="block-search-scope"
+              className="ml-3 px-2 py-1.5 rounded border border-zinc-300 text-sm bg-white"
+              title="찾을 동을 고르세요. 안 고르면(전체 동) 모든 동에서 찾습니다."
+            >
+              <option value="all">전체 동</option>
+              {sortedBlocks.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
             <input
               type="text"
               value={searchQuery}
@@ -1075,9 +1114,9 @@ export default function ScheduleApp() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSearch();
               }}
-              placeholder="동 이름 · 층수 · 공정명"
+              placeholder="층수(예: 3) · 공정명"
               data-testid="block-search-input"
-              className="ml-3 px-2 py-1.5 rounded border border-zinc-300 text-sm w-32"
+              className="ml-1 px-2 py-1.5 rounded border border-zinc-300 text-sm w-32"
             />
             <button
               className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"

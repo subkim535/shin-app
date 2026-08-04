@@ -94,7 +94,14 @@ interface TemplateGenModalProps {
   blocks: Block[];
   templates: ProcessTemplate[];
   holidays: Holiday[];
-  onSubmit: (blockId: string, categoryName: string, steps: TemplateStepDef[], startDate: ISODate, repeatCount: number) => string | null;
+  onSubmit: (
+    blockId: string,
+    categoryName: string,
+    steps: TemplateStepDef[],
+    startDate: ISODate,
+    repeatCount: number,
+    floorLabel: string,
+  ) => string | null;
   onSaveNewTemplate: (title: string, steps: TemplateStepDef[]) => void;
   onRemoveTemplate: (id: string) => void;
   onClose: () => void;
@@ -120,6 +127,7 @@ export default function TemplateGenModal({
   const [startDate, setStartDate] = useState<ISODate>(initialStartDate ?? todayISO());
   const [orderedIndices, setOrderedIndices] = useState<number[]>([]);
   const [repeatCount, setRepeatCount] = useState('1');
+  const [floor, setFloor] = useState('');
   const [saveTitle, setSaveTitle] = useState('');
   const [error, setError] = useState<string | null>(null);
   const customTemplateNames = templates.map((t) => t.name).filter((n) => !TEMPLATE_CATEGORIES.includes(n));
@@ -216,6 +224,8 @@ export default function TemplateGenModal({
   }, [previewSteps, startDate, holidays, category]);
 
   const parsedRepeatCount = Math.min(60, Math.max(1, Number(repeatCount) || 1));
+  // 숫자만 입력하면 뒤에 F를 붙인다("3" → "3F"). 이미 F 등 글자가 있으면 그대로 둔다.
+  const normalizedFloor = /^\d+$/.test(floor.trim()) ? `${floor.trim()}F` : floor.trim();
 
   function handleSubmit() {
     if (!blockId) {
@@ -226,7 +236,7 @@ export default function TemplateGenModal({
       setError('순서를 1개 이상 선택해주세요.');
       return;
     }
-    const result = onSubmit(blockId, category, previewSteps, startDate, parsedRepeatCount);
+    const result = onSubmit(blockId, category, previewSteps, startDate, parsedRepeatCount, normalizedFloor);
     if (result) {
       setError(result);
       return;
@@ -328,6 +338,16 @@ export default function TemplateGenModal({
                 className="border border-zinc-300 rounded px-2 py-1"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
+              />
+              <span className="text-zinc-500 ml-2">층</span>
+              <input
+                type="text"
+                placeholder="예: 3 (→3F)"
+                className="border border-zinc-300 rounded px-2 py-1 w-24"
+                value={floor}
+                onChange={(e) => setFloor(e.target.value)}
+                onBlur={() => setFloor((f) => (/^\d+$/.test(f.trim()) ? `${f.trim()}F` : f.trim()))}
+                title="숫자만 넣으면 자동으로 F가 붙어요. 검색에서 이 층수로 찾을 수 있어요."
               />
               <span className="text-zinc-500 ml-2">반복 횟수</span>
               <input
