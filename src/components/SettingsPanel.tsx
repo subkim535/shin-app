@@ -29,6 +29,8 @@ interface SettingsPanelProps {
   holidays: Holiday[];
   onAddHoliday: (date: ISODate, kind: HolidayKind) => void;
   onRemoveHoliday: (date: ISODate) => void;
+  onAddKoreanHolidays: (year: number) => number;
+  koreanHolidayYears: number[];
   processGapDays: number;
   onChangeProcessGapDays: (days: number) => void;
   lastSavedAt: string | null;
@@ -51,6 +53,8 @@ export default function SettingsPanel({
   holidays,
   onAddHoliday,
   onRemoveHoliday,
+  onAddKoreanHolidays,
+  koreanHolidayYears,
   processGapDays,
   onChangeProcessGapDays,
   lastSavedAt,
@@ -71,6 +75,13 @@ export default function SettingsPanel({
 
   const [newHolidayDate, setNewHolidayDate] = useState('');
   const [newHolidayKind, setNewHolidayKind] = useState<HolidayKind>('public_holiday');
+
+  const [krYear, setKrYear] = useState(() => koreanHolidayYears[Math.floor(koreanHolidayYears.length / 2)] ?? new Date().getFullYear());
+  const [krMsg, setKrMsg] = useState<string | null>(null);
+  function loadKoreanHolidays() {
+    const added = onAddKoreanHolidays(krYear);
+    setKrMsg(added > 0 ? `${krYear}년 공휴일 ${added}개를 등록했어요.` : `${krYear}년 공휴일은 이미 다 등록돼 있어요.`);
+  }
 
   function addHoliday() {
     if (!newHolidayDate) return;
@@ -235,6 +246,32 @@ export default function SettingsPanel({
             공휴일·대체휴일·임시공휴일·휴가를 등록하면 타설(토·일·공휴일 금지), 갱폼(일·공휴일 금지) 등 휴일 규칙에
             자동 반영됩니다. 휴가는 회사에서 지정한 휴무일을 공휴일과 같은 방식으로 반영할 때 사용합니다.
           </p>
+
+          <div className="rounded border border-indigo-200 bg-indigo-50/50 p-2 flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-indigo-800">한국 공휴일 한 번에 등록</span>
+              <select
+                className="border border-zinc-300 rounded px-2 py-1 text-xs ml-auto"
+                value={krYear}
+                onChange={(e) => setKrYear(Number(e.target.value))}
+              >
+                {koreanHolidayYears.map((y) => (
+                  <option key={y} value={y}>
+                    {y}년
+                  </option>
+                ))}
+              </select>
+              <button className="px-3 py-1 rounded bg-indigo-600 text-white text-xs" onClick={loadKoreanHolidays}>
+                불러오기
+              </button>
+            </div>
+            <p className="text-[11px] text-zinc-500 leading-snug">
+              신정·삼일절·어린이날·현충일·광복절·개천절·한글날·크리스마스와 설날·추석·부처님오신날·대체휴일을 한꺼번에
+              넣어요. ⚠️ 설날·추석·대체휴일은 음력이라 해마다 달라지니, 등록 후 실제 달력과 한번 맞춰보세요.
+            </p>
+            {krMsg && <p className="text-[11px] text-emerald-700">{krMsg}</p>}
+          </div>
+
           <div className="flex flex-col gap-1">
             {[...holidays]
               .filter((h) => h.kind !== 'sunday')

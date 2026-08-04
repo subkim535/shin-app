@@ -640,6 +640,8 @@ export default function GanttChart({
     const color = PROCESS_COLOR[p.typeCode] ?? (p.customLabel ? customProcessColor(p.customLabel) : FALLBACK_COLOR);
     const isDragSource = dragging?.type === 'process' && dragging.id === p.id;
     const label = processLabel(p);
+    // 지연: 계획 날짜가 오늘보다 지났는데 "실제 완료" 체크가 안 된 공정 — 빨갛게 강조한다.
+    const overdue = !p.actualDone && p.date < today;
     return (
       // 칩 "그림"만 변경이력 고스트/화살표 레이어(z5)보다 위(z10)로 올린다. 셀 전체가
       // 아니라 칩 박스만 올리므로, 회색 고스트/점선 화살표가 칩을 가리지는 않으면서도
@@ -657,11 +659,16 @@ export default function GanttChart({
             'text-left rounded px-1.5 py-0.5 text-xs leading-tight relative flex-1 min-w-[44px]',
             `font-semibold ${color.bg} ${color.text}`,
             'cursor-grab active:cursor-grabbing',
-            selected ? 'ring-2 ring-indigo-600' : '',
+            selected ? 'ring-2 ring-indigo-600' : overdue ? 'ring-2 ring-red-500' : '',
             isDragSource ? 'opacity-50' : '',
             p.actualDone ? 'line-through decoration-2' : '',
           ].join(' ')}
         >
+          {overdue && (
+            <span title="지연 (계획일이 지났는데 완료 안 됨)" className="mr-0.5 text-red-600 font-bold align-middle">
+              ⚠
+            </span>
+          )}
           <span
             role="checkbox"
             aria-checked={!!p.actualDone}

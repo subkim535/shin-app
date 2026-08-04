@@ -10,6 +10,7 @@ import TeamViewPanel from '@/components/TeamViewPanel';
 import TemplateGenModal, { GROUND_FLOOR_CATEGORY } from '@/components/TemplateGenModal';
 import WeeklyScheduleTable from '@/components/WeeklyScheduleTable';
 import { addDays, addMonths, diffDays, endOfMonth, ISODate, mondayOfWeek, todayISO } from '@/lib/domain/dateUtils';
+import { KOREAN_HOLIDAYS, KOREAN_HOLIDAY_YEARS } from '@/lib/domain/koreanHolidays';
 import { buildWeeklyScheduleData } from '@/lib/export/weeklyScheduleData';
 import { PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
 import { CHANGELOG, APP_REVISION, LAST_UPDATED } from '@/lib/changelog';
@@ -176,6 +177,7 @@ export default function ScheduleApp() {
   // 행동"이 아니므로 이 기록엔 안 남긴다 — applyRemoteState를 부를 때만 이 플래그를 세운다.
   const isApplyingRemoteRef = useRef(false);
   const undoStackRef = useRef<AppState[]>([]);
+  const redoStackRef = useRef<AppState[]>([]);
   const lastUndoStateRef = useRef<AppState | null>(null);
   const UNDO_STACK_LIMIT = 40;
 
@@ -354,6 +356,8 @@ export default function ScheduleApp() {
       if (prev && stableStringify(prev) !== stableStringify(state)) {
         undoStackRef.current.push(prev);
         if (undoStackRef.current.length > UNDO_STACK_LIMIT) undoStackRef.current.shift();
+        // 새 행동이 생기면 그동안 쌓인 "다시하기" 기록은 무효가 된다(분기).
+        redoStackRef.current = [];
       }
       lastUndoStateRef.current = state;
     }, 600);
@@ -367,46 +371,69 @@ export default function ScheduleApp() {
   const [searchNotFound, setSearchNotFound] = useState(false);
   const [scrollToBlockId, setScrollToBlockId] = useState<{ blockId: string; nonce: number } | null>(null);
 
-  // 되돌리기 스택에서 바로 직전 상태를 꺼내서 전체 상태에 그대로 되돌린다. 연달아
-  // 누르면(또는 Ctrl+Z를 연달아 입력하면) 한 번에 한 칸씩 계속 더 되돌아간다.
+  // 전체 상태를 스냅샷 하나로 그대로 되돌린다(되돌리기/다시하기 공용).
+  function applyState(s: AppState) {
+    lastUndoStateRef.current = s;
+    setSiteInfo(s.siteInfo);
+    setBlocks(s.blocks);
+    setTemplates(s.templates);
+    setHolidays(s.holidays);
+    setProcesses(s.processes);
+    setChangeHistory(s.changeHistory);
+    setDateShiftHistory(s.dateShiftHistory);
+    setNotes(s.notes);
+    setDirectLabor(s.directLabor);
+    setCrewTeams(s.crewTeams);
+    setProcessGapDays(s.processGapDays);
+    setSelectedProcessId(null);
+    setWarning(null);
+  }
+
+  // 되돌리기: 직전 상태를 꺼내 적용하고, 지금 상태는 "다시하기" 스택에 넣는다.
   function handleUndo() {
     const prev = undoStackRef.current.pop();
     if (!prev) {
       setWarning('더 되돌릴 내용이 없습니다.');
       return;
     }
-    lastUndoStateRef.current = prev;
-    setSiteInfo(prev.siteInfo);
-    setBlocks(prev.blocks);
-    setTemplates(prev.templates);
-    setHolidays(prev.holidays);
-    setProcesses(prev.processes);
-    setChangeHistory(prev.changeHistory);
-    setDateShiftHistory(prev.dateShiftHistory);
-    setNotes(prev.notes);
-    setDirectLabor(prev.directLabor);
-    setCrewTeams(prev.crewTeams);
-    setProcessGapDays(prev.processGapDays);
-    setSelectedProcessId(null);
-    setWarning(null);
+    if (lastUndoStateRef.current) redoStackRef.current.push(lastUndoStateRef.current);
+    applyState(prev);
   }
 
-  // Ctrl+Z(맥은 Cmd+Z)를 되돌리기로 쓴다. 텍스트 입력칸에 포커스가 있을 때는 그 칸
-  // 자체의 되돌리기(브라우저 기본 동작)를 그대로 두기 위해 건드리지 않는다.
+  // 다시하기: 되돌리기로 취소했던 상태를 다시 적용하고, 지금 상태는 되돌리기 스택에 넣는다.
+  function handleRedo() {
+    const next = redoStackRef.current.pop();
+    if (!next) {
+      setWarning('다시 실행할 내용이 없습니다.');
+      return;
+    }
+    if (lastUndoStateRef.current) undoStackRef.current.push(lastUndoStateRef.current);
+    applyState(next);
+  }
+
+  // Ctrl+Z=되돌리기, Ctrl+Shift+Z 또는 Ctrl+Y=다시하기(맥은 Cmd). 텍스트 입력칸에
+  // 포커스가 있을 때는 그 칸 자체의 되돌리기(브라우저 기본 동작)를 그대로 둔다.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.key.toLowerCase() !== 'z') return;
+      if (!(e.ctrlKey || e.metaKey)) return;
       const tag = (document.activeElement?.tagName ?? '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
-      e.preventDefault();
-      handleUndo();
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleUndo]);
+  }, [handleUndo, handleRedo]);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
   const [templateGenOpen, setTemplateGenOpen] = useState(false);
   const [templateGenPrefill, setTemplateGenPrefill] = useState<{ blockId: string; startDate: ISODate } | null>(null);
   const [teamViewOpen, setTeamViewOpen] = useState(false);
@@ -441,6 +468,24 @@ export default function ScheduleApp() {
   // sortOrder는 저장돼 있지만 그동안 실제로 정렬에 쓰이지 않고 배열 순서 그대로 표시돼왔다.
   // 화면에 보여줄 때는 항상 이 정렬된 목록을 쓰고, blocks 자체(원본 배열)는 그대로 둔다.
   const sortedBlocks = useMemo(() => [...blocks].sort((a, b) => a.sortOrder - b.sortOrder), [blocks]);
+
+  // 진척/지연 현황: 주공정+구간공정(보조공정 제외) 기준으로 동별·전체 완료율과 지연 건수를
+  // 센다. 지연 = 계획 날짜가 오늘보다 지났는데 "실제 완료" 체크가 안 된 공정.
+  const statusSummary = useMemo(() => {
+    const today = todayISO();
+    const countable = (p: ProcessInstance) => PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub';
+    const perBlock = sortedBlocks.map((b) => {
+      const ps = processes.filter((p) => p.blockId === b.id && countable(p));
+      const total = ps.length;
+      const done = ps.filter((p) => p.actualDone).length;
+      const overdue = ps.filter((p) => !p.actualDone && p.date < today).length;
+      return { blockId: b.id, name: b.name, total, done, overdue };
+    });
+    const total = perBlock.reduce((s, x) => s + x.total, 0);
+    const done = perBlock.reduce((s, x) => s + x.done, 0);
+    const overdue = perBlock.reduce((s, x) => s + x.overdue, 0);
+    return { perBlock, total, done, overdue };
+  }, [processes, sortedBlocks]);
 
   function handleReorderBlock(id: string, direction: 'up' | 'down') {
     setBlocks((cur) => {
@@ -833,6 +878,27 @@ export default function ScheduleApp() {
     setHolidays((cur) => cur.filter((h) => h.date !== date));
   }
 
+  // 한국 공휴일 한 해치를 한꺼번에 등록한다. 이미 있는 날짜는 건너뛰고, 새로 추가한
+  // 공휴일마다 그날 잡혀 있던 공정을 밀어낸다. 추가한 개수를 반환한다(안내용).
+  function handleAddKoreanHolidays(year: number): number {
+    const list = KOREAN_HOLIDAYS[year] ?? [];
+    const existing = new Set(holidays.map((h) => h.date));
+    const toAdd = list.filter((h) => !existing.has(h.date));
+    if (toAdd.length === 0) return 0;
+    const nextHolidays = [...holidays, ...toAdd.map((h) => ({ date: h.date, kind: h.kind }))];
+    setHolidays(nextHolidays);
+    let procs = processes;
+    let hist = changeHistory;
+    for (const h of toAdd) {
+      const r = pushProcessesOffHoliday(procs, hist, h.date, nextHolidays, processGapDays);
+      procs = r.processes;
+      hist = r.changeHistory;
+    }
+    setProcesses(procs);
+    setChangeHistory(hist);
+    return toAdd.length;
+  }
+
   // 동을 지우면 그 동에 딸린 공정/이동이력/직영작업까지 같이 지운다. 그냥 blocks에서만
   // 빼면 processes에 그 blockId를 가진 "유령" 공정이 남아 충돌 집계 등을 조용히 틀어지게 한다.
   function handleRemoveBlock(id: string) {
@@ -1033,10 +1099,31 @@ export default function ScheduleApp() {
             </button>
             <button
               className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              onClick={handleRedo}
+              title="다시하기 (Ctrl+Shift+Z)"
+              data-testid="redo-button"
+            >
+              다시하기
+            </button>
+            <button
+              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setHistoryOpen(true)}
               data-testid="history-button"
             >
               변경이력
+            </button>
+            <button
+              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 flex items-center gap-1"
+              onClick={() => setStatusOpen(true)}
+              data-testid="status-button"
+              title="진척 현황과 지연 공정 보기"
+            >
+              진척 현황
+              {statusSummary.overdue > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold">
+                  지연 {statusSummary.overdue}
+                </span>
+              )}
             </button>
             <button
               className="px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40"
@@ -1382,6 +1469,8 @@ export default function ScheduleApp() {
           holidays={holidays}
           onAddHoliday={handleAddHoliday}
           onRemoveHoliday={handleRemoveHoliday}
+          onAddKoreanHolidays={handleAddKoreanHolidays}
+          koreanHolidayYears={KOREAN_HOLIDAY_YEARS}
           processGapDays={processGapDays}
           onChangeProcessGapDays={setProcessGapDays}
           lastSavedAt={lastSavedAt}
@@ -1397,6 +1486,70 @@ export default function ScheduleApp() {
           processes={processes}
           blocks={sortedBlocks}
         />
+      )}
+
+      {statusOpen && (
+        <Modal>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">진척 현황</h2>
+            <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={() => setStatusOpen(false)}>
+              닫기
+            </button>
+          </div>
+          <p className="text-xs text-zinc-500 -mt-2">
+            &ldquo;실제 완료&rdquo; 체크를 기준으로 한 완료율입니다. 지연 = 계획 날짜가 오늘보다 지났는데 완료 체크가
+            안 된 공정 (화면에서 빨간 ⚠ 테두리로도 표시돼요).
+          </p>
+
+          {(() => {
+            const { total, done, overdue, perBlock } = statusSummary;
+            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+            const Bar = ({ d, t }: { d: number; t: number }) => (
+              <div className="h-2.5 rounded-full bg-zinc-200 overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 rounded-full"
+                  style={{ width: `${t > 0 ? (d / t) * 100 : 0}%` }}
+                />
+              </div>
+            );
+            return (
+              <>
+                <div className="rounded border border-zinc-200 p-3 flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-semibold">전체</span>
+                    <span>
+                      <span className="font-semibold text-emerald-700">{pct}%</span>{' '}
+                      <span className="text-zinc-500 text-xs">
+                        ({done}/{total} 완료)
+                      </span>
+                      {overdue > 0 && <span className="ml-2 text-red-600 font-semibold">지연 {overdue}건</span>}
+                    </span>
+                  </div>
+                  <Bar d={done} t={total} />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  {perBlock.map((b) => {
+                    const p = b.total > 0 ? Math.round((b.done / b.total) * 100) : 0;
+                    return (
+                      <div key={b.blockId} className="flex flex-col gap-1">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium">{b.name}</span>
+                          <span className="text-xs text-zinc-500">
+                            {p}% ({b.done}/{b.total})
+                            {b.overdue > 0 && <span className="ml-2 text-red-600 font-semibold">지연 {b.overdue}</span>}
+                          </span>
+                        </div>
+                        <Bar d={b.done} t={b.total} />
+                      </div>
+                    );
+                  })}
+                  {perBlock.length === 0 && <p className="text-xs text-zinc-400">아직 동/공정이 없습니다.</p>}
+                </div>
+              </>
+            );
+          })()}
+        </Modal>
       )}
 
       {excelExportOpen && (
