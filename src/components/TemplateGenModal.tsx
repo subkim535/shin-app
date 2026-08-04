@@ -475,15 +475,8 @@ export default function TemplateGenModal({
             value={saveTitle}
             onChange={(e) => setSaveTitle(e.target.value)}
           />
-          <button
-            className={`px-3 py-1 rounded text-sm ${
-              customTemplateNames.includes(saveTitle.trim())
-                ? 'bg-amber-500 text-white'
-                : 'border border-zinc-300'
-            }`}
-            onClick={handleSaveAsNew}
-          >
-            {customTemplateNames.includes(saveTitle.trim()) ? '덮어쓰기' : '저장'}
+          <button className="px-3 py-1 rounded border border-zinc-300 text-sm" onClick={handleSaveAsNew}>
+            저장
           </button>
           <button className="px-3 py-1 rounded border border-zinc-300 text-sm" onClick={onClose}>
             취소
