@@ -1005,7 +1005,8 @@ export default function ScheduleApp() {
     if (!pendingDrop) return;
     const reason = (presetReason ?? reasonInput).trim() || '사유 미입력';
     if (pendingDrop.kind === 'main') {
-      const result = moveMainProcess(processes, changeHistory, pendingDrop.processId, pendingDrop.date, reason, holidays, processGapDays);
+      // 사용자가 직접 드롭한 이동이라 allowHoliday=true — 놓은 날이 휴일이어도 그 날에 그대로.
+      const result = moveMainProcess(processes, changeHistory, pendingDrop.processId, pendingDrop.date, reason, holidays, processGapDays, true);
       if (result.blockedReason) {
         setWarning(result.blockedReason);
       } else {
@@ -1014,7 +1015,7 @@ export default function ScheduleApp() {
         if (result.notice) setWarning(result.notice);
       }
     } else if (pendingDrop.kind === 'custom') {
-      const result = moveCustomProcess(processes, changeHistory, pendingDrop.processId, pendingDrop.date, reason, holidays);
+      const result = moveCustomProcess(processes, changeHistory, pendingDrop.processId, pendingDrop.date, reason, holidays, true);
       // 다른 공사(다른 구간공정)까지 밀리면 바로 반영하지 않고, 먼저 경고 후 확인받는다.
       if (result.pushedOtherSections && result.pushedOtherSections.length > 0) {
         setPendingCustomMove(result);
@@ -1026,7 +1027,7 @@ export default function ScheduleApp() {
       if (result.notice) setWarning(result.notice);
     } else {
       const proc = processes.find((p) => p.id === pendingDrop.processId);
-      const result = moveSubProcess(processes, pendingDrop.processId, pendingDrop.date, holidays);
+      const result = moveSubProcess(processes, pendingDrop.processId, pendingDrop.date, holidays, true);
       setProcesses(recomputeConflicts(result.processes));
       if (proc) {
         setChangeHistory((h) => [

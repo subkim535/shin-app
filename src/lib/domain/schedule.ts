@@ -415,6 +415,8 @@ function rebuildCycleFrom(
   holidays: Holiday[],
   gapDays: number,
   preserveDurationDays: number | undefined,
+  // 맨 앞(사용자가 직접 놓은) 단계를 휴일이어도 그 날에 그대로 둘지. 수동 드롭일 때만 true.
+  allowHolidayFirst: boolean = false,
 ): { processes: ProcessInstance[]; firstDate: ISODate; sundaySkipped?: boolean } {
   const seqIndex = MAIN_SEQUENCE_CODES.indexOf(fromTypeCode);
   const laterMainCodes = MAIN_SEQUENCE_CODES.slice(seqIndex + 1);
@@ -470,11 +472,13 @@ function rebuildCycleFrom(
   let sundaySkipped = false;
   sequenceCodes.forEach((code, i) => {
     const stepDef = PROCESS_TYPE_MAP[code];
-    // 사용자가 직접 드래그해서 옮긴 공정이라도 예외 없이 휴일 규칙을 그대로 적용한다.
-    if (i === 0 && dayOfWeek(cursor) === 0 && isBlockedForType(code, cursor, holidays)) {
+    // 맨 앞 단계(i===0)는 사용자가 직접 놓은 자리 — allowHolidayFirst면 휴일이어도 그 날에
+    // 그대로 둔다("직접 가져다 대는 건 휴일에 들어가도 됨"). 아니면 예전처럼 다음 작업일로 스킵.
+    const firstAllowsHoliday = i === 0 && allowHolidayFirst;
+    if (i === 0 && !allowHolidayFirst && dayOfWeek(cursor) === 0 && isBlockedForType(code, cursor, holidays)) {
       sundaySkipped = true;
     }
-    let date = nextWorkableDate(code, cursor, holidays);
+    let date = firstAllowsHoliday ? cursor : nextWorkableDate(code, cursor, holidays);
     // 자동으로 재배치되는 뒤 단계(i>0)는 다른 공사(구간공정) 날에 겹쳐 오지 않게 다음 빈
     // 날로 민다 — 사용자가 직접 옮긴 맨 앞 단계(i===0)만 자유롭게 둔다("자동이면 무조건 밀림").
     if (i > 0) {
@@ -660,6 +664,9 @@ export function moveMainProcess(
   reason: string,
   holidays: Holiday[],
   gapDays: number = 1,
+  // 사용자가 직접 드롭한 경우 true — 놓은 날이 휴일이어도 그 날에 그대로 둔다.
+  // 자동(휴일 순연 등) 호출은 false(기본)라 예전처럼 휴일을 피한다.
+  allowHoliday: boolean = false,
 ): MoveResult {
   const moved = processes.find((p) => p.id === processId);
   if (!moved) return { processes, changeHistory };
@@ -715,7 +722,11 @@ export function moveMainProcess(
     if (!cur || p.date < cur) originalOrder.set(p.cycleId, p.date);
   }
 
-  const rebuild = rebuildCycleFrom(processes, blockId, cycleId, anchorCode, anchorId, anchorDate, holidays, gapDays, anchorDuration);
+  // 휴일 허용은 "옮긴 공정 자신이 맨 앞 앵커인 일반 이동"에만 적용한다. 전체 앞당김
+  // (shiftedWholeCycle)은 앵커가 갱폼으로 자동 계산돼서 사용자가 콕 찍은 날이 아니므로 제외.
+  const rebuild = rebuildCycleFrom(
+    processes, blockId, cycleId, anchorCode, anchorId, anchorDate, holidays, gapDays, anchorDuration, allowHoliday && !shiftedWholeCycle,
+  );
 
   const cascade = cascadePushLaterCycles(rebuild.processes, blockId, cycleId, originalOrder, holidays, gapDays);
   if (cascade.blockedReason) {
@@ -942,17 +953,20 @@ export function extendMainProcess(
 }
 
 // 보조공정(+구간 공정 생성으로 만든 커스텀 공정)만 이동: 후속 재계산 없음. 목적지에
-// 다른 보조공정이 있으면 공존(병합) 허용. 다만 일·공휴일 규칙은 주요공정과 마찬가지로
-// 예외 없이 적용한다 — 어떤 경로로 옮기든 그 날짜에는 절대 놓일 수 없다.
+// 다른 보조공정이 있으면 공존(병합) 허용. 자동 호출(휴일 순연 등)은 일·공휴일 규칙을
+// 그대로 적용해 그 날짜를 피하지만, 사용자가 직접 드롭(allowHoliday)한 경우엔 놓은 날이
+// 휴일이어도 그 날에 그대로 둔다("직접 가져다 대는 건 휴일에 들어가도 됨").
 export function moveSubProcess(
   processes: ProcessInstance[],
   processId: string,
   newDate: ISODate,
   holidays: Holiday[] = [],
+  allowHoliday: boolean = false,
 ): { processes: ProcessInstance[]; date: ISODate; sundaySkipped: boolean } {
   const target = processes.find((p) => p.id === processId);
-  const sundaySkipped = !!target && dayOfWeek(newDate) === 0 && isBlockedForType(target.typeCode, newDate, holidays);
-  const finalDate = target ? nextWorkableDate(target.typeCode, newDate, holidays) : newDate;
+  const sundaySkipped =
+    !allowHoliday && !!target && dayOfWeek(newDate) === 0 && isBlockedForType(target.typeCode, newDate, holidays);
+  const finalDate = allowHoliday ? newDate : target ? nextWorkableDate(target.typeCode, newDate, holidays) : newDate;
   const updated = processes.map((p) => (p.id === processId ? { ...p, date: finalDate } : p));
   return { processes: withArrivals(updated, [processId]), date: finalDate, sundaySkipped };
 }
@@ -977,6 +991,9 @@ export function moveCustomProcess(
   newDate: ISODate,
   reason: string,
   holidays: Holiday[] = [],
+  // 사용자가 직접 드롭한 경우 true — 옮긴 공정을 놓은 날이 휴일이어도 그 날에 그대로 둔다.
+  // 자동으로 재배치되는 나머지 단계는 이 값과 무관하게 늘 휴일을 피한다.
+  allowHoliday: boolean = false,
 ): MoveResult {
   const moved = processes.find((p) => p.id === processId);
   if (!moved) return { processes, changeHistory };
@@ -1055,8 +1072,15 @@ export function moveCustomProcess(
 
   const newDates = new Map<string, ISODate>();
 
-  // 1) 옮긴 공정을 놓은 자리에(기준층만 피함).
-  const movedStart = firstFree(newDate, moved);
+  // 1) 옮긴 공정을 놓은 자리에(기준층만 피함). allowHoliday면 놓은 날이 휴일이어도 그 날에
+  //    그대로 둔다 — 겹침(기준층 주공정)만 피하되 휴일은 건너뛰지 않고 하루씩만 뒤로 민다.
+  const firstFreeAllowHoliday = (from: ISODate, p: ProcessInstance): ISODate => {
+    let d = from;
+    let guard = 0;
+    while (collides(d, p) && guard++ < 400) d = addDays(d, 1);
+    return d;
+  };
+  const movedStart = allowHoliday ? firstFreeAllowHoliday(newDate, moved) : firstFree(newDate, moved);
   newDates.set(moved.id, movedStart);
   placed.push(slotOf(movedStart, moved));
 
