@@ -75,6 +75,17 @@ function nextWorkableDate(typeCode: string, date: ISODate, holidays: Holiday[]):
   return d;
 }
 
+// 앞(과거)으로 가장 가까운 작업 가능일. 사이클을 앞당길 때 앵커(갱폼)가 휴일에 걸리면
+// nextWorkableDate처럼 뒤로 되밀면 앞당김이 상쇄되므로, 이때는 과거 방향으로 스냅한다.
+function prevWorkableDate(typeCode: string, date: ISODate, holidays: Holiday[]): ISODate {
+  let d = date;
+  let guard = 0;
+  while (isBlockedForType(typeCode, d, holidays) && guard++ < 400) {
+    d = addDays(d, -1);
+  }
+  return d;
+}
+
 function makeProcess(
   blockId: string,
   typeCode: string,
@@ -313,21 +324,8 @@ interface PreviewResult {
 export function previewMainMove(processes: ProcessInstance[], processId: string, newDate: ISODate): PreviewResult {
   const moved = processes.find((p) => p.id === processId);
   if (!moved) return { collisionCount: 0 };
-  const seqIndex = MAIN_SEQUENCE_CODES.indexOf(moved.typeCode);
-
-  if (seqIndex > 0) {
-    const prevCode = MAIN_SEQUENCE_CODES[seqIndex - 1];
-    const prevInCycle = processes.find(
-      (p) => p.cycleId === moved.cycleId && p.blockId === moved.blockId && p.typeCode === prevCode,
-    );
-    if (prevInCycle && newDate < prevInCycle.date) {
-      return {
-        blockedReason: `${PROCESS_TYPE_MAP[moved.typeCode].name}은(는) 선행 공정인 ${PROCESS_TYPE_MAP[prevCode].name}(${prevInCycle.date})보다 앞선 날짜로 이동할 수 없습니다.`,
-        collisionCount: 0,
-      };
-    }
-  }
-
+  // 후행 주공정을 선행 공정보다 앞으로 당기는 것도 이제 허용한다(사이클 전체가 함께 앞으로
+  // 당겨진다). 실제 처리·겹침 검사는 moveMainProcess가 한다.
   return { collisionCount: collidingProcesses(processes, { ...moved, date: newDate }, newDate).length };
 }
 
@@ -653,15 +651,29 @@ export function moveMainProcess(
   // 버린다. 오전/오후로 정확히 나뉘어 시간대가 안 겹치는 경우만 같은 날 공존을 허용하고,
   // 그 외(한쪽이 종일이거나 같은 반나절인 등)에는 선행 공정 바로 다음 작업 가능일로 밀어
   // 배치한다 — 사용자 규칙: "오전/오후 짝일 때만 겹치고, 그 외엔 밀려야 한다".
-  let targetDate = newDate;
-  let prevPush: { movedName: string; prevName: string } | null = null;
+  // 앵커 결정: 보통은 옮긴 공정 자신을 그 날짜에 놓고 뒤 단계만 재배치한다. 그런데 후행
+  // 공정을 "선행 공정 자리(또는 그 앞)"로 당기는 경우엔, 그만큼 선행 공정(갱폼 등)도 함께
+  // 앞으로 당겨져야 순서가 유지된다 → 첫 주공정(갱폼)을 앵커로 삼아 사이클 전체를 앞당긴다.
   const seqIdx = MAIN_SEQUENCE_CODES.indexOf(moved.typeCode);
+  const firstCode = MAIN_SEQUENCE_CODES[0];
+  let anchorCode = moved.typeCode;
+  let anchorId = processId;
+  let anchorDate = newDate;
+  let anchorDuration = moved.durationDays;
+  let shiftedWholeCycle = false;
+
   if (seqIdx > 0) {
     const prevCode = MAIN_SEQUENCE_CODES[seqIdx - 1];
     const prevInCycle = processes.find((p) => p.cycleId === cycleId && p.blockId === blockId && p.typeCode === prevCode);
-    if (prevInCycle && targetDate === prevInCycle.date && slotsOverlap(moved.timeSlot, prevInCycle.timeSlot)) {
-      targetDate = nextWorkableDate(moved.typeCode, addDays(prevInCycle.date, gapDays), holidays);
-      prevPush = { movedName: def.name, prevName: PROCESS_TYPE_MAP[prevCode].name };
+    const firstProc = processes.find((p) => p.cycleId === cycleId && p.blockId === blockId && p.typeCode === firstCode);
+    if (prevInCycle && firstProc && newDate <= prevInCycle.date) {
+      const offset = diffDays(moved.date, newDate); // newDate - moved.date (음수면 앞당김)
+      anchorCode = firstCode;
+      anchorId = firstProc.id;
+      // 앞당긴 갱폼이 휴일이면 과거 방향으로 스냅해야(그래야 앞당김이 상쇄되지 않는다).
+      anchorDate = prevWorkableDate(firstCode, addDays(firstProc.date, offset), holidays);
+      anchorDuration = firstProc.durationDays;
+      shiftedWholeCycle = true;
     }
   }
 
@@ -674,34 +686,37 @@ export function moveMainProcess(
     if (!cur || p.date < cur) originalOrder.set(p.cycleId, p.date);
   }
 
-  const rebuild = rebuildCycleFrom(processes, blockId, cycleId, moved.typeCode, processId, targetDate, holidays, gapDays, moved.durationDays);
+  const rebuild = rebuildCycleFrom(processes, blockId, cycleId, anchorCode, anchorId, anchorDate, holidays, gapDays, anchorDuration);
 
   const cascade = cascadePushLaterCycles(rebuild.processes, blockId, cycleId, originalOrder, holidays, gapDays);
   if (cascade.blockedReason) {
     return { processes, changeHistory, blockedReason: cascade.blockedReason }; // 통째로 되돌림
   }
 
-  const record: ChangeRecord = {
-    id: crypto.randomUUID(),
-    processId,
-    previousDate: oldDate,
-    newDate: rebuild.firstDate,
-    reason,
-  };
+  // 앞으로 당기다 이전 층(다른 사이클)과 겹치면 통째로 되돌리고 알린다(전체 앞당김일 때만 검사).
+  if (shiftedWholeCycle) {
+    const collisions = findMainCollisions(cascade.processes).filter((c) => c.blockId === blockId);
+    if (collisions.length > 0) {
+      const list = collisions.map((c) => `${c.date} ${c.labels.join('/')}`).join(', ');
+      return { processes, changeHistory, blockedReason: `이만큼 앞으로 당기면 다른 층 공정과 겹쳐서 옮길 수 없어요: ${list}` };
+    }
+  }
 
-  let nextProcesses = withArrivals(cascade.processes, [processId]);
+  // 옮긴 공정의 최종 위치. 전체 앞당김이면 앵커가 갱폼이라 옮긴 공정은 새 id로 재생성됐으므로
+  // typeCode로 다시 찾는다. (일반 이동은 id가 유지되어 그대로 찾힌다.)
+  const movedFinal = cascade.processes.find((p) => p.cycleId === cycleId && p.blockId === blockId && p.typeCode === moved.typeCode);
+  const finalMovedId = movedFinal?.id ?? processId;
+  const finalMovedDate = movedFinal?.date ?? rebuild.firstDate;
+
+  const record: ChangeRecord = { id: crypto.randomUUID(), processId: finalMovedId, previousDate: oldDate, newDate: finalMovedDate, reason };
+
+  let nextProcesses = withArrivals(cascade.processes, [finalMovedId]);
   nextProcesses = reindexCellOrders(nextProcesses, blockId, oldDate); // 떠난 셀 정리
-  nextProcesses = placeIntoCellAsFirst(nextProcesses, processId); // 새 셀에서 1번으로
+  nextProcesses = placeIntoCellAsFirst(nextProcesses, finalMovedId); // 새 셀에서 1번으로
 
-  // 선행 공정 자리(또는 그 앞)로 드롭해서 다음 작업일로 밀린 경우, 조용히 제자리로 보이면
-  // "왜 안 움직여?" 하고 헷갈리므로 이유를 알려준다.
   let notice: string | undefined;
   if (rebuild.sundaySkipped) notice = `일요일로는 옮길 수 없어 ${rebuild.firstDate}(으)로 자동 순연되었습니다.`;
-  else if (prevPush)
-    notice =
-      rebuild.firstDate === oldDate
-        ? `${prevPush.movedName}은(는) ${prevPush.prevName} 다음 순서라 더 앞으로는 못 가요 — 이미 ${prevPush.prevName} 바로 다음(${oldDate})에 있어요.`
-        : `${prevPush.movedName}은(는) ${prevPush.prevName} 다음 순서라 그 자리엔 못 놓고, 바로 다음 작업일(${rebuild.firstDate})에 배치했어요.`;
+  else if (shiftedWholeCycle) notice = `앞 순서 공정들도 함께 앞으로 당겨졌어요.`;
 
   return { processes: nextProcesses, changeHistory: [...changeHistory, record], notice };
 }
