@@ -972,14 +972,17 @@ export function moveCustomProcess(
 
   type Slot = { start: ISODate; end: ISODate; slot: ProcessInstance['timeSlot'] };
 
-  // 다른 사이클/다른 공사(같은 동)는 고정 장애물 — 옮긴 공정도, 밀리는 공정도 이건 피한다.
-  const nonCycle: Slot[] = processes
-    .filter((p) => p.blockId === blockId && p.cycleId !== moved.cycleId && PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub')
+  // 기준층 주공정(갱폼/철근/타설 등 정해진 타입)만 고정 장애물로 본다 — 구간공정 이동으로
+  // 기준층을 밀지는 않는다(기준층은 자체 도미노 엔진이 따로 있음).
+  const isBaseFloorMain = (p: ProcessInstance) =>
+    isKnownType(p.typeCode) && PROCESS_TYPE_MAP[p.typeCode]?.category === 'main';
+  const fixedObstacles: Slot[] = processes
+    .filter((p) => p.blockId === blockId && isBaseFloorMain(p))
     .map((p) => ({ start: p.date, end: endOf(p.date, p), slot: p.timeSlot }));
 
-  const placed: Slot[] = []; // 이번에 자리 확정한 같은-사이클 공정들(옮긴 공정 포함)
+  const placed: Slot[] = []; // 이번에 자리 확정한 구간공정들(옮긴 공정 포함)
   const collides = (start: ISODate, p: ProcessInstance) =>
-    [...nonCycle, ...placed].some(
+    [...fixedObstacles, ...placed].some(
       (o) => slotsOverlap(p.timeSlot, o.slot) && rangesOverlap(start, endOf(start, p), o.start, o.end),
     );
   const firstFree = (from: ISODate, p: ProcessInstance): ISODate => {
@@ -991,18 +994,16 @@ export function moveCustomProcess(
     return d;
   };
 
-  // 1) 옮긴 공정을 놓은 자리에(다른 사이클/공사만 피함 — 같은 사이클 공정은 밀어낸다).
+  // 1) 옮긴 공정을 놓은 자리에(기준층만 피함 — 다른 구간공정은 밀어낸다).
   const movedStart = firstFree(newDate, moved);
   const newDates = new Map<string, ISODate>([[moved.id, movedStart]]);
   placed.push({ start: movedStart, end: endOf(movedStart, moved), slot: moved.timeSlot });
 
-  // 2) 같은 사이클의 나머지 공정을 현재 날짜순으로 보면서, 옮긴 공정(또는 이미 밀린 공정)과
-  //    겹치면 그 뒤로 민다. 안 겹치면 원래 자리에 그대로 둔다(불필요하게 안 당김).
+  // 2) 같은 동의 "모든 구간공정"(다른 공사 포함)을 현재 날짜순으로 보면서, 옮긴 공정(또는
+  //    이미 밀린 공정)과 겹치면 그 뒤로 민다(연쇄). 안 겹치면 원래 자리에 그대로 둔다.
+  //    → 뒤에 다른 공사가 있으면 그 공사도 함께 밀리고, 아무것도 사라지지 않는다.
   const others = processes
-    .filter(
-      (p) =>
-        p.id !== processId && p.blockId === blockId && p.cycleId === moved.cycleId && PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub',
-    )
+    .filter((p) => p.id !== processId && p.blockId === blockId && !isBaseFloorMain(p) && PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub')
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   for (const o of others) {
     const start = firstFree(o.date, o);
@@ -1021,12 +1022,12 @@ export function moveCustomProcess(
       : [];
 
   const nextProcesses = withArrivals(updated, [...newDates.keys()]);
-  const pushedCount = others.filter((o) => newDates.get(o.id) !== o.date).length;
-  const requestedWorkable = nextWorkableDate(moved.typeCode, newDate, holidays);
+  const movedPushed = others.filter((o) => newDates.get(o.id) !== o.date);
+  const sameCyclePushed = movedPushed.filter((o) => o.cycleId === moved.cycleId).length;
+  const otherSectionPushed = movedPushed.filter((o) => o.cycleId !== moved.cycleId).length;
   const parts: string[] = [];
-  if (movedStart > requestedWorkable)
-    parts.push(`요청한 자리에 다른 공사가 있어 ${movedStart}(으)로 밀어 배치했어요.`);
-  if (pushedCount > 0) parts.push(`겹친 공정 ${pushedCount}개가 함께 밀렸어요.`);
+  if (sameCyclePushed > 0) parts.push(`뒤 공정 ${sameCyclePushed}개가 함께 밀렸어요.`);
+  if (otherSectionPushed > 0) parts.push(`뒤에 있던 다른 공사 공정 ${otherSectionPushed}개도 함께 밀렸어요.`);
   const notice = parts.length ? parts.join(' ') : undefined;
   return { processes: nextProcesses, changeHistory: [...changeHistory, ...records], notice };
 }
