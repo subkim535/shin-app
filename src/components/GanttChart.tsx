@@ -665,7 +665,7 @@ export default function GanttChart({
 
   // 다일 공정이 "지나가는" 날에 그리는 연속 바 — 시작 칩과 같은 색(연하게)에 이름을 달아
   // 그 날 무슨 공정이 진행 중인지 보이게 한다. 클릭하면 그 공정을 선택. 드래그는 시작 칩에서만.
-  function renderSpanBar(p: ProcessInstance, blockId: string, date: ISODate) {
+  function renderSpanBar(p: ProcessInstance) {
     const color = PROCESS_COLOR[p.typeCode] ?? (p.customLabel ? customProcessColor(p.customLabel) : FALLBACK_COLOR);
     const selected = p.id === selectedProcessId;
     return (
@@ -1023,19 +1023,19 @@ export default function GanttChart({
                     <div className="flex gap-0.5 items-start">
                       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                         {morningItems.map((x) => (
-                          <div key={x.p.id}>{x.span ? renderSpanBar(x.p, block.id, d) : renderChip(x.p, block.id, d)}</div>
+                          <div key={x.p.id}>{x.span ? renderSpanBar(x.p) : renderChip(x.p, block.id, d)}</div>
                         ))}
                       </div>
                       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                         {afternoonItems.map((x) => (
-                          <div key={x.p.id}>{x.span ? renderSpanBar(x.p, block.id, d) : renderChip(x.p, block.id, d)}</div>
+                          <div key={x.p.id}>{x.span ? renderSpanBar(x.p) : renderChip(x.p, block.id, d)}</div>
                         ))}
                       </div>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-0.5">
                       {cellItems.map((x) => (
-                        <div key={x.p.id}>{x.span ? renderSpanBar(x.p, block.id, d) : renderChip(x.p, block.id, d)}</div>
+                        <div key={x.p.id}>{x.span ? renderSpanBar(x.p) : renderChip(x.p, block.id, d)}</div>
                       ))}
                     </div>
                   )}
