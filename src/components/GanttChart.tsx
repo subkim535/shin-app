@@ -16,7 +16,16 @@ const HEADER_H = 48;
 const ROW_MAIN_H = 52;
 const ROW_SUB_H = 28;
 const ROW_NOTE_H = 36;
+const BAND_H = 22; // 동마다 공정 위에 붙는 "공사 구분 띠" 행 높이
 const FALLBACK_COLOR = { bg: 'bg-slate-300', text: 'text-slate-900' };
+// 공사 구분 띠 색 — 한 동 안에서 이어지는 공사끼리 색이 달라 보이게 순번대로 돌려 쓴다.
+const BAND_COLORS = [
+  'bg-blue-100 text-blue-800 border-blue-200',
+  'bg-emerald-100 text-emerald-800 border-emerald-200',
+  'bg-amber-100 text-amber-900 border-amber-200',
+  'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200',
+  'bg-cyan-100 text-cyan-800 border-cyan-200',
+];
 
 type RowType = 'main' | 'sub';
 
@@ -291,6 +300,46 @@ export default function GanttChart({
     return map;
   }, [processes, holidays]);
 
+  // 동마다 "공사 구간(cycle)" 목록 — 한 동에 여러 공사가 이어질 때 어느 공사의 어느 부분인지
+  // 알 수 있게, 각 공사의 이름(공사종류 + 층)과 기간(시작~끝날, 작업일·휴일 반영)을 뽑는다.
+  // 공사종류는 커스텀 코드 `CUSTOM_<종류>_<번호>_<이름>`에서 종류를, 기준층은 층수를 쓴다.
+  const sectionsByBlock = useMemo(() => {
+    const byBlockCycle = new Map<string, ProcessInstance[]>();
+    for (const p of processes) {
+      const k = `${p.blockId}__${p.cycleId}`;
+      if (!byBlockCycle.has(k)) byBlockCycle.set(k, []);
+      byBlockCycle.get(k)!.push(p);
+    }
+    const map = new Map<string, { cycleId: string; label: string; start: ISODate; end: ISODate }[]>();
+    for (const list of byBlockCycle.values()) {
+      const blockId = list[0].blockId;
+      let start = list[0].date;
+      let end = list[0].date;
+      let floor: string | undefined;
+      let category: string | undefined;
+      let isCustom = false;
+      for (const p of list) {
+        if (p.date < start) start = p.date;
+        const e = workableSpanEnd(p.typeCode, p.date, p.durationDays, holidays);
+        if (e > end) end = e;
+        if (p.floorLabel) floor = p.floorLabel;
+        if (p.customLabel) {
+          isCustom = true;
+          if (!category) {
+            const m = p.typeCode.match(/^CUSTOM_(.+?)_\d+_/);
+            if (m) category = m[1].replace(/_/g, ' ');
+          }
+        }
+      }
+      const name = category ?? (isCustom ? '구간공정' : '지상층');
+      const label = floor ? `${floor} ${name}` : name;
+      if (!map.has(blockId)) map.set(blockId, []);
+      map.get(blockId)!.push({ cycleId: list[0].cycleId, label, start, end });
+    }
+    for (const arr of map.values()) arr.sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
+    return map;
+  }, [processes, holidays]);
+
   // 프로세스별 전체 이동 이력을 발생 순서대로 모아둔다 (changeHistory는 append 순서라
   // 이 순서 자체가 시간순). 같은 공정이 여러 번 옮겨졌으면 전부 그리드에 표시한다.
   const movesByProcessId = useMemo(() => {
@@ -545,12 +594,12 @@ export default function GanttChart({
     const blockTop: number[] = [];
     let cursor = HEADER_H;
     for (let i = 0; i < blocks.length; i++) {
-      blockTop.push(cursor);
+      blockTop.push(cursor); // 동의 맨 위 = 공사 구분 띠 행의 top
       const mh = ROW_MAIN_H + Math.max(extra.get(`${i}_main`) ?? 0, mainContentExtra[i] ?? 0);
       const sh = ROW_SUB_H + Math.max(extra.get(`${i}_sub`) ?? 0, subContentExtra[i] ?? 0);
       mainH.push(mh);
       subH.push(sh);
-      cursor += mh + sh + ROW_NOTE_H;
+      cursor += BAND_H + mh + sh + ROW_NOTE_H;
     }
     return { mainH, subH, blockTop, totalHeight: cursor };
   }, [rawVisuals, blocks, dates, byBlockDateMain, byBlockDateSub]);
@@ -559,7 +608,8 @@ export default function GanttChart({
     // rawVisuals/rowMetrics는 같은 blocks 값에서 계산되지만, 다른 사용자가 동에서 실시간으로
     // 동을 추가/삭제하는 순간과 겹치면 한 렌더 동안 rowIndex가 잠깐 범위를 벗어날 수 있다.
     // 그 경우 NaN 스타일이 나가지 않도록 0으로 안전하게 대체한다(다음 렌더에서 바로 정상화된다).
-    const top = rowMetrics.blockTop[rowIndex] ?? 0;
+    // blockTop은 띠 행의 top이므로, 주공정/보조공정 행은 그 아래로 BAND_H만큼 내려간다.
+    const top = (rowMetrics.blockTop[rowIndex] ?? 0) + BAND_H;
     return top + (rowType === 'sub' ? (rowMetrics.mainH[rowIndex] ?? ROW_MAIN_H) : 0);
   }
 
@@ -593,7 +643,8 @@ export default function GanttChart({
 
   const totalWidth = HEADER_W + dates.length * CELL_W + REMARK_W;
   const totalHeight = rowMetrics.totalHeight;
-  const gridTemplateRows = `${HEADER_H}px ` + blocks.map((_, i) => `${rowMetrics.mainH[i]}px ${rowMetrics.subH[i]}px ${ROW_NOTE_H}px`).join(' ');
+  const gridTemplateRows =
+    `${HEADER_H}px ` + blocks.map((_, i) => `${BAND_H}px ${rowMetrics.mainH[i]}px ${rowMetrics.subH[i]}px ${ROW_NOTE_H}px`).join(' ');
 
   // 동/층 검색으로 특정 동을 찾으면 그 동 행이 세로로 화면에 보이게 스크롤한다.
   useEffect(() => {
@@ -934,7 +985,7 @@ export default function GanttChart({
                 isDragSource ? 'opacity-50' : '',
                 isHoverTarget ? 'ring-2 ring-inset ring-indigo-600' : '',
               ].join(' ')}
-              style={{ gridColumn: 1, gridRow: `${rowIndex * 3 + 2} / span 3` }}
+              style={{ gridColumn: 1, gridRow: `${rowIndex * 4 + 2} / span 4` }}
             >
               <span>{block.name}</span>
               {block.info && <span className="text-[10px] text-zinc-400 font-normal">{block.info}</span>}
@@ -947,7 +998,7 @@ export default function GanttChart({
           <div
             key={`remark-${block.id}`}
             className="sticky right-0 z-10 bg-zinc-50 border-b-2 border-l border-zinc-200 border-b-zinc-900 px-1 py-1"
-            style={{ gridColumn: dates.length + 2, gridRow: `${rowIndex * 3 + 2} / span 3` }}
+            style={{ gridColumn: dates.length + 2, gridRow: `${rowIndex * 4 + 2} / span 4` }}
           >
             <textarea
               value={block.remark ?? ''}
@@ -958,6 +1009,46 @@ export default function GanttChart({
             />
           </div>
         ))}
+
+        {/* 공사 구분 띠: 동마다 공정 위 한 줄에, 이어지는 공사들을 이름·기간 구간으로 표시 */}
+        {blocks.map((block, rowIndex) => {
+          const bandRow = rowIndex * 4 + 2;
+          const sections = sectionsByBlock.get(block.id) ?? [];
+          const first = dates[0];
+          const last = dates[dates.length - 1];
+          return (
+            <div key={`band-${block.id}`} style={{ display: 'contents' }}>
+              <div
+                className="border-b border-l border-zinc-200 bg-zinc-50"
+                style={{ gridColumn: `2 / ${dates.length + 2}`, gridRow: bandRow }}
+              />
+              {sections.map((sec, si) => {
+                if (sec.end < first || sec.start > last) return null; // 보이는 주간 밖이면 skip
+                const s = sec.start < first ? first : sec.start;
+                const e = sec.end > last ? last : sec.end;
+                const startCol = dateIndex.get(s);
+                const endCol = dateIndex.get(e);
+                if (startCol === undefined || endCol === undefined) return null;
+                return (
+                  <div
+                    key={sec.cycleId}
+                    title={`${sec.label} · ${sec.start} ~ ${sec.end}`}
+                    className={[
+                      'flex items-center gap-1 overflow-hidden whitespace-nowrap rounded-sm border px-1.5 my-[1px] text-[11px] font-semibold leading-none',
+                      BAND_COLORS[si % BAND_COLORS.length],
+                    ].join(' ')}
+                    style={{ gridColumn: `${startCol + 2} / ${endCol + 3}`, gridRow: bandRow, zIndex: 6 }}
+                  >
+                    <span className="truncate">{sec.label}</span>
+                    <span className="font-normal opacity-70 shrink-0">
+                      {sec.start.slice(5)}~{sec.end.slice(5)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
 
         {/* 본문: 동마다 주요공정 / 보조공정 / 특이사항 3행 */}
         {blocks.map((block, rowIndex) =>
@@ -1005,7 +1096,7 @@ export default function GanttChart({
             const isToday = d === today;
             const isMainHover = dragging?.type === 'process' && dragging.rowType === 'main' && hoverCell?.blockId === block.id && hoverCell?.date === d;
             const isSubHover = dragging?.type === 'process' && dragging.rowType === 'sub' && hoverCell?.blockId === block.id && hoverCell?.date === d;
-            const baseRow = rowIndex * 3 + 2;
+            const baseRow = rowIndex * 4 + 3;
             const cellShade = holiday ? 'bg-red-50' : isToday ? 'bg-indigo-50' : 'bg-white';
             return (
               <div key={mainKey} style={{ display: 'contents' }}>
