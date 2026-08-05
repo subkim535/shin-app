@@ -86,6 +86,18 @@ function prevWorkableDate(typeCode: string, date: ISODate, holidays: Holiday[]):
   return d;
 }
 
+// 일수(durationDays)는 "작업일" 기준으로 센다 — start(작업일 가정)부터 durationDays 만큼의
+// 작업일을 차지할 때 마지막 작업일의 날짜를 돌려준다. 사이에 낀 휴일은 일수에서 빼고 그만큼
+// 뒤로 늘린다(예: 2일인데 하루가 휴일이면 그 다음 작업일까지). 그래서 다음 공정도 그만큼 밀린다.
+export function workableSpanEnd(typeCode: string, start: ISODate, durationDays: number | undefined, holidays: Holiday[]): ISODate {
+  const span = Math.max(1, Math.floor(durationDays || 1));
+  let d = start;
+  for (let i = 1; i < span; i++) {
+    d = nextWorkableDate(typeCode, addDays(d, 1), holidays);
+  }
+  return d;
+}
+
 function makeProcess(
   blockId: string,
   typeCode: string,
@@ -227,11 +239,10 @@ export function firstFreeDateForCustom(
       if (p.id === excludeId || p.blockId !== blockId) return false;
       if (PROCESS_TYPE_MAP[p.typeCode]?.category === 'sub') return false;
       if (!slotsOverlap(timeSlot, p.timeSlot)) return false;
-      // 여러 날짜짜리 공정(durationDays)은 시작일 하루만이 아니라 그 일수만큼을 모두
-      // 점유한 것으로 본다 — 예: 4일짜리 공정이면 시작일부터 4일간을 막고, 새 공정은
-      // 그 다음날부터 놓이게 한다. (ISO 날짜 문자열은 사전식 비교로 대소가 맞다.)
-      const span = Math.max(1, Math.floor(p.durationDays || 1));
-      const endDate = addDays(p.date, span - 1);
+      // 여러 날짜짜리 공정(durationDays)은 그 "작업일" 수만큼을 모두 점유한 것으로 본다 —
+      // 사이에 낀 휴일은 일수에서 빼고 그만큼 뒤로 늘려서(2일인데 하루가 휴일이면 그 다음
+      // 작업일까지) 계산한다. 새 공정은 그 기간 다음부터 놓인다.
+      const endDate = workableSpanEnd(p.typeCode, p.date, p.durationDays, holidays);
       return date >= p.date && date <= endDate;
     });
   let d = nextWorkableDate(code, fromDate, holidays);
@@ -264,7 +275,8 @@ export function generateFromTemplate(
       floorLabel: opts.floorLabel || undefined,
     });
     result.push(main);
-    cursor = addDays(cursor, span);
+    // 일수는 작업일 기준 — 그 작업일 기간의 끝 다음날부터 다음 단계를 놓는다(휴일은 일수에서 뺌).
+    cursor = addDays(workableSpanEnd(step.code, cursor, span, holidays), 1);
   }
   return result;
 }
@@ -494,12 +506,14 @@ function rebuildCycleFrom(
       const cur = originalByCode.get(code);
       const next = originalByCode.get(nextCode);
       if (cur && next) {
-        const naturalNext = nextWorkableDate(nextCode, addDays(cur.date, cur.durationDays - 1 + gapDays), holidays);
+        // 일수는 작업일 기준 — 이 공정의 작업일 기간 끝 다음 간격에 오는 자연스러운 날짜.
+        const naturalNext = nextWorkableDate(nextCode, addDays(workableSpanEnd(code, cur.date, cur.durationDays, holidays), gapDays), holidays);
         const excess = diffDays(naturalNext, next.date);
         if (Number.isFinite(excess) && excess > 0) extraDays = excess;
       }
     }
-    cursor = addDays(date, span - 1 + gapDays + extraDays);
+    // 일수는 작업일 기준으로 점유(휴일은 빼고 뒤로 늘림) → 그 끝에서 간격만큼 뒤가 다음 커서.
+    cursor = addDays(workableSpanEnd(code, date, span, holidays), gapDays + extraDays);
   });
 
   return { processes: [...kept, ...rebuilt], firstDate, sundaySkipped };
@@ -952,8 +966,8 @@ export function moveCustomProcess(
   if (!moved) return { processes, changeHistory };
   const blockId = moved.blockId;
 
-  const spanOf = (p: ProcessInstance) => Math.max(1, Math.floor(p.durationDays || 1));
-  const endOf = (start: ISODate, p: ProcessInstance) => addDays(start, spanOf(p) - 1);
+  // 일수는 작업일 기준 — 중간에 낀 휴일은 빼고 그만큼 뒤로 늘려 점유 끝날을 잡는다.
+  const endOf = (start: ISODate, p: ProcessInstance) => workableSpanEnd(p.typeCode, start, p.durationDays, holidays);
   const rangesOverlap = (s1: ISODate, e1: ISODate, s2: ISODate, e2: ISODate) => s1 <= e2 && s2 <= e1;
 
   type Slot = { start: ISODate; end: ISODate; slot: ProcessInstance['timeSlot'] };

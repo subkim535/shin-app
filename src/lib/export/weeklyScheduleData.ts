@@ -1,6 +1,6 @@
 import { addDays, dayOfWeek, ISODate } from '@/lib/domain/dateUtils';
 import { PROCESS_TYPE_MAP, customProcessArgb } from '@/lib/domain/processTypes';
-import { processLabel } from '@/lib/domain/schedule';
+import { processLabel, workableSpanEnd } from '@/lib/domain/schedule';
 import { Block, Holiday, ProcessInstance } from '@/lib/domain/types';
 
 // 색칠 팔레트 — 엑셀(ARGB)과 인쇄용 HTML(CSS hex)이 같은 값을 공유한다.
@@ -131,7 +131,8 @@ export function buildWeeklyScheduleData(params: WeeklyScheduleParams): WeeklySch
       // 그 기간 안에 든 날. 라벨은 시작일에만 두고, 연장일에는 색만 이어 칠한다.
       const spanning = blockProcesses.filter((p) => {
         const dur = Math.max(1, Math.floor(p.durationDays || 1));
-        return dur > 1 && p.date < d && d <= addDays(p.date, dur - 1);
+        // 일수는 작업일 기준 — 중간에 낀 휴일은 빼고 그만큼 뒤로 늘려 색칠 범위를 잡는다.
+        return dur > 1 && p.date < d && d <= workableSpanEnd(p.typeCode, p.date, dur, holidays);
       });
       const morning = startingHere.filter((p) => p.timeSlot === 'morning');
       const afternoon = startingHere.filter((p) => p.timeSlot === 'afternoon');
