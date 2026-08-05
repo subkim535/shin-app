@@ -322,6 +322,9 @@ export interface MoveResult {
   changeHistory: ChangeRecord[];
   blockedReason?: string;
   notice?: string; // 막힌 건 아니지만 사용자에게 알려주면 좋은 정보성 메시지 (예: 일요일이라 자동 순연됨)
+  // 이 이동으로 "다른 공사(다른 구간공정)"가 함께 밀리게 되는 경우, 그 공정 이름 목록.
+  // 비어있지 않으면 실제 반영 전에 사용자에게 "다른 공사도 밀립니다" 경고 후 확인받는다.
+  pushedOtherSections?: string[];
 }
 
 interface PreviewResult {
@@ -1103,12 +1106,32 @@ export function moveCustomProcess(
 
   const nextProcesses = withArrivals(updated, [...newDates.keys()]);
   const cyclePushed = cycle.filter((s) => s.id !== moved.id && newDates.get(s.id) !== s.date).length;
-  const otherSectionPushed = others.filter((o) => newDates.get(o.id) !== o.date).length;
+
+  // "다른 공사"(다른 cycle) 영향 감지 — 반영 전에 사용자에게 경고할 대상:
+  //  (a) 내가 밀어낸 다른 구간공정, (b) 옮긴 공정이 새 자리에서 겹치게 되는 다른 cycle 공정
+  //      (기준층 타설/먹메김/미장 등 보조공정 포함 — 기준층 주공정은 애초에 안 겹치게 피해서 놓임).
+  // 같은 구간(cycle)끼리의 이동은 여기 포함하지 않는다(그건 순서대로 알아서 재배치되는 정상 동작).
+  const movedEnd = endOf(movedStart, moved);
+  const affectedOther = processes.filter((p) => {
+    if (p.blockId !== blockId || p.cycleId === moved.cycleId || p.id === moved.id) return false;
+    const wasPushed = newDates.has(p.id) && newDates.get(p.id) !== p.date;
+    if (wasPushed) return true;
+    const pd = newDates.get(p.id) ?? p.date;
+    return slotsOverlap(moved.timeSlot, p.timeSlot) && rangesOverlap(movedStart, movedEnd, pd, endOf(pd, p));
+  });
+  const pushedOtherSections = [...new Set(affectedOther.map((p) => processLabel(p)))];
+
+  const pushedCustomCount = others.filter((o) => newDates.get(o.id) !== o.date).length;
   const parts: string[] = [];
   if (cyclePushed > 0) parts.push(`같은 구간 ${cyclePushed}개 단계가 순서에 맞춰 함께 이동했어요.`);
-  if (otherSectionPushed > 0) parts.push(`뒤에 있던 다른 공사 공정 ${otherSectionPushed}개도 함께 밀렸어요.`);
+  if (pushedCustomCount > 0) parts.push(`뒤에 있던 다른 공사 공정 ${pushedCustomCount}개도 함께 밀렸어요.`);
   const notice = parts.length ? parts.join(' ') : undefined;
-  return { processes: nextProcesses, changeHistory: [...changeHistory, ...records], notice };
+  return {
+    processes: nextProcesses,
+    changeHistory: [...changeHistory, ...records],
+    notice,
+    pushedOtherSections: pushedOtherSections.length ? pushedOtherSections : undefined,
+  };
 }
 
 /**

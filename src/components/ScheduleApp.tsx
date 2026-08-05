@@ -35,6 +35,7 @@ import {
   shiftAllFrom,
   swapCellOrder,
 } from '@/lib/domain/schedule';
+import type { MoveResult } from '@/lib/domain/schedule';
 import {
   AppState,
   Block,
@@ -453,8 +454,10 @@ export default function ScheduleApp() {
   const [postponePrompt, setPostponePrompt] = useState<{ date: ISODate; days: string } | null>(null);
 
   const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null);
-  const [dropStage, setDropStage] = useState<'idle' | 'threeplus-picker' | 'reason'>('idle');
+  const [dropStage, setDropStage] = useState<'idle' | 'threeplus-picker' | 'reason' | 'othermove-confirm'>('idle');
   const [reasonInput, setReasonInput] = useState('');
+  // 구간공정 이동이 "다른 공사"까지 밀 때, 실제 반영 전에 확인받기 위해 계산해둔 결과를 잠시 보관.
+  const [pendingCustomMove, setPendingCustomMove] = useState<MoveResult | null>(null);
 
   const [pendingHeaderShift, setPendingHeaderShift] = useState<PendingHeaderShift | null>(null);
   const [headerShiftStage, setHeaderShiftStage] = useState<'idle' | 'confirm' | 'reason'>('idle');
@@ -673,6 +676,7 @@ export default function ScheduleApp() {
     setPendingDrop(null);
     setDropStage('idle');
     setReasonInput('');
+    setPendingCustomMove(null);
   }
 
   // 다른 동으로 드래그했을 때, 그 공정이 자기 사이클의 첫 주요공정이면 이동이 아니라
@@ -1008,6 +1012,12 @@ export default function ScheduleApp() {
       }
     } else if (pendingDrop.kind === 'custom') {
       const result = moveCustomProcess(processes, changeHistory, pendingDrop.processId, pendingDrop.date, reason, holidays);
+      // 다른 공사(다른 구간공정)까지 밀리면 바로 반영하지 않고, 먼저 경고 후 확인받는다.
+      if (result.pushedOtherSections && result.pushedOtherSections.length > 0) {
+        setPendingCustomMove(result);
+        setDropStage('othermove-confirm');
+        return;
+      }
       setProcesses(recomputeConflicts(result.processes));
       setChangeHistory(result.changeHistory);
       if (result.notice) setWarning(result.notice);
@@ -1025,6 +1035,15 @@ export default function ScheduleApp() {
         setWarning(`일요일로는 옮길 수 없어 ${result.date}(으)로 자동 순연되었습니다.`);
       }
     }
+    resetDropFlow();
+  }
+
+  // "othermove-confirm" 단계에서 "예"를 누르면, 계산해둔 결과(다른 공사 밀림 포함)를 실제로 반영한다.
+  function confirmOtherMove() {
+    if (!pendingCustomMove) return;
+    setProcesses(recomputeConflicts(pendingCustomMove.processes));
+    setChangeHistory(pendingCustomMove.changeHistory);
+    if (pendingCustomMove.notice) setWarning(pendingCustomMove.notice);
     resetDropFlow();
   }
 
@@ -1440,6 +1459,29 @@ export default function ScheduleApp() {
             </button>
             <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={() => confirmReason()} data-testid="confirm-move">
               확인
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {dropStage === 'othermove-confirm' && pendingCustomMove && (
+        <Modal>
+          <p className="text-sm font-medium">옮기려는 자리에 다른 공사가 있습니다.</p>
+          <p className="text-sm text-zinc-600">
+            그대로 진행하면 겹치거나 함께 밀리는 다른 공사 공정:{' '}
+            <strong>{pendingCustomMove.pushedOtherSections?.join(', ')}</strong>
+          </p>
+          <p className="text-sm text-zinc-600">그대로 진행할까요?</p>
+          <div className="flex justify-end gap-2 text-sm">
+            <button className="px-3 py-1 rounded border border-zinc-300" onClick={resetDropFlow} data-testid="othermove-cancel">
+              아니오 (취소)
+            </button>
+            <button
+              className="px-3 py-1 rounded bg-indigo-600 text-white"
+              onClick={confirmOtherMove}
+              data-testid="othermove-confirm"
+            >
+              예 (다른 공사도 밀기)
             </button>
           </div>
         </Modal>
