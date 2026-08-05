@@ -297,9 +297,10 @@ export default function TemplateGenModal({
               customTemplateNames.map((c) => (
                 <div key={c} className="flex items-center gap-1">
                   <button
-                    className={`flex-1 text-left text-sm px-2 py-1.5 rounded truncate ${
-                      c === category ? 'bg-indigo-600 text-white' : 'hover:bg-zinc-100'
+                    className={`flex-1 min-w-0 text-left text-sm px-2 py-1.5 rounded ${
+                      c === category ? 'bg-indigo-600 text-white whitespace-normal break-words' : 'hover:bg-zinc-100 truncate'
                     }`}
+                    title={c}
                     onClick={() => setCategory(c)}
                   >
                     {c}

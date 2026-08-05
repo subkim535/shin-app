@@ -654,12 +654,14 @@ export function moveMainProcess(
   // 그 외(한쪽이 종일이거나 같은 반나절인 등)에는 선행 공정 바로 다음 작업 가능일로 밀어
   // 배치한다 — 사용자 규칙: "오전/오후 짝일 때만 겹치고, 그 외엔 밀려야 한다".
   let targetDate = newDate;
+  let prevPush: { movedName: string; prevName: string } | null = null;
   const seqIdx = MAIN_SEQUENCE_CODES.indexOf(moved.typeCode);
   if (seqIdx > 0) {
     const prevCode = MAIN_SEQUENCE_CODES[seqIdx - 1];
     const prevInCycle = processes.find((p) => p.cycleId === cycleId && p.blockId === blockId && p.typeCode === prevCode);
     if (prevInCycle && targetDate === prevInCycle.date && slotsOverlap(moved.timeSlot, prevInCycle.timeSlot)) {
       targetDate = nextWorkableDate(moved.typeCode, addDays(prevInCycle.date, gapDays), holidays);
+      prevPush = { movedName: def.name, prevName: PROCESS_TYPE_MAP[prevCode].name };
     }
   }
 
@@ -690,13 +692,18 @@ export function moveMainProcess(
   let nextProcesses = withArrivals(cascade.processes, [processId]);
   nextProcesses = reindexCellOrders(nextProcesses, blockId, oldDate); // 떠난 셀 정리
   nextProcesses = placeIntoCellAsFirst(nextProcesses, processId); // 새 셀에서 1번으로
-  return {
-    processes: nextProcesses,
-    changeHistory: [...changeHistory, record],
-    notice: rebuild.sundaySkipped
-      ? `일요일로는 옮길 수 없어 ${rebuild.firstDate}(으)로 자동 순연되었습니다.`
-      : undefined,
-  };
+
+  // 선행 공정 자리(또는 그 앞)로 드롭해서 다음 작업일로 밀린 경우, 조용히 제자리로 보이면
+  // "왜 안 움직여?" 하고 헷갈리므로 이유를 알려준다.
+  let notice: string | undefined;
+  if (rebuild.sundaySkipped) notice = `일요일로는 옮길 수 없어 ${rebuild.firstDate}(으)로 자동 순연되었습니다.`;
+  else if (prevPush)
+    notice =
+      rebuild.firstDate === oldDate
+        ? `${prevPush.movedName}은(는) ${prevPush.prevName} 다음 순서라 더 앞으로는 못 가요 — 이미 ${prevPush.prevName} 바로 다음(${oldDate})에 있어요.`
+        : `${prevPush.movedName}은(는) ${prevPush.prevName} 다음 순서라 그 자리엔 못 놓고, 바로 다음 작업일(${rebuild.firstDate})에 배치했어요.`;
+
+  return { processes: nextProcesses, changeHistory: [...changeHistory, record], notice };
 }
 
 // 작업이 하루 안에 안 끝나 다음날로 넘어갈 때 쓰는 최대 연장 일수. 그 이상은 실제로는
