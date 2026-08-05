@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { datesInRange, dayOfWeek, diffDays, formatMonthDay, ISODate, todayISO, weekdayLabelKo } from '@/lib/domain/dateUtils';
+import { addDays, datesInRange, dayOfWeek, diffDays, formatMonthDay, ISODate, todayISO, weekdayLabelKo } from '@/lib/domain/dateUtils';
 import { PROCESS_COLOR, PROCESS_TYPE_MAP, customProcessColor } from '@/lib/domain/processTypes';
-import { isWorkersDay, processLabel } from '@/lib/domain/schedule';
+import { isBlockedForType, isWorkersDay, processLabel, workableSpanEnd } from '@/lib/domain/schedule';
 import { Block, ChangeRecord, Holiday, ProcessInstance } from '@/lib/domain/types';
 
 const HEADER_W = 96;
@@ -265,6 +265,31 @@ export default function GanttChart({
     }
     return map;
   }, [processes]);
+
+  // 다일 공정(일수>1)이 "지나가는" 날짜들 — 시작일 다음날부터 작업일 기준 끝날까지, 실제로
+  // 일하는 작업일에만 표시(휴일은 빼서 그 날은 안 그림). 시작 셀에는 원래 칩이 있으니 제외.
+  // 이걸로 시작일만 칩이 있고 나머지는 흰칸이라 "뭐하는 날인지 모르던" 것을 색바로 이어 보여준다.
+  const spanByBlockDate = useMemo(() => {
+    const map = new Map<string, ProcessInstance[]>();
+    for (const p of processes) {
+      const category = PROCESS_TYPE_MAP[p.typeCode]?.category ?? 'main';
+      if (category !== 'main') continue;
+      const dur = Math.max(1, Math.floor(p.durationDays || 1));
+      if (dur <= 1) continue;
+      const end = workableSpanEnd(p.typeCode, p.date, dur, holidays);
+      let cur = addDays(p.date, 1);
+      let guard = 0;
+      while (cur <= end && guard++ < 400) {
+        if (!isBlockedForType(p.typeCode, cur, holidays)) {
+          const key = `${p.blockId}__${cur}`;
+          if (!map.has(key)) map.set(key, []);
+          map.get(key)!.push(p);
+        }
+        cur = addDays(cur, 1);
+      }
+    }
+    return map;
+  }, [processes, holidays]);
 
   // 프로세스별 전체 이동 이력을 발생 순서대로 모아둔다 (changeHistory는 append 순서라
   // 이 순서 자체가 시간순). 같은 공정이 여러 번 옮겨졌으면 전부 그리드에 표시한다.
@@ -638,6 +663,31 @@ export default function GanttChart({
     );
   }
 
+  // 다일 공정이 "지나가는" 날에 그리는 연속 바 — 시작 칩과 같은 색(연하게)에 이름을 달아
+  // 그 날 무슨 공정이 진행 중인지 보이게 한다. 클릭하면 그 공정을 선택. 드래그는 시작 칩에서만.
+  function renderSpanBar(p: ProcessInstance, blockId: string, date: ISODate) {
+    const color = PROCESS_COLOR[p.typeCode] ?? (p.customLabel ? customProcessColor(p.customLabel) : FALLBACK_COLOR);
+    const selected = p.id === selectedProcessId;
+    return (
+      <button
+        key={p.id}
+        type="button"
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          onSelectProcess(p.id);
+        }}
+        title={`${processLabel(p)} · ${p.durationDays}일 공정 진행 중`}
+        className={[
+          'w-full text-left rounded px-1.5 py-0.5 text-[11px] leading-tight truncate opacity-60',
+          `${color.bg} ${color.text}`,
+          selected ? 'ring-2 ring-indigo-600 opacity-90' : '',
+        ].join(' ')}
+      >
+        ↔ {processLabel(p)}
+      </button>
+    );
+  }
+
   // 이제 이 함수는 주공정 칩 전용이다 — 보조공정은 renderSubBadge가 전담한다.
   function renderChip(p: ProcessInstance, blockId: string, date: ISODate) {
     const def = PROCESS_TYPE_MAP[p.typeCode];
@@ -930,13 +980,27 @@ export default function GanttChart({
                 orphanSubProcs.push(s);
               }
             }
-            // 오전/오후로 정확히 나뉜 주공정 2개가 같은 셀에 있을 때만 칩을 반씩 나눠 옆으로
-            // 붙인다 — 그 외(3개 이상 겹침, 종일끼리 겹침 등)는 기존처럼 위아래로 쌓는다.
+            // 이 셀에 그릴 항목 = 시작하는 주공정(칩) + 지나가는 다일공정(연속 바).
+            const spanProcs = spanByBlockDate.get(mainKey) ?? [];
+            const cellItems = [
+              ...mainProcs.map((p) => ({ p, span: false })),
+              ...spanProcs.map((p) => ({ p, span: true })),
+            ];
+            const slotRank = (p: ProcessInstance) => (p.timeSlot === 'morning' ? 0 : p.timeSlot === 'afternoon' ? 1 : 2);
+            // 오전 항목과 오후 항목이 둘 다 있고 "종일" 항목이 없으면 좌(오전)/우(오후)로 반씩
+            // 나눠 공존시킨다 — 이렇게 하면 오전 1일 공정과 오후 다일 공정이 같은 날 겹쳐도
+            // 나란히 보인다(사용자 요청: 반나절+반대 반나절은 겹쳐질 수 있음).
+            const morningItems = cellItems.filter((x) => x.p.timeSlot === 'morning');
+            const afternoonItems = cellItems.filter((x) => x.p.timeSlot === 'afternoon');
+            const wholeItems = cellItems.filter((x) => x.p.timeSlot !== 'morning' && x.p.timeSlot !== 'afternoon');
+            const halfSplit = morningItems.length > 0 && afternoonItems.length > 0 && wholeItems.length === 0;
+            // 보조공정 행을 주공정과 맞춰 정렬하기 위한 순서(오전 먼저)와 반분할 여부.
+            const orderedMainProcs = [...mainProcs].sort((a, b) => slotRank(a) - slotRank(b) || (a.cellOrder ?? 0) - (b.cellOrder ?? 0));
             const isHalfDaySplit =
-              mainProcs.length === 2 &&
-              (mainProcs[0].timeSlot === 'morning' || mainProcs[0].timeSlot === 'afternoon') &&
-              (mainProcs[1].timeSlot === 'morning' || mainProcs[1].timeSlot === 'afternoon') &&
-              mainProcs[0].timeSlot !== mainProcs[1].timeSlot;
+              orderedMainProcs.length === 2 &&
+              (orderedMainProcs[0].timeSlot === 'morning' || orderedMainProcs[0].timeSlot === 'afternoon') &&
+              (orderedMainProcs[1].timeSlot === 'morning' || orderedMainProcs[1].timeSlot === 'afternoon') &&
+              orderedMainProcs[0].timeSlot !== orderedMainProcs[1].timeSlot;
             const holiday = isHoliday(d, holidays);
             const isToday = d === today;
             const isMainHover = dragging?.type === 'process' && dragging.rowType === 'main' && hoverCell?.blockId === block.id && hoverCell?.date === d;
@@ -953,13 +1017,28 @@ export default function GanttChart({
                   className={['border-b border-l border-zinc-200 overflow-y-auto overflow-x-hidden px-1 py-0.5', cellShade, isMainHover ? 'ring-2 ring-inset ring-indigo-600' : ''].join(' ')}
                   style={{ gridColumn: colIndex + 2, gridRow: baseRow }}
                 >
-                  <div className={isHalfDaySplit ? 'flex gap-0.5 items-start' : 'flex flex-col gap-0.5'}>
-                    {mainProcs.map((p) => (
-                      <div key={p.id} className={isHalfDaySplit ? 'flex-1 min-w-0' : ''}>
-                        {renderChip(p, block.id, d)}
+                  {halfSplit ? (
+                    // 오전(왼쪽)/오후(오른쪽)로 나눠 배치 — 시작 칩과 지나가는 다일공정 바가
+                    // 반대 반나절이면 같은 날 나란히 공존한다.
+                    <div className="flex gap-0.5 items-start">
+                      <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                        {morningItems.map((x) => (
+                          <div key={x.p.id}>{x.span ? renderSpanBar(x.p, block.id, d) : renderChip(x.p, block.id, d)}</div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                      <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                        {afternoonItems.map((x) => (
+                          <div key={x.p.id}>{x.span ? renderSpanBar(x.p, block.id, d) : renderChip(x.p, block.id, d)}</div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-0.5">
+                      {cellItems.map((x) => (
+                        <div key={x.p.id}>{x.span ? renderSpanBar(x.p, block.id, d) : renderChip(x.p, block.id, d)}</div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div
                   data-block={block.name}
@@ -973,7 +1052,7 @@ export default function GanttChart({
                     // 위 주공정 칸이 오전/오후로 반씩 나뉘어 있으면, 보조공정도 각자의
                     // 주공정 바로 아래(같은 절반 폭)에 오도록 똑같이 반으로 나눠 배치한다.
                     <div className="flex gap-0.5 items-start h-full">
-                      {mainProcs.map((p) => (
+                      {orderedMainProcs.map((p) => (
                         <div key={p.id} className="flex-1 min-w-0 flex flex-wrap gap-0.5 content-start">
                           {(attachedSubsByMain.get(p.id) ?? []).map((s) => renderSubBadge(s, block.id, d))}
                         </div>
