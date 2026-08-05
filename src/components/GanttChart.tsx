@@ -316,22 +316,34 @@ export default function GanttChart({
       let start = list[0].date;
       let end = list[0].date;
       let floor: string | undefined;
-      let category: string | undefined;
-      let isCustom = false;
       for (const p of list) {
         if (p.date < start) start = p.date;
         const e = workableSpanEnd(p.typeCode, p.date, p.durationDays, holidays);
         if (e > end) end = e;
         if (p.floorLabel) floor = p.floorLabel;
-        if (p.customLabel) {
-          isCustom = true;
-          if (!category) {
-            const m = p.typeCode.match(/^CUSTOM_(.+?)_\d+_/);
-            if (m) category = m[1].replace(/_/g, ' ');
-          }
-        }
       }
-      const name = category ?? (isCustom ? '구간공정' : '지상층');
+      // 공사종류(카테고리)는 같은 구간 단계들의 공통 접두어에서 뽑는다 — 코드가
+      // `CUSTOM_<종류>_<번호>_<이름>`이고 <종류>에 "기초공사 1"처럼 공백→_이 섞여 있어도
+      // (그 "_1"을 번호로 착각하지 않게) 여러 단계가 공유하는 접두어 `CUSTOM_<종류>_`로 정확히
+      // 잘라낸다. 번호는 항상 0부터라 단계마다 갈라져서 접두어가 번호를 먹지 않는다.
+      const customCodes = list.filter((p) => p.customLabel).map((p) => p.typeCode);
+      let category: string | undefined;
+      if (customCodes.length > 0) {
+        let pre = customCodes[0];
+        for (const c of customCodes) {
+          while (!c.startsWith(pre)) pre = pre.slice(0, -1);
+          if (!pre) break;
+        }
+        let cat = pre.replace(/^CUSTOM_/, '').replace(/_+$/, '');
+        if (customCodes.length === 1) {
+          // 단일 단계면 접두어가 번호·이름까지 포함하므로 정규식으로 최선 파싱.
+          const m = customCodes[0].match(/^CUSTOM_(.+?)_\d+_/);
+          if (m) cat = m[1];
+        }
+        category = cat.replace(/_/g, ' ').trim();
+      }
+      const isCustom = customCodes.length > 0;
+      const name = category || (isCustom ? '구간공정' : '지상층');
       const label = floor ? `${floor} ${name}` : name;
       if (!map.has(blockId)) map.set(blockId, []);
       map.get(blockId)!.push({ cycleId: list[0].cycleId, label, start, end });
