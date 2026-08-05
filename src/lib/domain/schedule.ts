@@ -184,37 +184,6 @@ function nextFloorLabel(floor: string): string {
 }
 
 /**
- * 기준층은 한 번 만들고 끝나는 게 아니라 층이 계속 반복되므로, 지정한 횟수(층 수)만큼
- * 시작 층부터 한 층씩 자동으로 올려가며 연속 생성한다. 각 사이클은 이전 사이클의 마지막
- * 공정 다음 날부터 시작한다.
- */
-export function generateRepeatingBaseFloor(
-  blockId: string,
-  startFloor: string,
-  startDate: ISODate,
-  holidays: Holiday[],
-  repeatCount: number,
-  gapDays: number = 1,
-  stepGaps?: number[],
-): ProcessInstance[] {
-  const result: ProcessInstance[] = [];
-  let floor = startFloor;
-  let cursor = startDate;
-  // 층과 층 사이 간격: 공정별 일수를 지정했으면 마지막 공정(타설)의 일수를, 아니면 기존처럼 1일.
-  const lastGap =
-    stepGaps && stepGaps[stepGaps.length - 1] != null ? Math.max(1, Math.floor(stepGaps[stepGaps.length - 1])) : 1;
-  for (let i = 0; i < Math.max(1, repeatCount); i++) {
-    const cycle = generateBaseFloorSequence(blockId, floor, cursor, holidays, gapDays, stepGaps);
-    if (cycle.length === 0) break;
-    result.push(...cycle);
-    const lastDate = cycle.reduce((max, p) => (p.date > max ? p.date : max), cycle[0].date);
-    cursor = addDays(lastDate, lastGap);
-    floor = nextFloorLabel(floor);
-  }
-  return result;
-}
-
-/**
  * 기초/지하층 등 지상층과 순서가 다른 구간을 위한 단순 순차 템플릿 생성.
  * 지상층 엔진과 달리 보조공정 자동배치·전용 휴일규칙·후속 연쇄이동·순서 불변 검증은
  * 아직 붙이지 않았다 (원 기획서에도 "추후 별도 설계"로 남겨진 영역). 자유공정처럼
