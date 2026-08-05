@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ISODate, todayISO } from '@/lib/domain/dateUtils';
+import { dayOfWeek, ISODate, todayISO } from '@/lib/domain/dateUtils';
 import { generateFromTemplate } from '@/lib/domain/schedule';
 import { Block, Holiday, ProcessTemplate, TemplateStepDef } from '@/lib/domain/types';
 
@@ -101,6 +101,7 @@ interface TemplateGenModalProps {
     startDate: ISODate,
     repeatCount: number,
     floorLabel: string,
+    allowStartHoliday: boolean,
   ) => string | null;
   onSaveNewTemplate: (title: string, steps: TemplateStepDef[]) => void;
   onRemoveTemplate: (id: string) => void;
@@ -130,6 +131,7 @@ export default function TemplateGenModal({
   const [floor, setFloor] = useState('');
   const [saveTitle, setSaveTitle] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [holidayConfirm, setHolidayConfirm] = useState(false);
   const customTemplateNames = templates.map((t) => t.name).filter((n) => !TEMPLATE_CATEGORIES.includes(n));
 
   const savedTemplate = templates.find((t) => t.name === category);
@@ -227,6 +229,21 @@ export default function TemplateGenModal({
   // 숫자만 입력하면 뒤에 F를 붙인다("3" → "3F"). 이미 F 등 글자가 있으면 그대로 둔다.
   const normalizedFloor = /^\d+$/.test(floor.trim()) ? `${floor.trim()}F` : floor.trim();
 
+  // 시작일이 휴일(일요일 또는 등록된 공휴일)인지 — 그러면 생성 전에 경고 후 확인받는다.
+  const startIsHoliday = !!startDate && (dayOfWeek(startDate) === 0 || holidays.some((h) => h.date === startDate));
+  const startHolidayLabel =
+    holidays.find((h) => h.date === startDate)?.label || (startDate && dayOfWeek(startDate) === 0 ? '일요일' : '공휴일');
+
+  function doSubmit(allowStartHoliday: boolean) {
+    const result = onSubmit(blockId, category, previewSteps, startDate, parsedRepeatCount, normalizedFloor, allowStartHoliday);
+    setHolidayConfirm(false);
+    if (result) {
+      setError(result);
+      return;
+    }
+    onClose();
+  }
+
   function handleSubmit() {
     if (!blockId) {
       setError('동을 선택해주세요.');
@@ -236,12 +253,13 @@ export default function TemplateGenModal({
       setError('순서를 1개 이상 선택해주세요.');
       return;
     }
-    const result = onSubmit(blockId, category, previewSteps, startDate, parsedRepeatCount, normalizedFloor);
-    if (result) {
-      setError(result);
+    setError(null);
+    // 시작일이 휴일이면 바로 만들지 않고 경고 → "예" 눌러야 휴일에도 생성.
+    if (startIsHoliday) {
+      setHolidayConfirm(true);
       return;
     }
-    onClose();
+    doSubmit(false);
   }
 
   function handleSaveAsNew() {
@@ -516,6 +534,34 @@ export default function TemplateGenModal({
           </button>
         </div>
       </div>
+
+      {holidayConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-4 flex flex-col gap-3">
+            <p className="text-sm font-medium">시작일이 휴일입니다.</p>
+            <p className="text-sm text-zinc-600">
+              <strong>{startDate}</strong> ({startHolidayLabel})은(는) 휴일이에요. 원래는 다음 작업일로 넘겨서 생성하는데, 그대로
+              이 날에 시작할까요?
+            </p>
+            <div className="flex justify-end gap-2 text-sm">
+              <button
+                className="px-3 py-1 rounded border border-zinc-300"
+                onClick={() => doSubmit(false)}
+                data-testid="genholiday-skip"
+              >
+                아니오 (다음 작업일로)
+              </button>
+              <button
+                className="px-3 py-1 rounded bg-indigo-600 text-white"
+                onClick={() => doSubmit(true)}
+                data-testid="genholiday-force"
+              >
+                예 (휴일에 그대로 생성)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

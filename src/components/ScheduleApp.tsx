@@ -819,6 +819,7 @@ export default function ScheduleApp() {
     startDate: ISODate,
     repeatCount: number,
     floorLabel: string,
+    allowStartHoliday: boolean,
   ): string | null {
     const template: ProcessTemplate = {
       id: templates.find((t) => t.name === categoryName)?.id ?? crypto.randomUUID(),
@@ -827,9 +828,11 @@ export default function ScheduleApp() {
     };
     // 기존 공정을 넘겨서, 새 구간공정 단계가 이미 차 있는 날을 피해(다음 빈 날로 밀려)
     // 배치되게 한다 — 겹치면 막지 않고 자동으로 밀어 배치. floorLabel이 있으면 각 단계에
-    // 그 층수를 붙여, 나중에 검색에서 층수로 찾을 수 있게 한다.
+    // 그 층수를 붙여, 나중에 검색에서 층수로 찾을 수 있게 한다. allowStartHoliday면 첫
+    // 단계는 휴일이어도 고른 시작일에 그대로 놓는다(사용자가 경고에서 "예" 확인한 경우).
     const generated = generateRepeatingFromTemplate(template, targetBlockId, startDate, holidays, repeatCount, {
       floorLabel: floorLabel || undefined,
+      allowStartHoliday,
     }, processes);
     const collisions = findMainCollisions([...processes, ...generated]).filter((c) => c.blockId === targetBlockId);
     if (collisions.length > 0) {
