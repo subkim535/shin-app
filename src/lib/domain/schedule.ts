@@ -943,16 +943,17 @@ export function moveSubProcess(
 }
 
 /**
- * 구간공정(커스텀 단계) 이동: 옮긴 공정은 사용자가 놓은 자리에 그대로 두고, 같은 구간공정의
- * 다른 단계가 그 자리와 "겹치면" 뒤로 밀어낸다(연쇄). 앞/뒤 순서를 따지지 않고, 겹치는 것만
- * 민다 — 그래서 뒤 공정을 앞 공정 자리로 끌어와도(오후+종일처럼 못 합치는 경우) 앞 공정이
- * 뒤로 밀려 자리를 내준다.
+ * 구간공정(커스텀 단계) 이동: 옮긴 공정은 놓은 자리에 두되, 같은 구간(cycle)의 나머지 단계는
+ * "구간 순서(seq)"를 그대로 지키며 재배치한다. 앞 단계는 옮긴 공정보다 먼저 끝나게, 뒤 단계는
+ * 옮긴 공정 뒤에 오게 — 그래서 뒤 단계를 앞으로 끌어와도 앞 단계가 사라지거나 순서가 뒤집히지
+ * 않고, 앞 단계들이 그만큼 앞으로 함께 당겨진다(기준층 갱폼 캐스케이드와 같은 원리).
  *
- * - 옮긴 공정 자체는 다른 사이클/다른 공사(기준층 등)와만 안 겹치게 최소한으로 스냅한다.
- *   같은 사이클 공정끼리는 겹치면 밀어낸다. 오전/오후로 정확히 나뉘면 공존을 허용한다.
- * - 공정 일수(durationDays)만큼 기간 전체를 점유로 계산한다.
- * - 변경 흔적(회색 고스트/화살표)은 사용자가 직접 옮긴 공정 하나만 남긴다 — 딸려 밀린 공정
- *   마다 회색이 잔뜩 생기던 것 방지.
+ * - 옮긴 공정 자체는 기준층 주공정만 피하고 놓은 자리에 그대로 앉는다(다른 구간공정은 비켜준다).
+ * - seq는 단계 코드 `CUSTOM_<구간>_<번호>_<이름>`에 박혀 있어 같은 구간끼리 공통 접두어를 떼고
+ *   앞 숫자로 읽는다 — 날짜가 뒤섞여 있어도 원래 순서를 복원한다.
+ * - 공정 일수(durationDays)만큼 기간 전체를 점유로 계산한다(중간 휴일은 빼고 뒤로 늘림).
+ * - 뒤에 있던 "다른 구간공정(다른 공사)"이 옮긴 구간과 겹치면 그 공사도 뒤로 함께 밀어낸다.
+ * - 변경 흔적(회색 고스트/화살표)은 사용자가 직접 옮긴 공정 하나만 남긴다.
  */
 export function moveCustomProcess(
   processes: ProcessInstance[],
@@ -968,9 +969,20 @@ export function moveCustomProcess(
 
   // 일수는 작업일 기준 — 중간에 낀 휴일은 빼고 그만큼 뒤로 늘려 점유 끝날을 잡는다.
   const endOf = (start: ISODate, p: ProcessInstance) => workableSpanEnd(p.typeCode, start, p.durationDays, holidays);
+  // 끝날이 정해졌을 때, 일수만큼 거꾸로 세어 시작일을 구한다(뒤 단계보다 먼저 끝나게 앞당길 때 사용).
+  const startForEnd = (p: ProcessInstance, end: ISODate): ISODate => {
+    let d = end;
+    let steps = Math.max(1, Math.floor(p.durationDays || 1)) - 1;
+    while (steps > 0) {
+      d = prevWorkableDate(p.typeCode, addDays(d, -1), holidays);
+      steps--;
+    }
+    return d;
+  };
   const rangesOverlap = (s1: ISODate, e1: ISODate, s2: ISODate, e2: ISODate) => s1 <= e2 && s2 <= e1;
 
   type Slot = { start: ISODate; end: ISODate; slot: ProcessInstance['timeSlot'] };
+  const slotOf = (start: ISODate, p: ProcessInstance): Slot => ({ start, end: endOf(start, p), slot: p.timeSlot });
 
   // 기준층 주공정(갱폼/철근/타설 등 정해진 타입)만 고정 장애물로 본다 — 구간공정 이동으로
   // 기준층을 밀지는 않는다(기준층은 자체 도미노 엔진이 따로 있음).
@@ -978,7 +990,7 @@ export function moveCustomProcess(
     isKnownType(p.typeCode) && PROCESS_TYPE_MAP[p.typeCode]?.category === 'main';
   const fixedObstacles: Slot[] = processes
     .filter((p) => p.blockId === blockId && isBaseFloorMain(p))
-    .map((p) => ({ start: p.date, end: endOf(p.date, p), slot: p.timeSlot }));
+    .map((p) => slotOf(p.date, p));
 
   const placed: Slot[] = []; // 이번에 자리 확정한 구간공정들(옮긴 공정 포함)
   const collides = (start: ISODate, p: ProcessInstance) =>
@@ -993,25 +1005,93 @@ export function moveCustomProcess(
     }
     return d;
   };
+  // beforeExclusive 앞에서(그 날 이전에 끝나게) 겹치지 않는 가장 늦은 시작일을 찾는다.
+  const lastFreeBefore = (p: ProcessInstance, beforeExclusive: ISODate): ISODate => {
+    let end = prevWorkableDate(p.typeCode, addDays(beforeExclusive, -1), holidays);
+    let guard = 0;
+    while (guard++ < 400) {
+      const start = startForEnd(p, end);
+      if (!collides(start, p)) return start;
+      end = prevWorkableDate(p.typeCode, addDays(start, -1), holidays);
+    }
+    return startForEnd(p, prevWorkableDate(p.typeCode, addDays(beforeExclusive, -1), holidays));
+  };
 
-  // 1) 옮긴 공정을 놓은 자리에(기준층만 피함 — 다른 구간공정은 밀어낸다).
+  // 같은 구간(cycle)의 단계들을 seq 순서로 정렬한다. seq는 코드에서 공통 접두어를 뗀 앞 숫자.
+  const cycleSteps = processes.filter(
+    (p) => p.blockId === blockId && p.cycleId === moved.cycleId && PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub',
+  );
+  const commonPrefix = (arr: string[]): string => {
+    if (arr.length === 0) return '';
+    let pre = arr[0];
+    for (const s of arr) {
+      while (!s.startsWith(pre)) pre = pre.slice(0, -1);
+      if (!pre) break;
+    }
+    return pre;
+  };
+  const prefix = commonPrefix(cycleSteps.map((p) => p.typeCode));
+  const seqOf = (p: ProcessInstance): number => {
+    const n = parseInt(p.typeCode.slice(prefix.length), 10);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const cycle = [...cycleSteps].sort((a, b) => seqOf(a) - seqOf(b) || a.date.localeCompare(b.date));
+  const k = cycle.findIndex((p) => p.id === processId);
+
+  const newDates = new Map<string, ISODate>();
+
+  // 1) 옮긴 공정을 놓은 자리에(기준층만 피함).
   const movedStart = firstFree(newDate, moved);
-  const newDates = new Map<string, ISODate>([[moved.id, movedStart]]);
-  placed.push({ start: movedStart, end: endOf(movedStart, moved), slot: moved.timeSlot });
+  newDates.set(moved.id, movedStart);
+  placed.push(slotOf(movedStart, moved));
 
-  // 2) 같은 동의 "모든 구간공정"(다른 공사 포함)을 현재 날짜순으로 보면서, 옮긴 공정(또는
-  //    이미 밀린 공정)과 겹치면 그 뒤로 민다(연쇄). 안 겹치면 원래 자리에 그대로 둔다.
-  //    → 뒤에 다른 공사가 있으면 그 공사도 함께 밀리고, 아무것도 사라지지 않는다.
+  // 2) 옮긴 공정보다 seq가 뒤인 단계들 — 앞에서부터 순서대로 뒤로 놓는다. 각자 원래 날짜가
+  //    앞 단계 끝보다 뒤면 그 간격을 유지하고, 앞이면(뒤섞임) 뒤로 밀어 순서를 바로잡는다.
+  let cursorEnd = endOf(movedStart, moved);
+  for (let i = k + 1; i < cycle.length; i++) {
+    const s = cycle[i];
+    const minStart = nextWorkableDate(s.typeCode, addDays(cursorEnd, 1), holidays);
+    const from = s.date > minStart ? s.date : minStart;
+    const start = firstFree(from, s);
+    newDates.set(s.id, start);
+    placed.push(slotOf(start, s));
+    cursorEnd = endOf(start, s);
+  }
+
+  // 3) 옮긴 공정보다 seq가 앞인 단계들 — 뒤에서부터 거꾸로, 각자 다음(더 뒤) 단계 시작 전에
+  //    끝나게 놓는다. 이미 앞에서 안 겹치게 끝나면 그대로 두고, 아니면 앞으로 당겨 자리를 낸다.
+  let anchorStart = movedStart;
+  for (let i = k - 1; i >= 0; i--) {
+    const s = cycle[i];
+    if (endOf(s.date, s) < anchorStart && !collides(s.date, s)) {
+      newDates.set(s.id, s.date);
+      placed.push(slotOf(s.date, s));
+      anchorStart = s.date;
+    } else {
+      const start = lastFreeBefore(s, anchorStart);
+      newDates.set(s.id, start);
+      placed.push(slotOf(start, s));
+      anchorStart = start;
+    }
+  }
+
+  // 4) 다른 구간공정(다른 공사)은 날짜순으로 보며, 재배치된 이 구간과 겹치면 뒤로 밀어낸다.
   const others = processes
-    .filter((p) => p.id !== processId && p.blockId === blockId && !isBaseFloorMain(p) && PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub')
+    .filter(
+      (p) =>
+        p.blockId === blockId &&
+        p.cycleId !== moved.cycleId &&
+        !isBaseFloorMain(p) &&
+        PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub',
+    )
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   for (const o of others) {
     const start = firstFree(o.date, o);
     newDates.set(o.id, start);
-    placed.push({ start, end: endOf(start, o), slot: o.timeSlot });
+    placed.push(slotOf(start, o));
   }
 
-  // 3) 날짜 반영. 변경 흔적(고스트)은 사용자가 옮긴 공정 하나만 남긴다.
+  // 5) 날짜 반영. 변경 흔적(고스트)은 사용자가 옮긴 공정 하나만 남긴다.
   const updated = processes.map((p) => {
     const nd = newDates.get(p.id);
     return nd && nd !== p.date ? { ...p, date: nd } : p;
@@ -1022,11 +1102,10 @@ export function moveCustomProcess(
       : [];
 
   const nextProcesses = withArrivals(updated, [...newDates.keys()]);
-  const movedPushed = others.filter((o) => newDates.get(o.id) !== o.date);
-  const sameCyclePushed = movedPushed.filter((o) => o.cycleId === moved.cycleId).length;
-  const otherSectionPushed = movedPushed.filter((o) => o.cycleId !== moved.cycleId).length;
+  const cyclePushed = cycle.filter((s) => s.id !== moved.id && newDates.get(s.id) !== s.date).length;
+  const otherSectionPushed = others.filter((o) => newDates.get(o.id) !== o.date).length;
   const parts: string[] = [];
-  if (sameCyclePushed > 0) parts.push(`뒤 공정 ${sameCyclePushed}개가 함께 밀렸어요.`);
+  if (cyclePushed > 0) parts.push(`같은 구간 ${cyclePushed}개 단계가 순서에 맞춰 함께 이동했어요.`);
   if (otherSectionPushed > 0) parts.push(`뒤에 있던 다른 공사 공정 ${otherSectionPushed}개도 함께 밀렸어요.`);
   const notice = parts.length ? parts.join(' ') : undefined;
   return { processes: nextProcesses, changeHistory: [...changeHistory, ...records], notice };
