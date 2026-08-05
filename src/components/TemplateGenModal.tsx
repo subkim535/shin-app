@@ -1,8 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { dayOfWeek, ISODate, todayISO } from '@/lib/domain/dateUtils';
-import { generateFromTemplate } from '@/lib/domain/schedule';
+import { dayOfWeek, diffDays, ISODate, todayISO } from '@/lib/domain/dateUtils';
+import { generateFromTemplate, generateRepeatingFromTemplate, workableSpanEnd } from '@/lib/domain/schedule';
 import { Block, Holiday, ProcessTemplate, TemplateStepDef } from '@/lib/domain/types';
 
 // 지상층(PIT 없음)도 기초/지하/주차장 등과 똑같이 순서를 자유롭게 편집하는 커스텀
@@ -229,6 +229,29 @@ export default function TemplateGenModal({
   // 숫자만 입력하면 뒤에 F를 붙인다("3" → "3F"). 이미 F 등 글자가 있으면 그대로 둔다.
   const normalizedFloor = /^\d+$/.test(floor.trim()) ? `${floor.trim()}F` : floor.trim();
 
+  // 시작일부터 모든 단계 일수 + 공휴일·일요일을 실제로 반영한 예상 종료일(반복 횟수 포함).
+  // 실제 생성과 같은 함수(generateRepeatingFromTemplate)로 계산해서 미리보기와 결과가 일치한다.
+  const previewEnd = useMemo(() => {
+    if (previewSteps.length === 0 || !startDate) return null;
+    const gen = generateRepeatingFromTemplate(
+      { id: 'preview', name: category, steps: previewSteps },
+      'preview-block',
+      startDate,
+      holidays,
+      parsedRepeatCount,
+    );
+    if (gen.length === 0) return null;
+    let end = gen[0].date;
+    for (const p of gen) {
+      const e = workableSpanEnd(p.typeCode, p.date, p.durationDays, holidays);
+      if (e > end) end = e;
+    }
+    // 총 작업일수(각 단계 일수 합 × 반복) — 참고용. 달력상 걸린 일수는 종료일-시작일+1.
+    const workDays = previewSteps.reduce((s, st) => s + Math.max(1, Math.floor(st.durationDays || 1)), 0) * parsedRepeatCount;
+    const calendarDays = diffDays(startDate, end) + 1;
+    return { end, workDays, calendarDays };
+  }, [previewSteps, startDate, holidays, category, parsedRepeatCount]);
+
   // 시작일이 휴일(일요일 또는 등록된 공휴일)인지 — 그러면 생성 전에 경고 후 확인받는다.
   const startIsHoliday = !!startDate && (dayOfWeek(startDate) === 0 || holidays.some((h) => h.date === startDate));
   const startHolidayLabel =
@@ -390,6 +413,16 @@ export default function TemplateGenModal({
                 기본 순서로 초기화
               </button>
             </div>
+
+            {previewEnd && (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm bg-indigo-50 border border-indigo-100 rounded px-3 py-2">
+                <span className="text-zinc-500 whitespace-nowrap">예상 종료일</span>
+                <strong className="text-indigo-700 whitespace-nowrap">{previewEnd.end}</strong>
+                <span className="text-[11px] text-zinc-500 whitespace-nowrap">
+                  (작업 {previewEnd.workDays}일{parsedRepeatCount > 1 ? ` · 반복 ${parsedRepeatCount}회` : ''} · 달력상 {previewEnd.calendarDays}일 · 일요일·공휴일 제외 계산)
+                </span>
+              </div>
+            )}
 
             <div className="flex gap-3">
                 {/* 선택된 순서 */}
