@@ -1078,20 +1078,36 @@ export function moveCustomProcess(
     }
   }
 
-  // 4) 다른 구간공정(다른 공사)은 날짜순으로 보며, 재배치된 이 구간과 겹치면 뒤로 밀어낸다.
+  // 4) 다른 공사를 재배치된 이 구간과 겹치면 뒤로 밀어낸다.
+  //  - 다른 구간공정(custom, 다른 cycle): 기준층 주공정+이미 놓인 것을 피해 firstFree로 민다.
+  //  - 기준층 보조공정(먹메김·박리제 등): "공정 중 하나"라 겹치면 밀되, 원래 자기 주공정과는
+  //    같은 날 공존하던 것이므로 기준층 주공정은 장애물로 보지 않고 "옮긴 이 구간"과 겹칠
+  //    때만 그 구간 뒤로 민다(안 그러면 갱폼 옆 박리제가 자기 갱폼을 피해 엉뚱하게 밀림).
+  //  - 기준층 주공정(갱폼/철근/타설)은 자체 도미노 엔진이 따로 있어 여기서 밀지 않는다(고정).
+  const cycleSlots = [...placed]; // 옮긴 구간이 최종적으로 차지한 자리
+  const isSub = (p: ProcessInstance) => PROCESS_TYPE_MAP[p.typeCode]?.category === 'sub';
+  const overlapsCycle = (start: ISODate, p: ProcessInstance) =>
+    cycleSlots.some((o) => slotsOverlap(p.timeSlot, o.slot) && rangesOverlap(start, endOf(start, p), o.start, o.end));
+  const firstFreePastCycle = (from: ISODate, p: ProcessInstance): ISODate => {
+    let d = nextWorkableDate(p.typeCode, from, holidays);
+    let guard = 0;
+    while (overlapsCycle(d, p) && guard++ < 400) d = nextWorkableDate(p.typeCode, addDays(d, 1), holidays);
+    return d;
+  };
   const others = processes
-    .filter(
-      (p) =>
-        p.blockId === blockId &&
-        p.cycleId !== moved.cycleId &&
-        !isBaseFloorMain(p) &&
-        PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub',
-    )
+    .filter((p) => p.blockId === blockId && p.cycleId !== moved.cycleId && !isBaseFloorMain(p))
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   for (const o of others) {
-    const start = firstFree(o.date, o);
-    newDates.set(o.id, start);
-    placed.push(slotOf(start, o));
+    if (isSub(o)) {
+      if (!overlapsCycle(o.date, o)) continue; // 옮긴 구간과 안 겹치면 그대로 둔다
+      const start = firstFreePastCycle(o.date, o);
+      newDates.set(o.id, start);
+      placed.push(slotOf(start, o));
+    } else {
+      const start = firstFree(o.date, o);
+      newDates.set(o.id, start);
+      placed.push(slotOf(start, o));
+    }
   }
 
   // 5) 날짜 반영. 변경 흔적(고스트)은 사용자가 옮긴 공정 하나만 남긴다.
