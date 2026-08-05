@@ -34,6 +34,7 @@ import {
   setCrew,
   shiftAllFrom,
   swapCellOrder,
+  workableSpanEnd,
 } from '@/lib/domain/schedule';
 import type { MoveResult } from '@/lib/domain/schedule';
 import {
@@ -1108,6 +1109,18 @@ export default function ScheduleApp() {
   const collidingList =
     pendingDrop && pendingProcess ? collidingProcesses(processes, pendingProcess, pendingDrop.date) : [];
 
+  // 전체 준공 예정일 = 모든 동을 통틀어 가장 늦게 끝나는 공정의 (작업일·휴일 반영) 끝날.
+  // 오늘 기준 남은 일수도 함께 보여준다(달력 기준).
+  const projectEnd = useMemo(() => {
+    let end: ISODate | null = null;
+    for (const p of processes) {
+      const e = workableSpanEnd(p.typeCode, p.date, p.durationDays, holidays);
+      if (!end || e > end) end = e;
+    }
+    if (!end) return null;
+    return { date: end, daysLeft: diffDays(todayISO(), end) };
+  }, [processes, holidays]);
+
   return (
     <div className="h-screen overflow-hidden bg-zinc-50 p-6 flex flex-col gap-4">
       <header className="flex flex-col gap-2 shrink-0">
@@ -1124,6 +1137,20 @@ export default function ScheduleApp() {
               >
                 #{APP_REVISION}차 수정
               </button>
+              {projectEnd && (
+                <span
+                  className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-600 text-white shrink-0"
+                  title="모든 동을 통틀어 가장 늦게 끝나는 공정 기준 (작업일·휴일 반영)"
+                  data-testid="project-end-badge"
+                >
+                  🏁 전체 준공 예정 {projectEnd.date}
+                  {projectEnd.daysLeft > 0
+                    ? ` (D-${projectEnd.daysLeft})`
+                    : projectEnd.daysLeft === 0
+                      ? ' (오늘)'
+                      : ` (${-projectEnd.daysLeft}일 지남)`}
+                </span>
+              )}
               {changelogOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setChangelogOpen(false)} />
