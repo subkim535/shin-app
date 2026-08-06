@@ -727,27 +727,51 @@ export default function GanttChart({
   }
 
   // 다일 공정이 "지나가는" 날에 그리는 연속 바 — 시작 칩과 같은 색(연하게)에 이름을 달아
-  // 그 날 무슨 공정이 진행 중인지 보이게 한다. 클릭하면 그 공정을 선택. 드래그는 시작 칩에서만.
+  // 그 날 무슨 공정이 진행 중인지 보이게 한다. 이름 부분 클릭은 그 공정을 선택(드래그는
+  // 시작 칩에서만). 옆에 종일/오전/오후 토글을 달아, 다일 공정도 어느 칸에서든 반나절을
+  // 바꿀 수 있게 한다(같은 공정이라 어느 바에서 눌러도 같은 상태를 바꾼다).
   function renderSpanBar(p: ProcessInstance) {
     const color = PROCESS_COLOR[p.typeCode] ?? (p.customLabel ? customProcessColor(p.customLabel) : FALLBACK_COLOR);
     const selected = p.id === selectedProcessId;
     return (
-      <button
-        key={p.id}
-        type="button"
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          onSelectProcess(p.id);
-        }}
-        title={`${processLabel(p)} · ${p.durationDays}일 공정 진행 중`}
-        className={[
-          'w-full text-left rounded px-1.5 py-0.5 text-[11px] leading-tight truncate opacity-60',
-          `${color.bg} ${color.text}`,
-          selected ? 'ring-2 ring-indigo-600 opacity-90' : '',
-        ].join(' ')}
-      >
-        ↔ {processLabel(p)}
-      </button>
+      <div key={p.id} className="flex items-center gap-0.5 w-full min-w-0">
+        <button
+          type="button"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            onSelectProcess(p.id);
+          }}
+          title={`${processLabel(p)} · ${p.durationDays}일 공정 진행 중`}
+          className={[
+            'flex-1 min-w-0 text-left rounded px-1.5 py-0.5 text-[11px] leading-tight truncate opacity-60',
+            `${color.bg} ${color.text}`,
+            selected ? 'ring-2 ring-indigo-600 opacity-90' : '',
+          ].join(' ')}
+        >
+          ↔ {processLabel(p)}
+        </button>
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            const next = p.timeSlot === 'morning' ? 'afternoon' : p.timeSlot === 'afternoon' ? undefined : 'morning';
+            onSetTimeSlot(p.id, next);
+          }}
+          title="오전/오후 반나절 설정 (설정 시 같은 날 다른 주요공정과 겹침 허용)"
+          data-testid="timeslot-toggle"
+          className={[
+            'shrink-0 text-[9px] leading-none px-1 py-0.5 rounded border',
+            p.timeSlot === 'morning'
+              ? 'bg-sky-100 text-sky-700 border-sky-300'
+              : p.timeSlot === 'afternoon'
+                ? 'bg-violet-100 text-violet-700 border-violet-300'
+                : 'text-zinc-400 border-zinc-200 hover:text-zinc-700',
+          ].join(' ')}
+        >
+          {p.timeSlot === 'morning' ? '오전' : p.timeSlot === 'afternoon' ? '오후' : '종일'}
+        </button>
+      </div>
     );
   }
 
