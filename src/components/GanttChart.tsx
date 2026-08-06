@@ -366,6 +366,17 @@ export default function GanttChart({
     return map;
   }, [processes, holidays]);
 
+  // 동마다 "준공 예정일" = 그 동의 가장 늦게 끝나는 공정의 끝날(작업일·휴일 반영).
+  const blockEndByBlock = useMemo(() => {
+    const map = new Map<string, ISODate>();
+    for (const p of processes) {
+      const e = workableSpanEnd(p.typeCode, p.date, p.durationDays, holidays);
+      const cur = map.get(p.blockId);
+      if (!cur || e > cur) map.set(p.blockId, e);
+    }
+    return map;
+  }, [processes, holidays]);
+
   // 프로세스별 전체 이동 이력을 발생 순서대로 모아둔다 (changeHistory는 append 순서라
   // 이 순서 자체가 시간순). 같은 공정이 여러 번 옮겨졌으면 전부 그리드에 표시한다.
   const movesByProcessId = useMemo(() => {
@@ -1042,6 +1053,14 @@ export default function GanttChart({
             >
               <span>{block.name}</span>
               {block.info && <span className="text-[10px] text-zinc-400 font-normal">{block.info}</span>}
+              {blockEndByBlock.get(block.id) && (
+                <span
+                  className="text-[10px] font-normal text-emerald-700 whitespace-nowrap"
+                  title={`이 동 준공 예정일: ${blockEndByBlock.get(block.id)}`}
+                >
+                  🏁 {blockEndByBlock.get(block.id)!.slice(2)}
+                </span>
+              )}
             </div>
           );
         })}
