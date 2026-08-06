@@ -1058,7 +1058,10 @@ export function moveCustomProcess(
   let cursorEnd = endOf(movedStart, moved);
   for (let i = k + 1; i < cycle.length; i++) {
     const s = cycle[i];
-    const minStart = nextWorkableDate(s.typeCode, addDays(cursorEnd, 1), holidays);
+    // 앞 단계와 오전/오후로 반대면 그 마지막 날을 공유(같은 날)할 수 있게 minStart를 그 날로
+    // 둔다 — firstFree가 슬롯 겹침(종일끼리 등)이면 collides로 다음 날로 밀고, 오전+오후처럼
+    // 안 겹치면 같은 날에 나란히 놓는다.
+    const minStart = nextWorkableDate(s.typeCode, cursorEnd, holidays);
     const from = s.date > minStart ? s.date : minStart;
     const start = firstFree(from, s);
     newDates.set(s.id, start);
@@ -1071,7 +1074,10 @@ export function moveCustomProcess(
   let anchorStart = movedStart;
   for (let i = k - 1; i >= 0; i--) {
     const s = cycle[i];
-    if (endOf(s.date, s) < anchorStart && !collides(s.date, s)) {
+    // 다음(더 뒤) 단계와 오전/오후로 반대면(!collides) 그 시작일(anchorStart)에 "겹쳐" 끝나도
+    // 됨 — 같은 날을 공유(오전 앞단계 + 오후 뒷단계). 종일끼리 등 겹치면 collides가 true라
+    // 아래 else로 가서 그 앞으로 당겨진다. (<= 라서 같은 날까지 허용, 그 뒤로 넘어가면 밀림)
+    if (endOf(s.date, s) <= anchorStart && !collides(s.date, s)) {
       newDates.set(s.id, s.date);
       placed.push(slotOf(s.date, s));
       anchorStart = s.date;
