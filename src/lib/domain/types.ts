@@ -102,6 +102,11 @@ export interface ProcessInstance {
   // 하루 안에서도 오전/오후/조출/야간처럼 시간대를 나눠 배정할 수 있게 대비해둔 필드.
   // 아직 UI는 없고 데이터 구조만 미리 만들어둔 상태 — 값이 없으면 하루 종일로 취급한다.
   timeSlot?: 'morning' | 'afternoon' | 'early' | 'night';
+  // 여러 날짜짜리 공정(durationDays>1)에서 "지나가는 날"마다 반나절을 따로 지정할 때 쓴다.
+  // 키는 시작일로부터의 날짜 오프셋(diffDays, 0=시작일)이라 공정을 옮겨도 그대로 따라간다.
+  // 시작일(오프셋 0)은 timeSlot을 그대로 쓰고, 오프셋 1 이상만 여기서 덮어쓴다.
+  // 'full'은 "그 날은 종일"이라고 명시적으로 덮어쓰는 값(timeSlot이 반나절이어도 그 날만 종일).
+  daySlots?: Record<number, 'morning' | 'afternoon' | 'full'>;
 }
 
 export interface ChangeRecord {

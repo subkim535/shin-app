@@ -878,6 +878,20 @@ export default function ScheduleApp() {
     setProcesses((cur) => cur.map((p) => (p.id === processId ? { ...p, timeSlot: slot } : p)));
   }
 
+  // 다일 공정에서 "지나가는 날" 하나(date)만 반나절을 바꾼다 — 그 날짜만 daySlots에 기록해
+  // 그 날만 오전/오후/종일로 보이게 하고, 공정 전체(timeSlot)는 건드리지 않는다.
+  function handleSetDaySlot(processId: string, date: ISODate, slot: 'morning' | 'afternoon' | 'full') {
+    setProcesses((cur) =>
+      cur.map((p) => {
+        if (p.id !== processId) return p;
+        const off = diffDays(p.date, date);
+        if (off <= 0) return p; // 시작일은 timeSlot이 담당(여긴 지나가는 날 전용)
+        const daySlots = { ...(p.daySlots ?? {}), [off]: slot };
+        return { ...p, daySlots };
+      }),
+    );
+  }
+
   function handleExtendProcess(processId: string, direction: 'extend' | 'shrink') {
     // ⏩/⏪는 연달아 빠르게 눌릴 수 있는 단순 버튼이라, 클로저에 갇힌 processes를 그대로 쓰면
     // 같은 렌더 안에서 여러 번 눌렀을 때 뒤 클릭이 앞 클릭 결과를 덮어써서 클릭 수만큼
@@ -1384,6 +1398,7 @@ export default function ScheduleApp() {
             onShowReason={(label, reason, path, processId) => setReasonPopup({ label, reason, path, processId })}
             onEditCrew={handleOpenCrew}
             onSetTimeSlot={handleSetTimeSlot}
+            onSetDaySlot={handleSetDaySlot}
             onChangeBlockRemark={handleChangeBlockRemark}
             onClickHeaderDate={(date) => setDateChoice(date)}
             viewStartDate={viewStartDate}

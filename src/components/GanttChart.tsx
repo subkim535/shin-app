@@ -40,6 +40,8 @@ interface GanttChartProps {
   onShowReason: (label: string, reason: string, path: string | undefined, processId: string) => void;
   onEditCrew: (processId: string) => void;
   onSetTimeSlot: (processId: string, slot: 'morning' | 'afternoon' | undefined) => void;
+  // 다일 공정에서 "지나가는 날" 하나(date)만 반나절을 바꾼다(그 날만 적용, 전체 공정은 안 바뀜).
+  onSetDaySlot: (processId: string, date: ISODate, slot: 'morning' | 'afternoon' | 'full') => void;
   onChangeBlockRemark: (blockId: string, text: string) => void;
   onClickHeaderDate: (date: ISODate) => void;
   viewStartDate: ISODate;
@@ -71,6 +73,17 @@ function isHoliday(date: ISODate, holidays: Holiday[]): boolean {
   return dayOfWeek(date) === 0 || isWorkersDay(date) || holidays.some((h) => h.date === date);
 }
 
+// 그 날짜에 이 공정이 실제로 차지하는 반나절 — 시작일(오프셋 0)은 timeSlot, 그 뒤 날짜는
+// daySlots 덮어쓰기(있으면)를 쓴다. 'full'은 그 날만 종일(반나절 아님)이라는 뜻.
+function effectiveSlot(p: ProcessInstance, date: ISODate): 'morning' | 'afternoon' | undefined {
+  const off = diffDays(p.date, date);
+  if (off === 0) return p.timeSlot === 'morning' || p.timeSlot === 'afternoon' ? p.timeSlot : undefined;
+  const o = p.daySlots?.[off];
+  if (o === 'full') return undefined;
+  if (o === 'morning' || o === 'afternoon') return o;
+  return p.timeSlot === 'morning' || p.timeSlot === 'afternoon' ? p.timeSlot : undefined;
+}
+
 function noteKey(blockId: string, date: ISODate): string {
   return `${blockId}__${date}`;
 }
@@ -91,6 +104,7 @@ export default function GanttChart({
   onShowReason,
   onEditCrew,
   onSetTimeSlot,
+  onSetDaySlot,
   onChangeBlockRemark,
   onClickHeaderDate,
   viewStartDate,
@@ -730,9 +744,10 @@ export default function GanttChart({
   // 그 날 무슨 공정이 진행 중인지 보이게 한다. 이름 부분 클릭은 그 공정을 선택(드래그는
   // 시작 칩에서만). 옆에 종일/오전/오후 토글을 달아, 다일 공정도 어느 칸에서든 반나절을
   // 바꿀 수 있게 한다(같은 공정이라 어느 바에서 눌러도 같은 상태를 바꾼다).
-  function renderSpanBar(p: ProcessInstance) {
+  function renderSpanBar(p: ProcessInstance, date: ISODate) {
     const color = PROCESS_COLOR[p.typeCode] ?? (p.customLabel ? customProcessColor(p.customLabel) : FALLBACK_COLOR);
     const selected = p.id === selectedProcessId;
+    const slot = effectiveSlot(p, date); // 이 날짜의 반나절(시작일 아닌 지나가는 날은 daySlots 반영)
     return (
       <div key={p.id} className="flex items-center gap-0.5 w-full min-w-0">
         <button
@@ -755,21 +770,23 @@ export default function GanttChart({
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
-            const next = p.timeSlot === 'morning' ? 'afternoon' : p.timeSlot === 'afternoon' ? undefined : 'morning';
-            onSetTimeSlot(p.id, next);
+            // 이 날짜(지나가는 날)만 반나절을 바꾼다 — 종일→오전→오후→종일 순환. 종일은 'full'로
+            // 저장해 시작일 timeSlot이 반나절이어도 이 날만 종일로 덮어쓸 수 있게 한다.
+            const next = slot === 'morning' ? 'afternoon' : slot === 'afternoon' ? 'full' : 'morning';
+            onSetDaySlot(p.id, date, next);
           }}
-          title="오전/오후 반나절 설정 (설정 시 같은 날 다른 주요공정과 겹침 허용)"
+          title="이 날짜만 오전/오후 반나절 설정 (다일 공정 중 이 날만 적용)"
           data-testid="timeslot-toggle"
           className={[
             'shrink-0 text-[9px] leading-none px-1 py-0.5 rounded border',
-            p.timeSlot === 'morning'
+            slot === 'morning'
               ? 'bg-sky-100 text-sky-700 border-sky-300'
-              : p.timeSlot === 'afternoon'
+              : slot === 'afternoon'
                 ? 'bg-violet-100 text-violet-700 border-violet-300'
                 : 'text-zinc-400 border-zinc-200 hover:text-zinc-700',
           ].join(' ')}
         >
-          {p.timeSlot === 'morning' ? '오전' : p.timeSlot === 'afternoon' ? '오후' : '종일'}
+          {slot === 'morning' ? '오전' : slot === 'afternoon' ? '오후' : '종일'}
         </button>
       </div>
     );
@@ -1113,13 +1130,15 @@ export default function GanttChart({
               ...mainProcs.map((p) => ({ p, span: false })),
               ...spanProcs.map((p) => ({ p, span: true })),
             ];
-            const slotRank = (p: ProcessInstance) => (p.timeSlot === 'morning' ? 0 : p.timeSlot === 'afternoon' ? 1 : 2);
+            // 반나절 판정은 "그 날짜의 실제 슬롯"(effectiveSlot) 기준 — 다일 공정은 지나가는
+            // 날마다 daySlots로 다를 수 있으므로 timeSlot이 아니라 이 셀 날짜의 슬롯을 본다.
+            const slotOfCell = (p: ProcessInstance) => effectiveSlot(p, d);
+            const slotRank = (p: ProcessInstance) => (slotOfCell(p) === 'morning' ? 0 : slotOfCell(p) === 'afternoon' ? 1 : 2);
             // 오전 항목과 오후 항목이 둘 다 있고 "종일" 항목이 없으면 좌(오전)/우(오후)로 반씩
-            // 나눠 공존시킨다 — 이렇게 하면 오전 1일 공정과 오후 다일 공정이 같은 날 겹쳐도
-            // 나란히 보인다(사용자 요청: 반나절+반대 반나절은 겹쳐질 수 있음).
-            const morningItems = cellItems.filter((x) => x.p.timeSlot === 'morning');
-            const afternoonItems = cellItems.filter((x) => x.p.timeSlot === 'afternoon');
-            const wholeItems = cellItems.filter((x) => x.p.timeSlot !== 'morning' && x.p.timeSlot !== 'afternoon');
+            // 나눠 공존시킨다 — 오전 1일 공정과 오후 다일 공정이 같은 날 겹쳐도 나란히 보인다.
+            const morningItems = cellItems.filter((x) => slotOfCell(x.p) === 'morning');
+            const afternoonItems = cellItems.filter((x) => slotOfCell(x.p) === 'afternoon');
+            const wholeItems = cellItems.filter((x) => slotOfCell(x.p) !== 'morning' && slotOfCell(x.p) !== 'afternoon');
             const halfSplit = morningItems.length > 0 && afternoonItems.length > 0 && wholeItems.length === 0;
             // 보조공정 행을 주공정과 맞춰 정렬하기 위한 순서(오전 먼저)와 반분할 여부.
             const orderedMainProcs = [...mainProcs].sort((a, b) => slotRank(a) - slotRank(b) || (a.cellOrder ?? 0) - (b.cellOrder ?? 0));
@@ -1150,19 +1169,19 @@ export default function GanttChart({
                     <div className="flex gap-0.5 items-start">
                       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                         {morningItems.map((x) => (
-                          <div key={x.p.id}>{x.span ? renderSpanBar(x.p) : renderChip(x.p, block.id, d)}</div>
+                          <div key={x.p.id}>{x.span ? renderSpanBar(x.p, d) : renderChip(x.p, block.id, d)}</div>
                         ))}
                       </div>
                       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                         {afternoonItems.map((x) => (
-                          <div key={x.p.id}>{x.span ? renderSpanBar(x.p) : renderChip(x.p, block.id, d)}</div>
+                          <div key={x.p.id}>{x.span ? renderSpanBar(x.p, d) : renderChip(x.p, block.id, d)}</div>
                         ))}
                       </div>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-0.5">
                       {cellItems.map((x) => (
-                        <div key={x.p.id}>{x.span ? renderSpanBar(x.p) : renderChip(x.p, block.id, d)}</div>
+                        <div key={x.p.id}>{x.span ? renderSpanBar(x.p, d) : renderChip(x.p, block.id, d)}</div>
                       ))}
                     </div>
                   )}
