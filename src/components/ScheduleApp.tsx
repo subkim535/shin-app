@@ -126,13 +126,13 @@ function Modal({ children, draggable }: { children: React.ReactNode; draggable?:
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
       <div
-        className="bg-white rounded-lg shadow-lg p-4 w-full max-w-sm flex flex-col gap-3"
+        className="bg-white rounded-lg shadow-lg p-5 w-full max-w-lg flex flex-col gap-3 text-lg"
         style={draggable ? { transform: `translate(${offset.x}px, ${offset.y}px)` } : undefined}
       >
         {draggable && (
           <div
             onPointerDown={handlePointerDown}
-            className="-mx-4 -mt-4 px-4 py-1.5 rounded-t-lg bg-zinc-50 border-b border-zinc-200 text-xs text-zinc-400 cursor-move select-none"
+            className="-mx-5 -mt-5 px-4 py-1.5 rounded-t-lg bg-zinc-50 border-b border-zinc-200 text-base text-zinc-400 cursor-move select-none"
             title="드래그해서 창 이동"
           >
             ⠿⠿⠿ 드래그해서 이동
@@ -163,6 +163,26 @@ export default function ScheduleApp() {
   // 월간공정표(일단위, 기본)과 전체공정표(월단위, 타설만 표기) 중 어느 걸 볼지 — 각자 화면에서만
   // 쓰는 상태라 저장 대상(AppState)에는 넣지 않는다.
   const [viewMode, setViewMode] = useState<'monthly' | 'overview'>('monthly');
+  // 간략 보기: 보조공정·특이사항 행을 숨기고 주공정만 크게 — 동이 많아 세로 스크롤이 길 때
+  // 한눈에 보기 위함. 브라우저에 취향을 기억(localStorage)해서 새로고침해도 유지한다.
+  const [compactView, setCompactView] = useState(false);
+  useEffect(() => {
+    // 마운트 후에만 localStorage를 읽는다(SSR/하이드레이션 불일치 방지). 이 한 줄은 외부
+    // 저장소(localStorage)를 React 상태로 동기화하는 정당한 용도라 규칙을 예외 처리한다.
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (localStorage.getItem('shin-compact-view') === '1') setCompactView(true);
+    } catch {}
+  }, []);
+  function toggleCompactView() {
+    setCompactView((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem('shin-compact-view', next ? '1' : '0');
+      } catch {}
+      return next;
+    });
+  }
   // 오늘이 포함된 주의 월요일부터 다음 달 말일까지를 기본 범위로 고정 (이후 이전주/다음주로 더 이동 가능)
   const [dayCount] = useState<number>(() => computeDayCount(mondayOfWeek(todayISO())));
 
@@ -1201,7 +1221,7 @@ export default function ScheduleApp() {
             {!loaded && !syncError && <p className="text-xs text-zinc-400 mt-0.5">불러오는 중…</p>}
             {syncError && <p className="text-xs text-red-600 mt-0.5">동기화 오류: {syncError}</p>}
           </div>
-          <div className="flex flex-wrap gap-2 text-base">
+          <div className="flex flex-wrap gap-2 text-xl">
             <button
               className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setViewMode((m) => (m === 'monthly' ? 'overview' : 'monthly'))}
@@ -1209,6 +1229,18 @@ export default function ScheduleApp() {
             >
               {viewMode === 'monthly' ? '전체공정표 보기' : '월간공정표 보기'}
             </button>
+            {viewMode === 'monthly' && (
+              <button
+                className={`px-4 py-2.5 rounded border ${
+                  compactView ? 'border-indigo-500 bg-indigo-600 text-white hover:bg-indigo-700' : 'border-zinc-300 bg-white hover:bg-zinc-100'
+                }`}
+                onClick={toggleCompactView}
+                title="간략히 보면 보조공정·특이사항을 숨기고 주공정만 크게 보여줍니다 (동이 많을 때 한눈에)"
+                data-testid="compact-toggle"
+              >
+                {compactView ? '자세히 보기' : '간략히 보기'}
+              </button>
+            )}
             <button
               className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={handleUndo}
@@ -1275,7 +1307,7 @@ export default function ScheduleApp() {
           </div>
         </div>
         {viewMode === 'monthly' && (
-          <div className="flex items-center justify-end gap-1 text-base">
+          <div className="flex items-center justify-end gap-1 text-xl">
             <button
               className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setViewStartDate((d) => addDays(d, -7))}
@@ -1301,7 +1333,7 @@ export default function ScheduleApp() {
                 setSearchNotFound(false);
               }}
               data-testid="block-search-scope"
-              className="ml-3 px-2 py-1.5 rounded border border-zinc-300 text-sm bg-white"
+              className="ml-3 px-2 py-1.5 rounded border border-zinc-300 text-lg bg-white"
               title="찾을 동을 고르세요. 안 고르면(전체 동) 모든 동에서 찾습니다."
             >
               <option value="all">전체 동</option>
@@ -1323,7 +1355,7 @@ export default function ScheduleApp() {
               }}
               placeholder="층수(예: 3) · 공정명"
               data-testid="block-search-input"
-              className="ml-1 px-2 py-1.5 rounded border border-zinc-300 text-sm w-32"
+              className="ml-1 px-2 py-1.5 rounded border border-zinc-300 text-lg w-36"
             />
             <button
               className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
@@ -1332,7 +1364,7 @@ export default function ScheduleApp() {
             >
               찾기
             </button>
-            {searchNotFound && <span className="text-xs text-red-600 whitespace-nowrap">못 찾았어요</span>}
+            {searchNotFound && <span className="text-base text-red-600 whitespace-nowrap">못 찾았어요</span>}
           </div>
         )}
       </header>
@@ -1427,6 +1459,7 @@ export default function ScheduleApp() {
             onMoveBlockTo={handleMoveBlockTo}
             onClickBlockName={openExcelExport}
             scrollToBlockId={scrollToBlockId}
+            compact={compactView}
           />
           <p className="text-xs text-zinc-500 shrink-0">
             공정 칩을 같은 행의 다른 날짜 셀로 드래그하면 이동합니다. 날짜 헤더를 클릭하면 작업일보 보기/전체 일정
@@ -1658,12 +1691,12 @@ export default function ScheduleApp() {
       {statusOpen && (
         <Modal>
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">진척 현황</h2>
-            <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={() => setStatusOpen(false)}>
+            <h2 className="text-3xl font-bold">진척 현황</h2>
+            <button className="text-lg px-3 py-1.5 rounded border border-zinc-300" onClick={() => setStatusOpen(false)}>
               닫기
             </button>
           </div>
-          <p className="text-xs text-zinc-500 -mt-2">
+          <p className="text-base text-zinc-500 -mt-2">
             공정 <span className="font-medium">일수(기간)에 비례</span>한 완료율입니다 — 예: 전체 10일 중 7일짜리 공정을
             완료하면 70%. 지연 = 계획 날짜가 오늘보다 지났는데 완료 안 된 공정 (화면에서 빨간 ⚠ 테두리로도 표시돼요).
           </p>
@@ -1673,7 +1706,7 @@ export default function ScheduleApp() {
             const pct = totalWeight > 0 ? Math.round((doneWeight / totalWeight) * 100) : 0;
             // 완료(초록) + 진행 중(파랑) 두 구간으로 나눠 그린다(일수 가중). 나머지는 시작 전(회색).
             const Bar = ({ d, ip, t }: { d: number; ip: number; t: number }) => (
-              <div className="h-2.5 rounded-full bg-zinc-200 overflow-hidden flex">
+              <div className="h-4 rounded-full bg-zinc-200 overflow-hidden flex">
                 <div className="h-full bg-emerald-500" style={{ width: `${t > 0 ? (d / t) * 100 : 0}%` }} />
                 <div className="h-full bg-sky-400" style={{ width: `${t > 0 ? (ip / t) * 100 : 0}%` }} />
               </div>
@@ -1681,10 +1714,10 @@ export default function ScheduleApp() {
             return (
               <>
                 <div className="rounded border border-zinc-200 p-3 flex flex-col gap-1.5">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-semibold">전체</span>
-                    <span className="text-xs">
-                      <span className="font-semibold text-emerald-700 text-sm">{pct}%</span>
+                  <div className="flex items-center justify-between text-xl">
+                    <span className="font-bold">전체</span>
+                    <span className="text-base">
+                      <span className="font-bold text-emerald-700 text-xl">{pct}%</span>
                       <span className="text-zinc-500 ml-1">완료 {done}개</span>
                       {inProgress > 0 && <span className="text-sky-600 ml-1">· 진행 {inProgress}개</span>}
                       {overdue > 0 && <span className="ml-2 text-red-600 font-semibold">지연 {overdue}건</span>}
@@ -1698,9 +1731,9 @@ export default function ScheduleApp() {
                     const p = b.totalWeight > 0 ? Math.round((b.doneWeight / b.totalWeight) * 100) : 0;
                     return (
                       <div key={b.blockId} className="flex flex-col gap-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="font-medium">{b.name}</span>
-                          <span className="text-xs text-zinc-500">
+                        <div className="flex items-center justify-between text-xl">
+                          <span className="font-bold">{b.name}</span>
+                          <span className="text-base text-zinc-500">
                             {p}% (완료 {b.done}
                             {b.inProgress > 0 && <span className="text-sky-600"> · 진행 {b.inProgress}</span>}/{b.total}개)
                             {b.overdue > 0 && <span className="ml-2 text-red-600 font-semibold">지연 {b.overdue}</span>}
@@ -1710,10 +1743,10 @@ export default function ScheduleApp() {
                       </div>
                     );
                   })}
-                  {perBlock.length === 0 && <p className="text-xs text-zinc-400">아직 동/공정이 없습니다.</p>}
+                  {perBlock.length === 0 && <p className="text-base text-zinc-400">아직 동/공정이 없습니다.</p>}
                 </div>
 
-                <p className="text-[11px] text-zinc-500 mt-1">
+                <p className="text-base text-zinc-500 mt-1">
                   %는 <span className="text-zinc-700">공정 일수 기준</span>이고, 괄호 안 개수는 공정 수예요. 칩의 상태
                   표시를 클릭하면 <span className="text-zinc-700">시작 전 → 진행 중(파랑 ▶) → 완료(초록 ✓)</span>로 바뀝니다.
                 </p>
@@ -1726,15 +1759,15 @@ export default function ScheduleApp() {
       {excelExportOpen && (
         <Modal>
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">엑셀 내보내기</h2>
-            <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={() => setExcelExportOpen(false)}>
+            <h2 className="text-3xl font-bold">엑셀 내보내기</h2>
+            <button className="text-lg px-3 py-1.5 rounded border border-zinc-300" onClick={() => setExcelExportOpen(false)}>
               닫기
             </button>
           </div>
-          <p className="text-xs text-zinc-500 -mt-2">
+          <p className="text-base text-zinc-500 -mt-2">
             공정이 실제로 있는 전체 기간으로 자동으로 채워져 있습니다. 필요하면 아래에서 바꿀 수 있어요.
           </p>
-          <label className="text-sm flex flex-col gap-1">
+          <label className="text-xl flex flex-col gap-1">
             대상
             <select
               className="border border-zinc-300 rounded px-2 py-1.5"
@@ -1749,7 +1782,7 @@ export default function ScheduleApp() {
               ))}
             </select>
           </label>
-          <label className="text-sm flex flex-col gap-1">
+          <label className="text-xl flex flex-col gap-1">
             시작일
             <input
               type="date"
@@ -1758,7 +1791,7 @@ export default function ScheduleApp() {
               onChange={(e) => setExcelStartDate(e.target.value as ISODate)}
             />
           </label>
-          <label className="text-sm flex flex-col gap-1">
+          <label className="text-xl flex flex-col gap-1">
             기간 (주)
             <input
               type="number"
@@ -1769,7 +1802,7 @@ export default function ScheduleApp() {
               onChange={(e) => setExcelWeeks(e.target.value)}
             />
           </label>
-          <label className="text-sm flex flex-col gap-1">
+          <label className="text-xl flex flex-col gap-1">
             파일 이름
             <div className="flex items-center">
               <input
@@ -1779,18 +1812,18 @@ export default function ScheduleApp() {
                 onChange={(e) => setExcelFileName(e.target.value)}
                 placeholder="예: 신현대_주간공정표"
               />
-              <span className="text-xs text-zinc-400 ml-1 shrink-0">.xlsx</span>
+              <span className="text-base text-zinc-400 ml-1 shrink-0">.xlsx</span>
             </div>
           </label>
           <div className="flex gap-2">
             <button
-              className="flex-1 px-3 py-2 rounded bg-indigo-600 text-white text-sm disabled:opacity-40"
+              className="flex-1 px-3 py-2.5 rounded bg-indigo-600 text-white text-xl disabled:opacity-40"
               onClick={handleExportExcel}
               disabled={excelExporting}
             >
               {excelExporting ? '만드는 중…' : '엑셀 다운로드'}
             </button>
-            <button className="flex-1 px-3 py-2 rounded border border-zinc-300 text-sm" onClick={() => window.print()}>
+            <button className="flex-1 px-3 py-2.5 rounded border border-zinc-300 text-xl" onClick={() => window.print()}>
               PDF/인쇄
             </button>
           </div>

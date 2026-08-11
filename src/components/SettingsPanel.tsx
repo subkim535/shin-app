@@ -98,15 +98,15 @@ export default function SettingsPanel({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-lg max-h-[85vh] overflow-y-auto p-4 flex flex-col gap-5">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl max-h-[85vh] overflow-y-auto p-5 flex flex-col gap-5">
         <div className="sticky -top-4 -mx-4 -mt-4 px-4 pt-4 pb-2 bg-white z-10 flex items-center justify-between border-b border-zinc-100">
-          <h2 className="text-lg font-semibold">설정</h2>
-          <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={onClose}>
+          <h2 className="text-3xl font-bold">설정</h2>
+          <button className="text-xl px-2 py-1 rounded border border-zinc-300" onClick={onClose}>
             닫기
           </button>
         </div>
 
-        <div className="text-xs -mt-3" data-testid="save-status">
+        <div className="text-base -mt-3" data-testid="save-status">
           {syncError ? (
             <span className="text-red-600">동기화 오류: {syncError}</span>
           ) : lastSavedAt ? (
@@ -120,17 +120,17 @@ export default function SettingsPanel({
         </div>
 
         <section className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold text-zinc-700">공사 개요</h3>
-          <label className="text-xs text-zinc-500">현장명</label>
+          <h3 className="text-xl font-semibold text-zinc-700">공사 개요</h3>
+          <label className="text-base text-zinc-500">현장명</label>
           <input
-            className="border border-zinc-300 rounded px-2 py-1 text-sm"
+            className="border border-zinc-300 rounded px-2 py-1 text-xl"
             value={siteInfo.name}
             onChange={(e) => onChangeSiteInfo({ ...siteInfo, name: e.target.value })}
             placeholder="예: OO 신축공사 현장"
           />
-          <label className="text-xs text-zinc-500">공사개요</label>
+          <label className="text-base text-zinc-500">공사개요</label>
           <textarea
-            className="border border-zinc-300 rounded px-2 py-1 text-sm min-h-[64px]"
+            className="border border-zinc-300 rounded px-2 py-1 text-xl min-h-[64px]"
             value={siteInfo.overview}
             onChange={(e) => onChangeSiteInfo({ ...siteInfo, overview: e.target.value })}
             placeholder="예: 지하 2층 지상 20층 공동주택, 총 8개동"
@@ -138,13 +138,13 @@ export default function SettingsPanel({
         </section>
 
         <section className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold text-zinc-700">동/구간 관리</h3>
+          <h3 className="text-xl font-semibold text-zinc-700">동/구간 관리</h3>
           <div className="flex flex-col gap-1">
             {blocks.map((b, idx) => (
-              <div key={b.id} className="flex items-center gap-2 text-sm">
+              <div key={b.id} className="flex items-center gap-2 text-xl">
                 <span className="flex flex-col shrink-0 -my-1">
                   <button
-                    className="text-[9px] leading-none px-0.5 disabled:opacity-30"
+                    className="text-sm leading-none px-0.5 disabled:opacity-30"
                     onClick={() => onReorderBlock(b.id, 'up')}
                     disabled={idx === 0}
                     title="위로 이동"
@@ -152,7 +152,7 @@ export default function SettingsPanel({
                     ▲
                   </button>
                   <button
-                    className="text-[9px] leading-none px-0.5 disabled:opacity-30"
+                    className="text-sm leading-none px-0.5 disabled:opacity-30"
                     onClick={() => onReorderBlock(b.id, 'down')}
                     disabled={idx === blocks.length - 1}
                     title="아래로 이동"
@@ -160,14 +160,14 @@ export default function SettingsPanel({
                     ▼
                   </button>
                 </span>
-                <span className="w-14 shrink-0">{b.name}</span>
+                <span className="w-20 shrink-0 font-semibold">{b.name}</span>
                 <input
-                  className="border border-zinc-300 rounded px-2 py-0.5 text-xs flex-1"
+                  className="border border-zinc-300 rounded px-2 py-0.5 text-base flex-1"
                   value={b.info ?? ''}
                   onChange={(e) => onChangeBlockInfo(b.id, e.target.value)}
                   placeholder="세대/층수 (예: 5세대/22층)"
                 />
-                <button className="text-xs text-red-600" onClick={() => onRemoveBlock(b.id)}>
+                <button className="text-base text-red-600" onClick={() => onRemoveBlock(b.id)}>
                   삭제
                 </button>
               </div>
@@ -175,33 +175,33 @@ export default function SettingsPanel({
           </div>
           <div className="flex items-center gap-2 pt-1">
             <input
-              className="border border-zinc-300 rounded px-2 py-1 text-sm flex-1"
+              className="border border-zinc-300 rounded px-2 py-1 text-xl flex-1"
               value={newBlockName}
               onChange={(e) => setNewBlockName(e.target.value)}
               placeholder="예: 15동 또는 관리동"
             />
             <input
-              className="border border-zinc-300 rounded px-2 py-1 text-sm w-36"
+              className="border border-zinc-300 rounded px-2 py-1 text-xl w-36"
               value={newBlockInfo}
               onChange={(e) => setNewBlockInfo(e.target.value)}
               placeholder="세대/층수 (선택)"
             />
-            <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm" onClick={addBlock}>
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white text-xl" onClick={addBlock}>
               추가
             </button>
           </div>
         </section>
 
         <section className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold text-zinc-700">작업팀 관리</h3>
-          <p className="text-xs text-zinc-500">
+          <h3 className="text-xl font-semibold text-zinc-700">작업팀 관리</h3>
+          <p className="text-base text-zinc-500">
             여기서 미리 등록해두면, 공정에 작업팀을 배정할 때 직접 입력하지 않고 목록에서 고를 수 있습니다.
           </p>
           <div className="flex flex-col gap-1">
             {crewTeams.map((t) => (
-              <div key={t.id} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1">
+              <div key={t.id} className="flex items-center gap-2 text-xl border border-zinc-200 rounded px-2 py-1">
                 <span className="flex-1">{t.name}</span>
-                <button className="text-xs text-red-600" onClick={() => onRemoveCrewTeam(t.id)}>
+                <button className="text-base text-red-600" onClick={() => onRemoveCrewTeam(t.id)}>
                   삭제
                 </button>
               </div>
@@ -209,7 +209,7 @@ export default function SettingsPanel({
           </div>
           <div className="flex items-center gap-2">
             <input
-              className="border border-zinc-300 rounded px-2 py-1 text-sm flex-1"
+              className="border border-zinc-300 rounded px-2 py-1 text-xl flex-1"
               value={newTeamName}
               onChange={(e) => setNewTeamName(e.target.value)}
               onKeyDown={(e) => {
@@ -217,24 +217,24 @@ export default function SettingsPanel({
               }}
               placeholder="예: 형틀목공팀"
             />
-            <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm" onClick={addTeam}>
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white text-xl" onClick={addTeam}>
               추가
             </button>
           </div>
         </section>
 
         <section className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold text-zinc-700">휴일 관리</h3>
-          <p className="text-xs text-zinc-500">
+          <h3 className="text-xl font-semibold text-zinc-700">휴일 관리</h3>
+          <p className="text-base text-zinc-500">
             공휴일·대체휴일·임시공휴일·휴가를 등록하면 타설(토·일·공휴일 금지), 갱폼(일·공휴일 금지) 등 휴일 규칙에
             자동 반영됩니다. 휴가는 회사에서 지정한 휴무일을 공휴일과 같은 방식으로 반영할 때 사용합니다.
           </p>
 
           <div className="rounded border border-indigo-200 bg-indigo-50/50 p-2 flex flex-col gap-1">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-indigo-800">한국 공휴일 한 번에 등록</span>
+              <span className="text-base font-medium text-indigo-800">한국 공휴일 한 번에 등록</span>
               <select
-                className="border border-zinc-300 rounded px-2 py-1 text-xs ml-auto"
+                className="border border-zinc-300 rounded px-2 py-1 text-base ml-auto"
                 value={krYear}
                 onChange={(e) => setKrYear(Number(e.target.value))}
               >
@@ -244,15 +244,15 @@ export default function SettingsPanel({
                   </option>
                 ))}
               </select>
-              <button className="px-3 py-1 rounded bg-indigo-600 text-white text-xs" onClick={loadKoreanHolidays}>
+              <button className="px-3 py-1 rounded bg-indigo-600 text-white text-base" onClick={loadKoreanHolidays}>
                 불러오기
               </button>
             </div>
-            <p className="text-[11px] text-zinc-500 leading-snug">
+            <p className="text-base text-zinc-500 leading-snug">
               신정·삼일절·어린이날·현충일·광복절·개천절·한글날·크리스마스와 설날·추석·부처님오신날·대체휴일을 한꺼번에
               넣어요. ⚠️ 설날·추석·대체휴일은 음력이라 해마다 달라지니, 등록 후 실제 달력과 한번 맞춰보세요.
             </p>
-            {krMsg && <p className="text-[11px] text-emerald-700">{krMsg}</p>}
+            {krMsg && <p className="text-base text-emerald-700">{krMsg}</p>}
           </div>
 
           <div className="flex flex-col gap-1">
@@ -260,13 +260,13 @@ export default function SettingsPanel({
               .filter((h) => h.kind !== 'sunday')
               .sort((a, b) => a.date.localeCompare(b.date))
               .map((h) => (
-                <div key={h.date} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1">
+                <div key={h.date} className="flex items-center gap-2 text-xl border border-zinc-200 rounded px-2 py-1">
                   <span className="shrink-0 tabular-nums">{h.date}</span>
                   {h.label && <span className="flex-1 truncate text-zinc-700">{h.label}</span>}
-                  <span className={`text-xs text-zinc-500 ${h.label ? 'shrink-0' : 'flex-1 text-right'}`}>
+                  <span className={`text-base text-zinc-500 ${h.label ? 'shrink-0' : 'flex-1 text-right'}`}>
                     {HOLIDAY_KIND_LABEL[h.kind]}
                   </span>
-                  <button className="text-xs text-red-600 shrink-0" onClick={() => onRemoveHoliday(h.date)}>
+                  <button className="text-base text-red-600 shrink-0" onClick={() => onRemoveHoliday(h.date)}>
                     삭제
                   </button>
                 </div>
@@ -275,13 +275,13 @@ export default function SettingsPanel({
           <div className="flex items-center gap-2 flex-wrap">
             <input
               type="date"
-              className="border border-zinc-300 rounded px-2 py-1 text-sm shrink-0"
+              className="border border-zinc-300 rounded px-2 py-1 text-xl shrink-0"
               value={newHolidayDate}
               onChange={(e) => setNewHolidayDate(e.target.value)}
             />
             <input
               type="text"
-              className="border border-zinc-300 rounded px-2 py-1 text-sm flex-1 min-w-[100px]"
+              className="border border-zinc-300 rounded px-2 py-1 text-xl flex-1 min-w-[100px]"
               value={newHolidayLabel}
               onChange={(e) => setNewHolidayLabel(e.target.value)}
               onKeyDown={(e) => {
@@ -290,7 +290,7 @@ export default function SettingsPanel({
               placeholder="이름/사유 (예: 신정, 창립일) — 선택"
             />
             <select
-              className="border border-zinc-300 rounded px-2 py-1 text-sm shrink-0"
+              className="border border-zinc-300 rounded px-2 py-1 text-xl shrink-0"
               value={newHolidayKind}
               onChange={(e) => setNewHolidayKind(e.target.value as HolidayKind)}
             >
@@ -300,15 +300,15 @@ export default function SettingsPanel({
               <option value="vacation">휴가</option>
               <option value="site_shutdown">현장 셧다운</option>
             </select>
-            <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm shrink-0" onClick={addHoliday}>
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white text-xl shrink-0" onClick={addHoliday}>
               추가
             </button>
           </div>
         </section>
 
         <section className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold text-zinc-700">공종 간 여유일수</h3>
-          <p className="text-xs text-zinc-500">
+          <h3 className="text-xl font-semibold text-zinc-700">공종 간 여유일수</h3>
+          <p className="text-base text-zinc-500">
             지상층 기본(갱폼~타설) 공정에서 한 공종이 끝난 다음 다음 공종이 시작되기까지 두는 기본 간격입니다.
             1일이면 바로 다음날부터, 2일이면 하루 더 쉬고 시작합니다. 새로 생성하는 공정과, 앞으로 이동/연장하는
             공정에 적용됩니다.
@@ -318,11 +318,11 @@ export default function SettingsPanel({
               type="number"
               min="1"
               max="14"
-              className="border border-zinc-300 rounded px-2 py-1 text-sm w-20"
+              className="border border-zinc-300 rounded px-2 py-1 text-xl w-20"
               value={processGapDays}
               onChange={(e) => onChangeProcessGapDays(Math.min(14, Math.max(1, Number(e.target.value) || 1)))}
             />
-            <span className="text-xs text-zinc-500">일</span>
+            <span className="text-base text-zinc-500">일</span>
           </div>
         </section>
       </div>

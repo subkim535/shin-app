@@ -335,14 +335,14 @@ export default function TemplateGenModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-4xl max-h-[85vh] overflow-y-auto p-4 flex flex-col gap-3">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-6xl max-h-[88vh] overflow-y-auto p-5 flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">구간 공정 생성</h2>
-          <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={onClose}>
+          <h2 className="text-2xl font-bold">구간 공정 생성</h2>
+          <button className="text-base px-2 py-1 rounded border border-zinc-300" onClick={onClose}>
             닫기
           </button>
         </div>
-        <p className="text-xs text-zinc-500">
+        <p className="text-sm text-zinc-500">
           왼쪽에서 공사 종류를 고르고, 동·시작일을 정한 뒤 오른쪽 목록에서 순서대로 공정을 눌러 순서를 만드세요. 이미
           순서에 들어간 공정을 다시 누르면 빠집니다. &lsquo;선택한 순서&rsquo;의 각 단계 날짜를 직접 바꾸면 여러 단계를 같은
           날에 겹쳐 넣을 수 있어요(기준층 외 구간공정).
@@ -350,26 +350,26 @@ export default function TemplateGenModal({
 
         <div className="flex gap-3">
           {/* 공사 종류 (세로 목록) */}
-          <div className="flex flex-col gap-1 w-28 shrink-0 border-r border-zinc-200 pr-2">
+          <div className="flex flex-col gap-1 w-36 shrink-0 border-r border-zinc-200 pr-2">
             {TEMPLATE_CATEGORIES.map((c) => (
               <button
                 key={c}
-                className={`text-left text-sm px-2 py-1.5 rounded ${c === category ? 'bg-indigo-600 text-white' : 'hover:bg-zinc-100'}`}
+                className={`text-left text-base px-2 py-1.5 rounded ${c === category ? 'bg-indigo-600 text-white' : 'hover:bg-zinc-100'}`}
                 onClick={() => setCategory(c)}
               >
                 {c}
               </button>
             ))}
-            <div className="text-[10px] font-semibold text-zinc-500 mt-3 mb-0.5 px-2 border-t border-zinc-200 pt-2">저장한 순서</div>
+            <div className="text-xs font-semibold text-zinc-500 mt-3 mb-0.5 px-2 border-t border-zinc-200 pt-2">저장한 순서</div>
             {customTemplateNames.length === 0 ? (
-              <p className="text-[10px] text-zinc-400 px-2 leading-snug">
+              <p className="text-xs text-zinc-400 px-2 leading-snug">
                 아래 &lsquo;저장&rsquo;에 이름을 넣고 저장하면 여기 나타나요 — 그걸 누르면 다시 불러와서 쓸 수 있어요.
               </p>
             ) : (
               customTemplateNames.map((c) => (
                 <div key={c} className="flex items-center gap-1">
                   <button
-                    className={`flex-1 min-w-0 text-left text-sm px-2 py-1.5 rounded ${
+                    className={`flex-1 min-w-0 text-left text-base px-2 py-1.5 rounded ${
                       c === category ? 'bg-indigo-600 text-white whitespace-normal break-words' : 'hover:bg-zinc-100 truncate'
                     }`}
                     title={c}
@@ -378,7 +378,7 @@ export default function TemplateGenModal({
                     {c}
                   </button>
                   <button
-                    className="shrink-0 text-sm leading-none px-1.5 py-1 rounded text-zinc-400 hover:text-white hover:bg-red-600"
+                    className="shrink-0 text-base leading-none px-1.5 py-1 rounded text-zinc-400 hover:text-white hover:bg-red-600"
                     title={`저장한 순서 '${c}' 삭제`}
                     aria-label={`저장한 순서 '${c}' 삭제`}
                     onClick={() => {
@@ -396,7 +396,7 @@ export default function TemplateGenModal({
           </div>
 
           <div className="flex-1 flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-sm">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-base">
               <span className="text-zinc-500 whitespace-nowrap shrink-0">동</span>
               <select className="border border-zinc-300 rounded px-2 py-1 shrink-0" value={blockId} onChange={(e) => setBlockId(e.target.value)}>
                 {blocks.map((b) => (
@@ -433,23 +433,23 @@ export default function TemplateGenModal({
               />
               <button
                 type="button"
-                className="text-xs px-2 py-1 rounded border border-zinc-300 ml-auto disabled:opacity-40"
+                className="text-sm px-2 py-1 rounded border border-zinc-300 ml-auto disabled:opacity-40"
                 onClick={() => setOrderedIndices([])}
                 disabled={orderedIndices.length === 0}
                 title="선택한 순서를 모두 비웁니다"
               >
                 전체 선택 해제
               </button>
-              <button className="text-xs px-2 py-1 rounded border border-zinc-300" onClick={resetOrder}>
+              <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={resetOrder}>
                 기본 순서로 초기화
               </button>
             </div>
 
             {previewEnd && (
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm bg-indigo-50 border border-indigo-100 rounded px-3 py-2">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-base bg-indigo-50 border border-indigo-100 rounded px-3 py-2">
                 <span className="text-zinc-500 whitespace-nowrap">예상 종료일</span>
                 <strong className="text-indigo-700 whitespace-nowrap">{previewEnd.end}</strong>
-                <span className="text-[11px] text-zinc-500 whitespace-nowrap">
+                <span className="text-sm text-zinc-500 whitespace-nowrap">
                   (작업 {previewEnd.workDays}일{parsedRepeatCount > 1 ? ` · 반복 ${parsedRepeatCount}회` : ''} · 달력상 {previewEnd.calendarDays}일 · 일요일·공휴일 제외 계산)
                 </span>
               </div>
@@ -459,32 +459,32 @@ export default function TemplateGenModal({
                 {/* 선택된 순서 */}
                 <div className="flex-1 flex flex-col gap-1">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-semibold text-zinc-500">선택한 순서</h3>
+                    <h3 className="text-sm font-semibold text-zinc-500">선택한 순서</h3>
                     {orderedIndices.length > 0 && (
                       <button
                         type="button"
-                        className="text-xs text-red-600 hover:underline"
+                        className="text-sm text-red-600 hover:underline"
                         onClick={() => setOrderedIndices([])}
                       >
                         전체 취소
                       </button>
                     )}
                   </div>
-                  {orderedIndices.length === 0 && <p className="text-xs text-zinc-400">오른쪽 목록에서 공정을 눌러 순서를 만드세요.</p>}
+                  {orderedIndices.length === 0 && <p className="text-sm text-zinc-400">오른쪽 목록에서 공정을 눌러 순서를 만드세요.</p>}
                   {orderedIndices
                     .filter((idx) => idx < editSteps.length)
                     .map((idx, pos) => (
-                    <div key={`${idx}-${pos}`} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1 min-h-[36px]">
-                      <span className="w-5 shrink-0 text-center text-xs font-semibold text-indigo-600">{pos + 1}</span>
+                    <div key={`${idx}-${pos}`} className="flex items-center gap-2 text-base border border-zinc-200 rounded px-2 py-1 min-h-[36px]">
+                      <span className="w-5 shrink-0 text-center text-sm font-semibold text-indigo-600">{pos + 1}</span>
                       <span className="flex-1">
-                        {editSteps[idx].name} <span className="text-[10px] text-zinc-400">{editSteps[idx].durationDays}일</span>
+                        {editSteps[idx].name} <span className="text-xs text-zinc-400">{editSteps[idx].durationDays}일</span>
                       </span>
                       {/* 시작일 직접 편집 — 바꾸면 그 단계가 그 날에 그대로 놓여 다른 단계와 겹칠 수 있다. */}
                       <input
                         type="date"
                         value={previewDates[pos] ?? ''}
                         onChange={(e) => setDateOverrides((cur) => ({ ...cur, [idx]: e.target.value }))}
-                        className={`border rounded px-1 py-0.5 text-xs shrink-0 ${
+                        className={`border rounded px-1 py-0.5 text-sm shrink-0 ${
                           dateOverrides[idx] ? 'border-indigo-400 text-indigo-700 font-medium bg-indigo-50' : 'border-zinc-200 text-zinc-500'
                         }`}
                         title="이 단계 시작일 — 직접 바꾸면 다른 단계와 같은 날 겹칠 수 있어요"
@@ -492,7 +492,7 @@ export default function TemplateGenModal({
                       {dateOverrides[idx] && (
                         <button
                           type="button"
-                          className="text-[10px] text-zinc-400 hover:text-red-600 shrink-0"
+                          className="text-xs text-zinc-400 hover:text-red-600 shrink-0"
                           title="자동 날짜로 되돌리기"
                           onClick={() =>
                             setDateOverrides((cur) => {
@@ -517,7 +517,7 @@ export default function TemplateGenModal({
                           ▼
                         </button>
                       </span>
-                      <button className="text-xs text-red-600 shrink-0" onClick={() => toggleStep(idx)}>
+                      <button className="text-sm text-red-600 shrink-0" onClick={() => toggleStep(idx)}>
                         빼기
                       </button>
                     </div>
@@ -526,16 +526,16 @@ export default function TemplateGenModal({
 
                 {/* 편집 가능한 공정 목록: 이름 눌러 순서 추가 + 일수/필요시/삭제 편집 + 단계 추가 */}
                 <div className="flex-1 flex flex-col gap-1">
-                  <h3 className="text-xs font-semibold text-zinc-500">공정 목록 (이름 눌러 순서 추가 · 일수·삭제 편집)</h3>
+                  <h3 className="text-sm font-semibold text-zinc-500">공정 목록 (이름 눌러 순서 추가 · 일수·삭제 편집)</h3>
                   {editSteps.length === 0 && (
-                    <p className="text-xs text-zinc-400">아래에서 단계를 직접 추가해 순서를 만드세요.</p>
+                    <p className="text-sm text-zinc-400">아래에서 단계를 직접 추가해 순서를 만드세요.</p>
                   )}
                   {editSteps.map((s, i) => {
                     const picked = orderedIndices.includes(i);
                     return (
                       <div
                         key={i}
-                        className={`flex items-center gap-1 border rounded px-1.5 py-1 text-sm min-h-[36px] ${
+                        className={`flex items-center gap-1 border rounded px-1.5 py-1 text-base min-h-[36px] ${
                           picked ? 'border-indigo-300 bg-indigo-50' : 'border-zinc-200'
                         }`}
                       >
@@ -545,7 +545,7 @@ export default function TemplateGenModal({
                           className={`flex-1 text-left truncate ${picked ? 'text-indigo-700' : 'hover:text-zinc-900'}`}
                           title={picked ? '순서에서 빼기' : '순서에 추가'}
                         >
-                          {picked && <span className="text-[10px] font-semibold mr-1">{orderedIndices.indexOf(i) + 1}번</span>}
+                          {picked && <span className="text-xs font-semibold mr-1">{orderedIndices.indexOf(i) + 1}번</span>}
                           {s.name}
                         </button>
                         <input
@@ -553,13 +553,13 @@ export default function TemplateGenModal({
                           min="1"
                           value={s.durationDays}
                           onChange={(e) => setStepDays(i, e.target.value)}
-                          className="w-11 border border-zinc-300 rounded px-1 py-0.5 text-xs text-center"
+                          className="w-11 border border-zinc-300 rounded px-1 py-0.5 text-sm text-center"
                           title="소요 일수"
                         />
-                        <span className="text-[10px] text-zinc-400">일</span>
+                        <span className="text-xs text-zinc-400">일</span>
                         <button
                           type="button"
-                          className="text-xs text-zinc-400 hover:text-red-600 shrink-0 px-0.5"
+                          className="text-sm text-zinc-400 hover:text-red-600 shrink-0 px-0.5"
                           title="이 단계 삭제"
                           onClick={() => deleteStep(i)}
                         >
@@ -578,17 +578,17 @@ export default function TemplateGenModal({
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') addStep();
                       }}
-                      className="flex-1 border border-zinc-300 rounded px-1.5 py-0.5 text-xs"
+                      className="flex-1 border border-zinc-300 rounded px-1.5 py-0.5 text-sm"
                     />
                     <input
                       type="number"
                       min="1"
                       value={newStepDays}
                       onChange={(e) => setNewStepDays(e.target.value)}
-                      className="w-11 border border-zinc-300 rounded px-1 py-0.5 text-xs text-center"
+                      className="w-11 border border-zinc-300 rounded px-1 py-0.5 text-sm text-center"
                     />
-                    <span className="text-[10px] text-zinc-400">일</span>
-                    <button type="button" className="text-xs px-2 py-0.5 rounded bg-zinc-700 text-white shrink-0" onClick={addStep}>
+                    <span className="text-xs text-zinc-400">일</span>
+                    <button type="button" className="text-sm px-2 py-0.5 rounded bg-zinc-700 text-white shrink-0" onClick={addStep}>
                       단계 추가
                     </button>
                   </div>
@@ -597,28 +597,28 @@ export default function TemplateGenModal({
           </div>
         </div>
 
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="flex items-center justify-end gap-2">
           {customTemplateNames.includes(saveTitle.trim()) && (
-            <span className="text-[11px] text-amber-600 mr-auto">
+            <span className="text-sm text-amber-600 mr-auto">
               &lsquo;{saveTitle.trim()}&rsquo; 프리셋에 덮어쓰기 됩니다
             </span>
           )}
           <input
             type="text"
             placeholder="저장할 이름 (예: 기초공사-A동)"
-            className="border border-zinc-300 rounded px-2 py-1 text-sm w-44"
+            className="border border-zinc-300 rounded px-2 py-1 text-base w-44"
             value={saveTitle}
             onChange={(e) => setSaveTitle(e.target.value)}
           />
-          <button className="px-3 py-1 rounded border border-zinc-300 text-sm" onClick={handleSaveAsNew}>
+          <button className="px-3 py-1 rounded border border-zinc-300 text-base" onClick={handleSaveAsNew}>
             저장
           </button>
-          <button className="px-3 py-1 rounded border border-zinc-300 text-sm" onClick={onClose}>
+          <button className="px-3 py-1 rounded border border-zinc-300 text-base" onClick={onClose}>
             취소
           </button>
-          <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm" onClick={handleSubmit}>
+          <button className="px-3 py-1 rounded bg-indigo-600 text-white text-base" onClick={handleSubmit}>
             생성
           </button>
         </div>
@@ -627,12 +627,12 @@ export default function TemplateGenModal({
       {holidayConfirm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-4 flex flex-col gap-3">
-            <p className="text-sm font-medium">시작일이 휴일입니다.</p>
-            <p className="text-sm text-zinc-600">
+            <p className="text-base font-medium">시작일이 휴일입니다.</p>
+            <p className="text-base text-zinc-600">
               <strong>{startDate}</strong> ({startHolidayLabel})은(는) 휴일이에요. 원래는 다음 작업일로 넘겨서 생성하는데, 그대로
               이 날에 시작할까요?
             </p>
-            <div className="flex justify-end gap-2 text-sm">
+            <div className="flex justify-end gap-2 text-base">
               <button
                 className="px-3 py-1 rounded border border-zinc-300"
                 onClick={() => doSubmit(false)}

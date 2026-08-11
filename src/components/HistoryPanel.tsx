@@ -44,15 +44,15 @@ export default function HistoryPanel({ onClose, changeHistory, dateShiftHistory,
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-xl max-h-[85vh] overflow-y-auto p-4 flex flex-col gap-3">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl max-h-[85vh] overflow-y-auto p-5 flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">변경이력</h2>
-          <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={onClose}>
+          <h2 className="text-3xl font-bold">변경이력</h2>
+          <button className="text-xl px-2 py-1 rounded border border-zinc-300" onClick={onClose}>
             닫기
           </button>
         </div>
-        {rows.length === 0 && <p className="text-sm text-zinc-500">아직 변경 이력이 없습니다.</p>}
-        <div className="flex flex-col gap-1 text-sm">
+        {rows.length === 0 && <p className="text-xl text-zinc-500">아직 변경 이력이 없습니다.</p>}
+        <div className="flex flex-col gap-1 text-xl">
           {rows.map((r) => (
             <div key={r.key} className="border border-zinc-200 rounded px-2 py-1.5">
               <div className="flex items-center gap-2">
@@ -63,7 +63,7 @@ export default function HistoryPanel({ onClose, changeHistory, dateShiftHistory,
                   {r.to ? ` → ${r.to}` : ''}
                 </span>
               </div>
-              <div className="text-xs text-zinc-500 mt-0.5">사유: {r.reason}</div>
+              <div className="text-base text-zinc-500 mt-0.5">사유: {r.reason}</div>
             </div>
           ))}
         </div>

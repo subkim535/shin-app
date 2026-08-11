@@ -40,12 +40,12 @@ export default function TeamViewPanel({ crewTeams, processes, blocks, onClose }:
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
       <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl max-h-[85vh] overflow-y-auto p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">투입인원관리 — 팀별 작업 현황</h2>
-          <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={onClose}>
+          <h2 className="text-3xl font-bold">투입인원관리 — 팀별 작업 현황</h2>
+          <button className="text-xl px-2 py-1 rounded border border-zinc-300" onClick={onClose}>
             닫기
           </button>
         </div>
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex items-center gap-2 text-xl">
           <span className="text-zinc-500">팀 선택</span>
           <select
             className="border border-zinc-300 rounded px-2 py-1"
@@ -60,18 +60,18 @@ export default function TeamViewPanel({ crewTeams, processes, blocks, onClose }:
             ))}
           </select>
         </div>
-        {grouped.size === 0 && <p className="text-xs text-zinc-400">배정된 작업이 없습니다.</p>}
+        {grouped.size === 0 && <p className="text-base text-zinc-400">배정된 작업이 없습니다.</p>}
         <div className="flex flex-col gap-4">
           {[...grouped.entries()].map(([team, list]) => (
             <div key={team} className="flex flex-col gap-1">
-              <h3 className="text-sm font-semibold text-zinc-700">
-                {team} <span className="text-xs text-zinc-400">({list.reduce((s, p) => s + (p.crew?.headcount ?? 0), 0)}명 연인원)</span>
+              <h3 className="text-xl font-semibold text-zinc-700">
+                {team} <span className="text-base text-zinc-400">({list.reduce((s, p) => s + (p.crew?.headcount ?? 0), 0)}명 연인원)</span>
               </h3>
               <div className="flex flex-col gap-1">
                 {list.map((p) => (
                   <div
                     key={p.id}
-                    className="text-xs border border-zinc-200 rounded px-2 py-1 flex items-center justify-between"
+                    className="text-base border border-zinc-200 rounded px-2 py-1 flex items-center justify-between"
                   >
                     <span>
                       <strong>{p.date}</strong> · {blockNames[p.blockId] ?? ''} · {processLabel(p)}

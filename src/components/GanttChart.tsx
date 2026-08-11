@@ -62,6 +62,8 @@ interface GanttChartProps {
   // 같은 동을 다시 검색해도(스크롤이 이미 그 위치라 값이 안 바뀌어도) 매번 스크롤이
   // 다시 실행되게 한다.
   scrollToBlockId?: { blockId: string; nonce: number } | null;
+  // 간략 보기: 보조공정·특이사항 행을 숨겨 동 높이를 줄이고 주공정 칩을 크게(스티커처럼) 보여준다.
+  compact?: boolean;
 }
 
 type DragState =
@@ -122,6 +124,7 @@ export default function GanttChart({
   onMoveBlockTo,
   onClickBlockName,
   scrollToBlockId,
+  compact = false,
 }: GanttChartProps) {
   const dates = useMemo(() => datesInRange(viewStartDate, dayCount), [viewStartDate, dayCount]);
   const dateIndex = useMemo(() => new Map(dates.map((d, i) => [d, i])), [dates]);
@@ -614,7 +617,8 @@ export default function GanttChart({
     // 한 칸에 주공정 칩이 여러 개 쌓이면(예: 구간공정 여러 단계가 같은 날) 기본 높이(칩 1개)
     // 에선 잘려서 칸 안에서 스크롤해야 한다. 동별로 한 칸에 들어가는 주공정 칩의 최대 개수를
     // 세어, 그만큼 그 동의 주공정 행 높이를 늘려 다 보이게 한다. (칩 1개는 기본 높이가 감당)
-    const MAIN_CHIP_H = 54; // 칩 한 개가 차지하는 높이(컨트롤이 좁은 칸에서 줄바꿈되는 것 포함)
+    // 간략 보기는 칩을 크게(스티커처럼) 그리므로 한 개가 차지하는 높이도 더 크게 잡는다.
+    const MAIN_CHIP_H = compact ? 60 : 54; // 칩 한 개가 차지하는 높이(컨트롤이 좁은 칸에서 줄바꿈되는 것 포함)
     const mainContentExtra: number[] = [];
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
@@ -632,14 +636,17 @@ export default function GanttChart({
     let cursor = HEADER_H;
     for (let i = 0; i < blocks.length; i++) {
       blockTop.push(cursor); // 동의 맨 위 = 공사 구분 띠 행의 top
-      const mh = ROW_MAIN_H + Math.max(extra.get(`${i}_main`) ?? 0, mainContentExtra[i] ?? 0);
+      // 간략 보기는 큰 칩 한 줄이 넉넉히 들어가게 주공정 행 기본 높이를 키운다.
+      const mainBase = compact ? 64 : ROW_MAIN_H;
+      const mh = mainBase + Math.max(extra.get(`${i}_main`) ?? 0, mainContentExtra[i] ?? 0);
       const sh = ROW_SUB_H + Math.max(extra.get(`${i}_sub`) ?? 0, subContentExtra[i] ?? 0);
       mainH.push(mh);
       subH.push(sh);
-      cursor += BAND_H + mh + sh + ROW_NOTE_H;
+      // 간략 보기: 보조공정·특이사항 행을 숨기므로 동 높이에서 뺀다(그리드도 0px로 접는다).
+      cursor += compact ? BAND_H + mh : BAND_H + mh + sh + ROW_NOTE_H;
     }
     return { mainH, subH, blockTop, totalHeight: cursor };
-  }, [rawVisuals, blocks, dates, byBlockDateMain, byBlockDateSub]);
+  }, [rawVisuals, blocks, dates, byBlockDateMain, byBlockDateSub, compact]);
 
   function rowTopFor(rowIndex: number, rowType: RowType): number {
     // rawVisuals/rowMetrics는 같은 blocks 값에서 계산되지만, 다른 사용자가 동에서 실시간으로
@@ -673,7 +680,7 @@ export default function GanttChart({
       const base = a.rowType === 'main' ? ROW_MAIN_H : ROW_SUB_H;
       const baseY = rowTopFor(a.rowIndex, a.rowType) + base - 12 + GHOST_BOX_H / 2;
       const y = baseY + a.lane * LANE_STEP; // 같은 행에서 겹치는 화살표끼리 살짝 어긋나게 (고스트와 같은 간격을 써야 레인이 맞는다)
-      return { x1, y1: y, x2, y2: y, label: a.label, reason: a.reason, path: a.path, processId: a.processId };
+      return { x1, y1: y, x2, y2: y, label: a.label, reason: a.reason, path: a.path, processId: a.processId, rowType: a.rowType };
     });
     return { ghosts, arrows };
   }, [rawVisuals, rowMetrics]);
@@ -681,7 +688,16 @@ export default function GanttChart({
   const totalWidth = HEADER_W + dates.length * CELL_W + REMARK_W;
   const totalHeight = rowMetrics.totalHeight;
   const gridTemplateRows =
-    `${HEADER_H}px ` + blocks.map((_, i) => `${BAND_H}px ${rowMetrics.mainH[i]}px ${rowMetrics.subH[i]}px ${ROW_NOTE_H}px`).join(' ');
+    `${HEADER_H}px ` +
+    blocks
+      .map((_, i) =>
+        // 간략 보기: 보조공정·특이사항 행을 0px로 접는다(그 셀은 렌더도 건너뛴다). 행 번호
+        // 체계(동마다 4행)는 그대로라 밴드/주공정 셀의 gridRow 계산은 바꿀 필요가 없다.
+        compact
+          ? `${BAND_H}px ${rowMetrics.mainH[i]}px 0px 0px`
+          : `${BAND_H}px ${rowMetrics.mainH[i]}px ${rowMetrics.subH[i]}px ${ROW_NOTE_H}px`,
+      )
+      .join(' ');
 
   // 동/층 검색으로 특정 동을 찾으면 그 동 행이 세로로 화면에 보이게 스크롤한다.
   useEffect(() => {
@@ -755,7 +771,7 @@ export default function GanttChart({
   // 그 날 무슨 공정이 진행 중인지 보이게 한다. 이름 부분 클릭은 그 공정을 선택(드래그는
   // 시작 칩에서만). 옆에 종일/오전/오후 토글을 달아, 다일 공정도 어느 칸에서든 반나절을
   // 바꿀 수 있게 한다(같은 공정이라 어느 바에서 눌러도 같은 상태를 바꾼다).
-  function renderSpanBar(p: ProcessInstance, date: ISODate) {
+  function renderSpanBar(p: ProcessInstance, date: ISODate, big = false) {
     const color = PROCESS_COLOR[p.typeCode] ?? (p.customLabel ? customProcessColor(p.customLabel) : FALLBACK_COLOR);
     const selected = p.id === selectedProcessId;
     const slot = effectiveSlot(p, date); // 이 날짜의 반나절(시작일 아닌 지나가는 날은 daySlots 반영)
@@ -769,13 +785,16 @@ export default function GanttChart({
           }}
           title={`${processLabel(p)} · ${p.durationDays}일 공정 진행 중`}
           className={[
-            'flex-1 min-w-0 text-left rounded px-1.5 py-0.5 text-sm leading-tight truncate opacity-60',
+            big
+              ? 'flex-1 min-w-0 text-left rounded-md px-2 py-1.5 text-2xl leading-tight truncate opacity-60'
+              : 'flex-1 min-w-0 text-left rounded px-1.5 py-0.5 text-sm leading-tight truncate opacity-60',
             `${color.bg} ${color.text}`,
             selected ? 'ring-2 ring-indigo-600 opacity-90' : '',
           ].join(' ')}
         >
           ↔ {processLabel(p)}
         </button>
+        {!big && (
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
@@ -799,12 +818,13 @@ export default function GanttChart({
         >
           {slot === 'morning' ? '오전' : slot === 'afternoon' ? '오후' : '종일'}
         </button>
+        )}
       </div>
     );
   }
 
   // 이제 이 함수는 주공정 칩 전용이다 — 보조공정은 renderSubBadge가 전담한다.
-  function renderChip(p: ProcessInstance, blockId: string, date: ISODate) {
+  function renderChip(p: ProcessInstance, blockId: string, date: ISODate, big = false) {
     const def = PROCESS_TYPE_MAP[p.typeCode];
     const selected = p.id === selectedProcessId;
     const color = PROCESS_COLOR[p.typeCode] ?? (p.customLabel ? customProcessColor(p.customLabel) : FALLBACK_COLOR);
@@ -826,7 +846,9 @@ export default function GanttChart({
           data-process-id={p.id}
           title={p.crew ? `${p.crew.team} · ${p.crew.headcount}명` : undefined}
           className={[
-            'text-left rounded px-1 py-0.5 text-base leading-tight relative flex-1 min-w-[74px]',
+            big
+              ? 'text-left rounded-md px-2 py-1.5 text-2xl leading-tight relative flex-1 min-w-[130px]'
+              : 'text-left rounded px-1 py-0.5 text-base leading-tight relative flex-1 min-w-[74px]',
             `font-semibold ${color.bg} ${color.text}`,
             'cursor-grab active:cursor-grabbing',
             selected ? 'ring-2 ring-indigo-600' : overdue ? 'ring-2 ring-red-500' : '',
@@ -857,7 +879,9 @@ export default function GanttChart({
               onCycleStatus(p.id);
             }}
             className={[
-              'inline-flex items-center justify-center w-3.5 h-3.5 mr-1 rounded-sm border align-middle shrink-0 text-xs leading-none font-bold',
+              big
+                ? 'inline-flex items-center justify-center w-6 h-6 mr-1.5 rounded border align-middle shrink-0 text-lg leading-none font-bold'
+                : 'inline-flex items-center justify-center w-3.5 h-3.5 mr-1 rounded-sm border align-middle shrink-0 text-xs leading-none font-bold',
               p.actualDone
                 ? 'bg-emerald-600 border-emerald-700 text-white'
                 : p.inProgress
@@ -913,6 +937,10 @@ export default function GanttChart({
             </span>
           ) : null}
         </button>
+        {/* 간략(큰 스티커) 보기에선 편집용 작은 컨트롤(작업팀·오전오후·더보기)을 숨겨 깔끔하게
+            보여준다 — 세부 편집은 '자세히' 보기에서 한다. */}
+        {!big && (
+        <>
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
@@ -965,6 +993,8 @@ export default function GanttChart({
         >
           ⋯
         </button>
+        </>
+        )}
       </div>
     );
   }
@@ -1188,23 +1218,26 @@ export default function GanttChart({
                     <div className="flex gap-0.5 items-start">
                       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                         {morningItems.map((x) => (
-                          <div key={x.p.id}>{x.span ? renderSpanBar(x.p, d) : renderChip(x.p, block.id, d)}</div>
+                          <div key={x.p.id}>{x.span ? renderSpanBar(x.p, d, compact) : renderChip(x.p, block.id, d, compact)}</div>
                         ))}
                       </div>
                       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                         {afternoonItems.map((x) => (
-                          <div key={x.p.id}>{x.span ? renderSpanBar(x.p, d) : renderChip(x.p, block.id, d)}</div>
+                          <div key={x.p.id}>{x.span ? renderSpanBar(x.p, d, compact) : renderChip(x.p, block.id, d, compact)}</div>
                         ))}
                       </div>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-0.5">
                       {cellItems.map((x) => (
-                        <div key={x.p.id}>{x.span ? renderSpanBar(x.p, d) : renderChip(x.p, block.id, d)}</div>
+                        <div key={x.p.id}>{x.span ? renderSpanBar(x.p, d, compact) : renderChip(x.p, block.id, d, compact)}</div>
                       ))}
                     </div>
                   )}
                 </div>
+                {/* 간략 보기: 보조공정·특이사항 행은 렌더하지 않는다(그리드에선 0px로 접힘). */}
+                {!compact && (
+                <>
                 <div
                   data-block={block.name}
                   data-date={d}
@@ -1256,13 +1289,15 @@ export default function GanttChart({
                     </button>
                   </div>
                 </div>
+                </>
+                )}
               </div>
             );
           }),
         )}
 
         {/* 변경이력 고스트(이동 전 셀에 연한 회색으로 흔적 표시, 클릭하면 사유) */}
-        {visuals.ghosts.map((g, i) => (
+        {visuals.ghosts.filter((g) => !compact || g.rowType === 'main').map((g, i) => (
           <div
             key={i}
             className="flex flex-col gap-0.5 px-1 py-0.5"
@@ -1296,7 +1331,7 @@ export default function GanttChart({
               <path d="M0,0 L6,3 L0,6 Z" fill="#a1a1aa" />
             </marker>
           </defs>
-          {visuals.arrows.map((a, i) => (
+          {visuals.arrows.filter((a) => !compact || a.rowType === 'main').map((a, i) => (
             <g key={i}>
               <line
                 x1={a.x1}
