@@ -387,6 +387,8 @@ export default function ScheduleApp() {
   }, [loaded, siteInfo, blocks, templates, holidays, processes, changeHistory, dateShiftHistory, notes, directLabor, crewTeams, processGapDays]);
 
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
+  // 선택한 공정을 드래그 대신 "날짜 골라서 이동"할 때 쓰는 목표 날짜(선택 시 그 공정 날짜로 초기화).
+  const [moveToDate, setMoveToDate] = useState<ISODate>('');
   const [warning, setWarning] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchBlockId, setSearchBlockId] = useState<'all' | string>('all');
@@ -571,7 +573,11 @@ export default function ScheduleApp() {
 
   function handleSelectProcess(id: string) {
     setWarning(null);
-    setSelectedProcessId((cur) => (cur === id ? null : id));
+    const willSelect = selectedProcessId !== id;
+    setSelectedProcessId(willSelect ? id : null);
+    // 새로 선택하면 "이동" 날짜칸을 그 공정의 현재 날짜로 맞춰준다.
+    const proc = willSelect ? processes.find((p) => p.id === id) : null;
+    setMoveToDate(proc ? proc.date : '');
   }
 
   // 동 이름 또는 층수로 빠르게 찾아서 그 자리로 스크롤한다. 층수(예: "17"/"17F")를
@@ -606,6 +612,7 @@ export default function ScheduleApp() {
     if (floorMatch) {
       setViewStartDate(mondayOfWeek(floorMatch.date));
       setSelectedProcessId(floorMatch.id);
+      setMoveToDate(floorMatch.date);
       setScrollToBlockId({ blockId: floorMatch.blockId, nonce: Date.now() });
       setSearchNotFound(false);
       return;
@@ -618,6 +625,7 @@ export default function ScheduleApp() {
     if (labelMatch) {
       setViewStartDate(mondayOfWeek(labelMatch.date));
       setSelectedProcessId(labelMatch.id);
+      setMoveToDate(labelMatch.date);
       setScrollToBlockId({ blockId: labelMatch.blockId, nonce: Date.now() });
       setSearchNotFound(false);
       return;
@@ -1042,7 +1050,8 @@ export default function ScheduleApp() {
   function postponeExisting(existingId: string) {
     resetDropFlow();
     setSelectedProcessId(existingId);
-    setWarning('순연할 공정을 선택했습니다. 이제 이 공정을 드래그해서 다른 날짜로 옮겨주세요.');
+    setMoveToDate(processes.find((p) => p.id === existingId)?.date ?? '');
+    setWarning('순연할 공정을 선택했습니다. 드래그하거나, 위의 날짜칸에서 날짜를 골라 "이 날짜로 이동"을 누르세요.');
   }
 
   function confirmReason(presetReason?: string) {
@@ -1385,6 +1394,24 @@ export default function ScheduleApp() {
             <button className="px-3 py-1 rounded border border-zinc-300" onClick={() => setSelectedProcessId(null)}>
               선택 취소
             </button>
+            {/* 드래그 대신 날짜를 골라서 이동 — 일주일 넘게 멀리 옮길 때 편하다. */}
+            <span className="text-zinc-400">→</span>
+            <input
+              type="date"
+              value={moveToDate || selectedProcess.date}
+              onChange={(e) => setMoveToDate(e.target.value)}
+              className="px-2 py-1 rounded border border-zinc-300"
+              data-testid="move-to-date"
+              title="옮길 날짜를 고르세요"
+            />
+            <button
+              className="px-3 py-1 rounded border border-indigo-500 bg-indigo-600 text-white disabled:opacity-40"
+              disabled={!moveToDate || moveToDate === selectedProcess.date}
+              onClick={() => handleDropProcess(selectedProcess.id, selectedProcess.blockId, moveToDate)}
+              data-testid="move-to-date-go"
+            >
+              이 날짜로 이동
+            </button>
             <button
               className="px-3 py-1 rounded border border-zinc-300"
               onClick={() => {
@@ -1398,7 +1425,7 @@ export default function ScheduleApp() {
         )}
 
         {!warning && !selectedProcess && (
-          <span className="text-zinc-400">공정 칩을 드래그해서 같은 행의 다른 날짜로, 날짜 헤더를 드래그해서 전체 일정을 옮기세요.</span>
+          <span className="text-zinc-400">공정 칩을 드래그해서 옮기거나, 칩을 클릭해 선택한 뒤 날짜를 골라 &lsquo;이 날짜로 이동&rsquo;하세요(멀리 옮길 때 편함). 날짜 헤더를 드래그하면 전체 일정을 옮깁니다.</span>
         )}
       </div>
 
