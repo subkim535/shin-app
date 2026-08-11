@@ -14,7 +14,7 @@ const CELL_W = 200;
 const REMARK_W = 210;
 const HEADER_H = 54;
 const ROW_MAIN_H = 72;
-const ROW_SUB_H = 38;
+const ROW_SUB_H = 34;
 const ROW_NOTE_H = 42;
 const BAND_H = 26; // 동마다 공정 위에 붙는 "공사 구분 띠" 행 높이
 const FALLBACK_COLOR = { bg: 'bg-slate-300', text: 'text-slate-900' };
@@ -584,7 +584,7 @@ export default function GanttChart({
     // 보조공정 배지가 한 셀에서 여러 줄로 늘어나는(특히 오전/오후로 반씩 나뉘어 칸이
     // 좁아진) 경우, 28px 고정 높이에선 잘려서 스크롤된다. 동별로 셀마다 필요한 보조공정
     // 줄 수를 세어, 가장 많이 필요한 만큼 그 동의 보조 행 높이를 늘린다.
-    const SUB_LINE_H = 30; // 배지 한 줄이 차지하는 높이(약 28px) + 줄 간격
+    const SUB_LINE_H = 27; // 배지 한 줄이 차지하는 높이(약 25px) + 줄 간격
     const subContentExtra: number[] = [];
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
@@ -731,7 +731,7 @@ export default function GanttChart({
         data-process-id={s.id}
         data-testid="sub-badge"
         className={[
-          'inline-flex items-center gap-1 rounded px-2 py-1 text-base leading-tight bg-zinc-100 text-zinc-700 border border-zinc-300 max-w-full shrink-0',
+          'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-sm leading-tight bg-zinc-100 text-zinc-700 border border-zinc-300 max-w-full shrink-0',
           'cursor-grab active:cursor-grabbing',
           selectedProcessId === s.id ? 'ring-1 ring-indigo-600' : '',
           isDragSource ? 'opacity-50' : '',
@@ -748,7 +748,7 @@ export default function GanttChart({
             onToggleActualDone(s.id);
           }}
           className={[
-            'inline-flex items-center justify-center w-4 h-4 rounded-sm border shrink-0 text-xs',
+            'inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm border shrink-0 text-[11px]',
             s.actualDone ? 'bg-emerald-600 border-emerald-700 text-white' : 'border-current bg-white/60',
           ].join(' ')}
         >
