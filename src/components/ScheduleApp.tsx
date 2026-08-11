@@ -1230,7 +1230,9 @@ export default function ScheduleApp() {
             {!loaded && !syncError && <p className="text-xs text-zinc-400 mt-0.5">불러오는 중…</p>}
             {syncError && <p className="text-xs text-red-600 mt-0.5">동기화 오류: {syncError}</p>}
           </div>
-          <div className="flex flex-wrap gap-2 text-lg">
+        </div>
+        {/* 상단 버튼 줄 — 제목과 겹치지 않게 아래에 전체 폭으로 펼쳐 왼→오 순서로 나열 */}
+        <div className="flex flex-wrap gap-2 text-lg">
             <button
               className="px-3 py-2 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setViewMode((m) => (m === 'monthly' ? 'overview' : 'monthly'))}
@@ -1314,9 +1316,8 @@ export default function ScheduleApp() {
               설정
             </button>
           </div>
-        </div>
         {viewMode === 'monthly' && (
-          <div className="flex items-center justify-end gap-1 text-lg">
+          <div className="flex items-center flex-wrap gap-1 text-lg">
             <button
               className="px-3 py-2 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setViewStartDate((d) => addDays(d, -7))}
@@ -2033,24 +2034,24 @@ export default function ScheduleApp() {
 
       {postponePrompt && (
         <Modal>
-          <p className="text-sm">
+          <p className="text-xl">
             <strong>{postponePrompt.date}</strong> 이후 전체 일정을 며칠 순연하시겠습니까? (당기려면 음수 입력)
           </p>
           <input
             autoFocus
             type="number"
-            className="border border-zinc-300 rounded px-2 py-1 text-sm"
+            className="border border-zinc-300 rounded px-3 py-2 text-2xl w-full"
             value={postponePrompt.days}
             onChange={(e) => setPostponePrompt((cur) => (cur ? { ...cur, days: e.target.value } : cur))}
             onKeyDown={(e) => {
               if (e.key === 'Enter') submitPostponePrompt();
             }}
           />
-          <div className="flex justify-end gap-2 text-sm">
-            <button className="px-3 py-1 rounded border border-zinc-300" onClick={() => setPostponePrompt(null)}>
+          <div className="flex justify-end gap-2 text-xl">
+            <button className="px-4 py-2 rounded border border-zinc-300" onClick={() => setPostponePrompt(null)}>
               취소
             </button>
-            <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={submitPostponePrompt}>
+            <button className="px-4 py-2 rounded bg-indigo-600 text-white" onClick={submitPostponePrompt}>
               확인
             </button>
           </div>

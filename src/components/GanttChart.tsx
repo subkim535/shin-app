@@ -11,7 +11,7 @@ const HEADER_W = 108;
 // 넉넉히 잡는다. 좁으면 층수 붙은 갱폼 칩만 2줄로 접혀 높이가 들쭉날쭉해 거슬린다.
 // (칸 폭은 균일해야 변경이력 고스트/화살표의 픽셀 위치 계산이 맞으므로 전체를 함께 넓힌다.)
 const CELL_W = 200;
-const REMARK_W = 152;
+const REMARK_W = 210;
 const HEADER_H = 54;
 const ROW_MAIN_H = 72;
 const ROW_SUB_H = 38;
@@ -330,15 +330,20 @@ export default function GanttChart({
     const map = new Map<string, { cycleId: string; label: string; start: ISODate; end: ISODate }[]>();
     for (const list of byBlockCycle.values()) {
       const blockId = list[0].blockId;
-      let start = list[0].date;
-      let end = list[0].date;
+      // 띠 기간(시작~끝)은 "주요 작업" 기준으로 잡는다 — 타설 뒤에 붙는 박리제 같은 보조공정이
+      // 며칠 더 넘어가더라도 띠가 그만큼 늘어나 "밀린 것처럼" 보이지 않게 한다. 주공정(구간공정
+      // 단계 포함)만으로 시작·끝을 계산하고, 보조공정만 있는 특수한 경우에만 전체로 폴백한다.
+      const mains = list.filter((p) => PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub');
+      const spanList = mains.length > 0 ? mains : list;
+      let start = spanList[0].date;
+      let end = spanList[0].date;
       let floor: string | undefined;
-      for (const p of list) {
+      for (const p of spanList) {
         if (p.date < start) start = p.date;
         const e = workableSpanEnd(p.typeCode, p.date, p.durationDays, holidays);
         if (e > end) end = e;
-        if (p.floorLabel) floor = p.floorLabel;
       }
+      for (const p of list) if (p.floorLabel) floor = p.floorLabel;
       // 공사종류(카테고리)는 같은 구간 단계들의 공통 접두어에서 뽑는다 — 코드가
       // `CUSTOM_<종류>_<번호>_<이름>`이고 <종류>에 "기초공사 1"처럼 공백→_이 섞여 있어도
       // (그 "_1"을 번호로 착각하지 않게) 여러 단계가 공유하는 접두어 `CUSTOM_<종류>_`로 정확히
@@ -1107,7 +1112,7 @@ export default function GanttChart({
               onChange={(e) => onChangeBlockRemark(block.id, e.target.value)}
               placeholder="비고"
               data-testid="block-remark"
-              className="w-full h-full text-xs px-1 py-0.5 bg-transparent outline-none resize-none placeholder:text-zinc-300"
+              className="w-full h-full text-base leading-snug px-1 py-0.5 bg-transparent outline-none resize-none placeholder:text-zinc-300"
             />
           </div>
         ))}
