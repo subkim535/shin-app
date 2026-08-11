@@ -821,27 +821,31 @@ export default function ScheduleApp() {
     repeatCount: number,
     floorLabel: string,
     allowStartHoliday: boolean,
+    stepDates?: Record<string, ISODate>,
   ): string | null {
     const template: ProcessTemplate = {
       id: templates.find((t) => t.name === categoryName)?.id ?? crypto.randomUUID(),
       name: categoryName,
       steps,
     };
-    // 기존 공정을 넘겨서, 새 구간공정 단계가 이미 차 있는 날을 피해(다음 빈 날로 밀려)
-    // 배치되게 한다 — 겹치면 막지 않고 자동으로 밀어 배치. floorLabel이 있으면 각 단계에
-    // 그 층수를 붙여, 나중에 검색에서 층수로 찾을 수 있게 한다. allowStartHoliday면 첫
-    // 단계는 휴일이어도 고른 시작일에 그대로 놓는다(사용자가 경고에서 "예" 확인한 경우).
+    // 기존 공정을 넘겨서, 지정 안 한 단계는 이미 차 있는 날을 피해(다음 빈 날로) 배치한다.
+    // 사용자가 "선택한 순서"에서 날짜를 직접 바꾼 단계(stepDates)는 그 날에 그대로 놓아 같은 날
+    // 겹칠 수 있다 — 기준층 외 구간공정은 겹침을 허용하기로 함. floorLabel이 있으면 각 단계에
+    // 그 층수를 붙인다. allowStartHoliday면 첫 단계는 휴일이어도 고른 시작일에 그대로 놓는다.
     const generated = generateRepeatingFromTemplate(template, targetBlockId, startDate, holidays, repeatCount, {
       floorLabel: floorLabel || undefined,
       allowStartHoliday,
+      stepDates,
     }, processes);
+    handleSaveTemplateSteps(categoryName, steps);
+    setProcesses((cur) => recomputeConflicts([...cur, ...generated]));
+    // 겹침은 막지 않고 생성하되(구간공정은 겹침 허용), 실제로 같은 시간대가 겹치면 안내한다.
+    // 오전/오후로 나뉜 조합은 findMainCollisions가 걸러내므로 여기 잡히지 않는다.
     const collisions = findMainCollisions([...processes, ...generated]).filter((c) => c.blockId === targetBlockId);
     if (collisions.length > 0) {
       const list = collisions.map((c) => `${c.date} ${c.labels.join('/')}`).join(', ');
-      return `이 시작일로 생성하면 기존 공정과 겹치게 되어 만들 수 없습니다: ${list}`;
+      setWarning(`⚠ 주의: 같은 날 겹치는 공정이 있어요 — ${list}. (오전/오후로 나누면 나란히 쓸 수 있어요)`);
     }
-    handleSaveTemplateSteps(categoryName, steps);
-    setProcesses((cur) => recomputeConflicts([...cur, ...generated]));
     return null;
   }
 
@@ -1154,14 +1158,14 @@ export default function ScheduleApp() {
                 type="button"
                 onClick={() => setChangelogOpen((v) => !v)}
                 title="최근 수정 내역 보기"
-                className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 shrink-0"
+                className="px-2.5 py-1 rounded-full text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 shrink-0"
                 data-testid="changelog-badge"
               >
                 #{APP_REVISION}차 수정
               </button>
               {projectEnd && (
                 <span
-                  className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-600 text-white shrink-0"
+                  className="px-3 py-1 rounded-full text-sm font-semibold bg-emerald-600 text-white shrink-0"
                   title="모든 동을 통틀어 가장 늦게 끝나는 공정 기준 (작업일·휴일 반영)"
                   data-testid="project-end-badge"
                 >
@@ -1334,7 +1338,7 @@ export default function ScheduleApp() {
         )}
       </header>
 
-      <div className="min-h-[36px] flex items-center gap-2 text-sm shrink-0" data-testid="action-bar">
+      <div className="min-h-[36px] flex items-center gap-2 text-base shrink-0" data-testid="action-bar">
         {warning && (
           <span className="text-red-600" data-testid="warning">
             {warning}
@@ -1368,7 +1372,7 @@ export default function ScheduleApp() {
       </div>
 
       {viewMode === 'monthly' && (
-        <div className="flex items-center flex-wrap gap-x-4 gap-y-1 px-1 pb-1.5 text-xs text-zinc-600">
+        <div className="flex items-center flex-wrap gap-x-4 gap-y-1 px-1 pb-1.5 text-sm text-zinc-600">
           <span className="font-medium text-zinc-500">공정 상태 — 칩 앞 네모를 클릭해서 바꿔요:</span>
           <span className="inline-flex items-center gap-1">
             <span className="inline-flex w-3.5 h-3.5 rounded-sm border border-zinc-400 bg-white" />

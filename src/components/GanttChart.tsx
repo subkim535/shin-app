@@ -6,17 +6,17 @@ import { PROCESS_COLOR, PROCESS_TYPE_MAP, customProcessColor } from '@/lib/domai
 import { isBlockedForType, isWorkersDay, processLabel, workableSpanEnd } from '@/lib/domain/schedule';
 import { Block, ChangeRecord, Holiday, ProcessInstance } from '@/lib/domain/types';
 
-const HEADER_W = 96;
+const HEADER_W = 108;
 // 주공정 칩(예: "16F 갱폼" + ⚠ + 종일/오전/오후 + 더보기)이 한 줄에 다 들어가도록 폭을
 // 넉넉히 잡는다. 좁으면 층수 붙은 갱폼 칩만 2줄로 접혀 높이가 들쭉날쭉해 거슬린다.
 // (칸 폭은 균일해야 변경이력 고스트/화살표의 픽셀 위치 계산이 맞으므로 전체를 함께 넓힌다.)
-const CELL_W = 184;
-const REMARK_W = 140;
-const HEADER_H = 48;
-const ROW_MAIN_H = 52;
-const ROW_SUB_H = 28;
-const ROW_NOTE_H = 36;
-const BAND_H = 22; // 동마다 공정 위에 붙는 "공사 구분 띠" 행 높이
+const CELL_W = 200;
+const REMARK_W = 152;
+const HEADER_H = 54;
+const ROW_MAIN_H = 60;
+const ROW_SUB_H = 34;
+const ROW_NOTE_H = 42;
+const BAND_H = 26; // 동마다 공정 위에 붙는 "공사 구분 띠" 행 높이
 const FALLBACK_COLOR = { bg: 'bg-slate-300', text: 'text-slate-900' };
 // 공사 구분 띠 색 — 한 동 안에서 이어지는 공사끼리 색이 달라 보이게 순번대로 돌려 쓴다.
 const BAND_COLORS = [
@@ -576,7 +576,7 @@ export default function GanttChart({
     // 보조공정 배지가 한 셀에서 여러 줄로 늘어나는(특히 오전/오후로 반씩 나뉘어 칸이
     // 좁아진) 경우, 28px 고정 높이에선 잘려서 스크롤된다. 동별로 셀마다 필요한 보조공정
     // 줄 수를 세어, 가장 많이 필요한 만큼 그 동의 보조 행 높이를 늘린다.
-    const SUB_LINE_H = 22; // 배지 한 줄이 차지하는 높이(약 20px) + 줄 간격
+    const SUB_LINE_H = 26; // 배지 한 줄이 차지하는 높이(약 24px) + 줄 간격
     const subContentExtra: number[] = [];
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
@@ -614,7 +614,7 @@ export default function GanttChart({
     // 한 칸에 주공정 칩이 여러 개 쌓이면(예: 구간공정 여러 단계가 같은 날) 기본 높이(칩 1개)
     // 에선 잘려서 칸 안에서 스크롤해야 한다. 동별로 한 칸에 들어가는 주공정 칩의 최대 개수를
     // 세어, 그만큼 그 동의 주공정 행 높이를 늘려 다 보이게 한다. (칩 1개는 기본 높이가 감당)
-    const MAIN_CHIP_H = 46; // 칩 한 개가 차지하는 높이(컨트롤이 좁은 칸에서 줄바꿈되는 것 포함)
+    const MAIN_CHIP_H = 54; // 칩 한 개가 차지하는 높이(컨트롤이 좁은 칸에서 줄바꿈되는 것 포함)
     const mainContentExtra: number[] = [];
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
@@ -710,7 +710,7 @@ export default function GanttChart({
         data-process-id={s.id}
         data-testid="sub-badge"
         className={[
-          'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] leading-tight bg-zinc-100 text-zinc-700 border border-zinc-300 max-w-full shrink-0',
+          'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-sm leading-tight bg-zinc-100 text-zinc-700 border border-zinc-300 max-w-full shrink-0',
           'cursor-grab active:cursor-grabbing',
           selectedProcessId === s.id ? 'ring-1 ring-indigo-600' : '',
           isDragSource ? 'opacity-50' : '',
@@ -769,7 +769,7 @@ export default function GanttChart({
           }}
           title={`${processLabel(p)} · ${p.durationDays}일 공정 진행 중`}
           className={[
-            'flex-1 min-w-0 text-left rounded px-1.5 py-0.5 text-[12px] leading-tight truncate opacity-60',
+            'flex-1 min-w-0 text-left rounded px-1.5 py-0.5 text-sm leading-tight truncate opacity-60',
             `${color.bg} ${color.text}`,
             selected ? 'ring-2 ring-indigo-600 opacity-90' : '',
           ].join(' ')}
@@ -789,7 +789,7 @@ export default function GanttChart({
           title="이 날짜만 오전/오후 반나절 설정 (다일 공정 중 이 날만 적용)"
           data-testid="timeslot-toggle"
           className={[
-            'shrink-0 text-[10px] leading-none px-1 py-0.5 rounded border',
+            'shrink-0 text-xs leading-none px-1 py-0.5 rounded border',
             slot === 'morning'
               ? 'bg-sky-100 text-sky-700 border-sky-300'
               : slot === 'afternoon'
@@ -826,7 +826,7 @@ export default function GanttChart({
           data-process-id={p.id}
           title={p.crew ? `${p.crew.team} · ${p.crew.headcount}명` : undefined}
           className={[
-            'text-left rounded px-1 py-0.5 text-sm leading-tight relative flex-1 min-w-[68px]',
+            'text-left rounded px-1 py-0.5 text-base leading-tight relative flex-1 min-w-[74px]',
             `font-semibold ${color.bg} ${color.text}`,
             'cursor-grab active:cursor-grabbing',
             selected ? 'ring-2 ring-indigo-600' : overdue ? 'ring-2 ring-red-500' : '',
@@ -857,7 +857,7 @@ export default function GanttChart({
               onCycleStatus(p.id);
             }}
             className={[
-              'inline-flex items-center justify-center w-3.5 h-3.5 mr-1 rounded-sm border align-middle shrink-0 text-[10px] leading-none font-bold',
+              'inline-flex items-center justify-center w-3.5 h-3.5 mr-1 rounded-sm border align-middle shrink-0 text-xs leading-none font-bold',
               p.actualDone
                 ? 'bg-emerald-600 border-emerald-700 text-white'
                 : p.inProgress
@@ -872,16 +872,16 @@ export default function GanttChart({
           {p.conflictSeq ? <sup className="ml-0.5">{p.conflictSeq}</sup> : null}
           {p.durationDays && p.durationDays > 1 ? (
             <span
-              className="ml-1 inline-block px-1 rounded bg-white/70 text-[10px] align-middle"
+              className="ml-1 inline-block px-1 rounded bg-white/70 text-xs align-middle"
               title={`${p.durationDays}일짜리 공정으로 연장됨`}
             >
               {p.durationDays}일
             </span>
           ) : null}
-          {p.crew ? <span className="ml-0.5 text-[10px] opacity-80">👷{p.crew.headcount}</span> : null}
+          {p.crew ? <span className="ml-0.5 text-xs opacity-80">👷{p.crew.headcount}</span> : null}
           {p.cellOrder ? (
             <span className="ml-1 inline-flex items-center gap-0.5 align-middle">
-              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-white/70 text-[10px] text-zinc-800">
+              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-white/70 text-xs text-zinc-800">
                 {p.cellOrder}
               </span>
               <span
@@ -893,7 +893,7 @@ export default function GanttChart({
                   e.stopPropagation();
                   onReorderCellOrder(p.id, 'up');
                 }}
-                className="text-[10px] leading-none px-0.5"
+                className="text-xs leading-none px-0.5"
               >
                 ▲
               </span>
@@ -906,7 +906,7 @@ export default function GanttChart({
                   e.stopPropagation();
                   onReorderCellOrder(p.id, 'down');
                 }}
-                className="text-[10px] leading-none px-0.5"
+                className="text-xs leading-none px-0.5"
               >
                 ▼
               </span>
@@ -922,7 +922,7 @@ export default function GanttChart({
           }}
           title="작업팀·투입인원"
           data-testid="crew-edit"
-          className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[10px] leading-none px-0.5"
+          className="shrink-0 text-zinc-400 hover:text-zinc-700 text-xs leading-none px-0.5"
         >
           👷
         </button>
@@ -937,7 +937,7 @@ export default function GanttChart({
           title="오전/오후 반나절 설정 (설정 시 같은 날 다른 주요공정과 겹침 허용)"
           data-testid="timeslot-toggle"
           className={[
-            'shrink-0 text-[10px] leading-none px-1 py-0.5 rounded border',
+            'shrink-0 text-xs leading-none px-1 py-0.5 rounded border',
             p.timeSlot === 'morning'
               ? 'bg-sky-100 text-sky-700 border-sky-300'
               : p.timeSlot === 'afternoon'
@@ -961,7 +961,7 @@ export default function GanttChart({
           }}
           title="더보기 (연장·삭제 등)"
           data-testid="chip-menu-toggle"
-          className="shrink-0 text-zinc-400 hover:text-zinc-700 text-[10px] leading-none px-0.5"
+          className="shrink-0 text-zinc-400 hover:text-zinc-700 text-xs leading-none px-0.5"
         >
           ⋯
         </button>
@@ -984,7 +984,7 @@ export default function GanttChart({
       >
         {/* 좌상단 코너 */}
         <div
-          className="sticky top-0 left-0 z-30 bg-zinc-100 border-b border-r border-zinc-200 flex items-center justify-center font-medium text-sm"
+          className="sticky top-0 left-0 z-30 bg-zinc-100 border-b border-r border-zinc-200 flex items-center justify-center font-medium text-base"
           style={{ gridColumn: 1, gridRow: 1 }}
         >
           동/구간
@@ -1010,7 +1010,7 @@ export default function GanttChart({
               }
               data-heavy-collision={heavyCollision || undefined}
               className={[
-                'sticky top-0 z-20 border-b border-l border-zinc-200 flex flex-col items-center justify-center text-sm cursor-grab active:cursor-grabbing',
+                'sticky top-0 z-20 border-b border-l border-zinc-200 flex flex-col items-center justify-center text-base cursor-grab active:cursor-grabbing',
                 heavyCollision ? 'bg-red-100 text-red-700' : isToday ? 'bg-indigo-50' : 'bg-zinc-50',
                 isToday ? 'border-b-2 border-b-indigo-900' : '',
                 holiday && !isToday && !heavyCollision ? 'bg-red-50 text-red-500' : '',
@@ -1020,14 +1020,14 @@ export default function GanttChart({
               style={{ gridColumn: colIndex + 2, gridRow: 1 }}
             >
               <div>{formatMonthDay(d)}</div>
-              <div className="text-[12px]">{weekdayLabelKo(d)}</div>
+              <div className="text-sm">{weekdayLabelKo(d)}</div>
             </div>
           );
         })}
 
         {/* 비고 헤더 */}
         <div
-          className="sticky top-0 right-0 z-30 bg-zinc-100 border-b border-l border-zinc-200 flex items-center justify-center font-medium text-sm"
+          className="sticky top-0 right-0 z-30 bg-zinc-100 border-b border-l border-zinc-200 flex items-center justify-center font-medium text-base"
           style={{ gridColumn: dates.length + 2, gridRow: 1 }}
         >
           비고
@@ -1051,11 +1051,11 @@ export default function GanttChart({
               ].join(' ')}
               style={{ gridColumn: 1, gridRow: `${rowIndex * 4 + 2} / span 4` }}
             >
-              <span>{block.name}</span>
-              {block.info && <span className="text-[11px] text-zinc-400 font-normal">{block.info}</span>}
+              <span className="text-lg">{block.name}</span>
+              {block.info && <span className="text-xs text-zinc-400 font-normal">{block.info}</span>}
               {blockEndByBlock.get(block.id) && (
                 <span
-                  className="text-[11px] font-normal text-emerald-700 whitespace-nowrap"
+                  className="text-xs font-normal text-emerald-700 whitespace-nowrap"
                   title={`이 동 준공 예정일: ${blockEndByBlock.get(block.id)}`}
                 >
                   🏁 {blockEndByBlock.get(block.id)!.slice(2)}
@@ -1077,7 +1077,7 @@ export default function GanttChart({
               onChange={(e) => onChangeBlockRemark(block.id, e.target.value)}
               placeholder="비고"
               data-testid="block-remark"
-              className="w-full h-full text-[11px] px-1 py-0.5 bg-transparent outline-none resize-none placeholder:text-zinc-300"
+              className="w-full h-full text-xs px-1 py-0.5 bg-transparent outline-none resize-none placeholder:text-zinc-300"
             />
           </div>
         ))}
@@ -1106,7 +1106,7 @@ export default function GanttChart({
                     key={sec.cycleId}
                     title={`${sec.label} · ${sec.start} ~ ${sec.end}`}
                     className={[
-                      'flex items-center gap-1 overflow-hidden whitespace-nowrap rounded-sm border px-1.5 my-[1px] text-[12px] font-semibold leading-none',
+                      'flex items-center gap-1 overflow-hidden whitespace-nowrap rounded-sm border px-1.5 my-[1px] text-sm font-semibold leading-none',
                       BAND_COLORS[si % BAND_COLORS.length],
                     ].join(' ')}
                     style={{ gridColumn: `${startCol + 2} / ${endCol + 3}`, gridRow: bandRow, zIndex: 6 }}
@@ -1242,7 +1242,7 @@ export default function GanttChart({
                       value={notes[noteKey(block.id, d)] ?? ''}
                       onChange={(e) => onChangeNote(block.id, d, e.target.value)}
                       placeholder="특이사항"
-                      className="flex-1 min-w-0 h-full text-[11px] px-1 bg-transparent outline-none placeholder:text-zinc-300"
+                      className="flex-1 min-w-0 h-full text-xs px-1 bg-transparent outline-none placeholder:text-zinc-300"
                       data-testid="note-input"
                     />
                     <button
@@ -1250,7 +1250,7 @@ export default function GanttChart({
                       onClick={() => onOpenNote(block.id, d)}
                       title="전체 보기/편집"
                       data-testid="note-expand"
-                      className="shrink-0 text-zinc-300 hover:text-zinc-600 text-[11px] px-0.5"
+                      className="shrink-0 text-zinc-300 hover:text-zinc-600 text-xs px-0.5"
                     >
                       ⤢
                     </button>
@@ -1278,7 +1278,7 @@ export default function GanttChart({
               type="button"
               onClick={() => onShowReason(g.label, g.reason, g.path, g.processId)}
               title={`이동 사유: ${g.reason}`}
-              className="text-sm leading-tight text-zinc-400 bg-zinc-100/80 hover:bg-zinc-200 rounded px-1.5 py-0.5 text-left whitespace-nowrap"
+              className="text-base leading-tight text-zinc-400 bg-zinc-100/80 hover:bg-zinc-200 rounded px-1.5 py-0.5 text-left whitespace-nowrap"
             >
               <span className="mr-0.5 text-zinc-500">{seqBadge(g.seq)}</span>
               {g.label}

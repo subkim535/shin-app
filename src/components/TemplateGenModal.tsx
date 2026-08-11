@@ -102,6 +102,7 @@ interface TemplateGenModalProps {
     repeatCount: number,
     floorLabel: string,
     allowStartHoliday: boolean,
+    stepDates?: Record<string, ISODate>,
   ) => string | null;
   onSaveNewTemplate: (title: string, steps: TemplateStepDef[]) => void;
   onRemoveTemplate: (id: string) => void;
@@ -127,6 +128,9 @@ export default function TemplateGenModal({
   const [blockId, setBlockId] = useState(initialBlockId ?? blocks[0]?.id ?? '');
   const [startDate, setStartDate] = useState<ISODate>(initialStartDate ?? todayISO());
   const [orderedIndices, setOrderedIndices] = useState<number[]>([]);
+  // 사용자가 "선택한 순서"에서 특정 단계의 날짜를 직접 바꾼 값(editStep 인덱스 → 날짜).
+  // 비어 있으면 그 단계는 순차 자동 배치. 지정하면 그 날에 그대로 놓여 다른 단계와 겹칠 수 있다.
+  const [dateOverrides, setDateOverrides] = useState<Record<number, ISODate>>({});
   const [repeatCount, setRepeatCount] = useState('1');
   const [floor, setFloor] = useState('');
   const [saveTitle, setSaveTitle] = useState('');
@@ -155,6 +159,7 @@ export default function TemplateGenModal({
     const init = baseStepsFor();
     setEditSteps(init);
     setOrderedIndices(init.map((_, i) => i));
+    setDateOverrides({});
     setNewStepName('');
     setNewStepDays('1');
     setError(null);
@@ -176,6 +181,16 @@ export default function TemplateGenModal({
     setEditSteps((cur) => cur.filter((_, idx) => idx !== i));
     // 삭제된 인덱스를 순서에서 빼고, 그보다 뒤 인덱스는 한 칸씩 당긴다.
     setOrderedIndices((cur) => cur.filter((x) => x !== i).map((x) => (x > i ? x - 1 : x)));
+    // 날짜 지정도 같은 규칙으로 재정렬(삭제 인덱스는 버리고 뒤 인덱스는 -1).
+    setDateOverrides((cur) => {
+      const next: Record<number, ISODate> = {};
+      for (const [k, v] of Object.entries(cur)) {
+        const idx = Number(k);
+        if (idx === i) continue;
+        next[idx > i ? idx - 1 : idx] = v;
+      }
+      return next;
+    });
   }
   function addStep() {
     const name = newStepName.trim();
@@ -202,28 +217,42 @@ export default function TemplateGenModal({
     const init = baseStepsFor();
     setEditSteps(init);
     setOrderedIndices(init.map((_, i) => i));
+    setDateOverrides({});
   }
 
   // 카테고리를 바꾼 직후 한 프레임 동안은(위 render-time reset이 반영되기 전) orderedIndices가
   // 이전 카테고리의(더 많을 수 있는) 길이를 그대로 들고 있을 수 있다 — baseSteps[idx]가
   // undefined가 되는 범위를 걸러내지 않으면 그 프레임에서 바로 예외가 나서 화면 전체가
   // 죽는다(더 적은 단계 수의 카테고리로 바꿀 때 재현됨). 유효한 idx만 남긴다.
+  // 순서에 실제로 들어간 editStep 인덱스들(유효 범위만). pos(줄 위치) → idx 매핑으로 쓴다.
+  const activeIndices = useMemo(() => orderedIndices.filter((idx) => idx < editSteps.length), [orderedIndices, editSteps]);
+
   const previewSteps: TemplateStepDef[] = useMemo(
     () =>
-      orderedIndices
-        .filter((idx) => idx < editSteps.length)
-        .map((idx, i) => {
-          const s = editSteps[idx];
-          return { code: makeStepCode(category, i, s.name), name: s.name, durationDays: s.durationDays, optional: s.optional };
-        }),
-    [orderedIndices, editSteps, category],
+      activeIndices.map((idx, i) => {
+        const s = editSteps[idx];
+        return { code: makeStepCode(category, i, s.name), name: s.name, durationDays: s.durationDays, optional: s.optional };
+      }),
+    [activeIndices, editSteps, category],
   );
+
+  // 사용자가 지정한 날짜를 "단계 코드 → 날짜"로 바꿔 생성 엔진에 넘긴다(코드는 줄 위치 기준).
+  const stepDates = useMemo(() => {
+    const m: Record<string, ISODate> = {};
+    activeIndices.forEach((idx, pos) => {
+      const ov = dateOverrides[idx];
+      if (ov && previewSteps[pos]) m[previewSteps[pos].code] = ov;
+    });
+    return m;
+  }, [activeIndices, dateOverrides, previewSteps]);
 
   const previewDates = useMemo(() => {
     if (previewSteps.length === 0 || !startDate) return [];
-    const generated = generateFromTemplate({ id: 'preview', name: category, steps: previewSteps }, 'preview-block', startDate, holidays);
+    const generated = generateFromTemplate({ id: 'preview', name: category, steps: previewSteps }, 'preview-block', startDate, holidays, {
+      stepDates,
+    });
     return generated.map((p) => p.date);
-  }, [previewSteps, startDate, holidays, category]);
+  }, [previewSteps, startDate, holidays, category, stepDates]);
 
   const parsedRepeatCount = Math.min(60, Math.max(1, Number(repeatCount) || 1));
   // 숫자만 입력하면 뒤에 F를 붙인다("3" → "3F"). 이미 F 등 글자가 있으면 그대로 둔다.
@@ -239,6 +268,7 @@ export default function TemplateGenModal({
       startDate,
       holidays,
       parsedRepeatCount,
+      { stepDates },
     );
     if (gen.length === 0) return null;
     let end = gen[0].date;
@@ -250,7 +280,7 @@ export default function TemplateGenModal({
     const workDays = previewSteps.reduce((s, st) => s + Math.max(1, Math.floor(st.durationDays || 1)), 0) * parsedRepeatCount;
     const calendarDays = diffDays(startDate, end) + 1;
     return { end, workDays, calendarDays };
-  }, [previewSteps, startDate, holidays, category, parsedRepeatCount]);
+  }, [previewSteps, startDate, holidays, category, parsedRepeatCount, stepDates]);
 
   // 시작일이 휴일(일요일 또는 등록된 공휴일)인지 — 그러면 생성 전에 경고 후 확인받는다.
   const startIsHoliday = !!startDate && (dayOfWeek(startDate) === 0 || holidays.some((h) => h.date === startDate));
@@ -258,7 +288,7 @@ export default function TemplateGenModal({
     holidays.find((h) => h.date === startDate)?.label || (startDate && dayOfWeek(startDate) === 0 ? '일요일' : '공휴일');
 
   function doSubmit(allowStartHoliday: boolean) {
-    const result = onSubmit(blockId, category, previewSteps, startDate, parsedRepeatCount, normalizedFloor, allowStartHoliday);
+    const result = onSubmit(blockId, category, previewSteps, startDate, parsedRepeatCount, normalizedFloor, allowStartHoliday, stepDates);
     setHolidayConfirm(false);
     if (result) {
       setError(result);
@@ -314,7 +344,8 @@ export default function TemplateGenModal({
         </div>
         <p className="text-xs text-zinc-500">
           왼쪽에서 공사 종류를 고르고, 동·시작일을 정한 뒤 오른쪽 목록에서 순서대로 공정을 눌러 순서를 만드세요. 이미
-          순서에 들어간 공정을 다시 누르면 빠집니다.
+          순서에 들어간 공정을 다시 누르면 빠집니다. &lsquo;선택한 순서&rsquo;의 각 단계 날짜를 직접 바꾸면 여러 단계를 같은
+          날에 겹쳐 넣을 수 있어요(기준층 외 구간공정).
         </p>
 
         <div className="flex gap-3">
@@ -448,7 +479,32 @@ export default function TemplateGenModal({
                       <span className="flex-1">
                         {editSteps[idx].name} <span className="text-[10px] text-zinc-400">{editSteps[idx].durationDays}일</span>
                       </span>
-                      <span className="text-xs text-zinc-400 shrink-0">{previewDates[pos] ?? ''}</span>
+                      {/* 시작일 직접 편집 — 바꾸면 그 단계가 그 날에 그대로 놓여 다른 단계와 겹칠 수 있다. */}
+                      <input
+                        type="date"
+                        value={previewDates[pos] ?? ''}
+                        onChange={(e) => setDateOverrides((cur) => ({ ...cur, [idx]: e.target.value }))}
+                        className={`border rounded px-1 py-0.5 text-xs shrink-0 ${
+                          dateOverrides[idx] ? 'border-indigo-400 text-indigo-700 font-medium bg-indigo-50' : 'border-zinc-200 text-zinc-500'
+                        }`}
+                        title="이 단계 시작일 — 직접 바꾸면 다른 단계와 같은 날 겹칠 수 있어요"
+                      />
+                      {dateOverrides[idx] && (
+                        <button
+                          type="button"
+                          className="text-[10px] text-zinc-400 hover:text-red-600 shrink-0"
+                          title="자동 날짜로 되돌리기"
+                          onClick={() =>
+                            setDateOverrides((cur) => {
+                              const n = { ...cur };
+                              delete n[idx];
+                              return n;
+                            })
+                          }
+                        >
+                          자동
+                        </button>
+                      )}
                       <span className="flex flex-col shrink-0 -my-1">
                         <button className="text-[9px] leading-none px-0.5 disabled:opacity-30" disabled={pos === 0} onClick={() => moveSlot(pos, 'up')}>
                           ▲

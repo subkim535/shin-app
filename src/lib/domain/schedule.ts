@@ -227,32 +227,40 @@ export function generateFromTemplate(
   blockId: string,
   startDate: ISODate,
   holidays: Holiday[] = [],
-  opts: { skipOptional?: boolean; floorLabel?: string; allowStartHoliday?: boolean } = {},
+  // stepDates: 사용자가 생성 모달의 "선택한 순서"에서 특정 단계의 날짜를 직접 바꾼 경우(코드→날짜).
+  // 지정된 단계는 그 날에 그대로 놓아(겹쳐도 허용, 휴일 회피 안 함) 여러 단계를 같은 날에 겹칠 수 있다.
+  opts: { skipOptional?: boolean; floorLabel?: string; allowStartHoliday?: boolean; stepDates?: Record<string, ISODate> } = {},
   existing: ProcessInstance[] = [],
 ): ProcessInstance[] {
   const cycleId = crypto.randomUUID();
   const result: ProcessInstance[] = [];
-  let cursor = startDate;
+  let cursor = startDate; // 순차 흐름 포인터 — 지정 안 된 단계는 여기서부터 빈 날을 찾는다.
   let firstPlaced = true;
   for (const step of template.steps) {
     if (step.optional && opts.skipOptional) continue;
-    if (firstPlaced && opts.allowStartHoliday) {
+    const override = opts.stepDates?.[step.code];
+    let place: ISODate;
+    if (override) {
+      // 사용자가 이 단계 날짜를 직접 지정함 — 겹쳐도 그 날에 그대로(휴일도 회피 안 함).
+      place = override;
+    } else if (firstPlaced && opts.allowStartHoliday) {
       // 사용자가 "휴일이어도 이 날 시작"을 확인함 — 첫 단계는 휴일 스킵 없이 고른 날에 그대로.
-      cursor = startDate;
+      place = startDate;
     } else {
       // 기존 공정 + 이번에 이미 놓은 단계와 안 겹치는 가장 이른 날짜로 배치(겹침·휴일 회피).
-      cursor = firstFreeDateForCustom(step.code, cursor, undefined, [...existing, ...result], blockId, holidays);
+      place = firstFreeDateForCustom(step.code, cursor, undefined, [...existing, ...result], blockId, holidays);
     }
     firstPlaced = false;
     const span = Math.max(1, step.durationDays || 1);
-    const main = makeProcess(blockId, step.code, cursor, cycleId, {
+    const main = makeProcess(blockId, step.code, place, cycleId, {
       customLabel: step.name,
       durationDays: span > 1 ? span : undefined,
       floorLabel: opts.floorLabel || undefined,
     });
     result.push(main);
-    // 일수는 작업일 기준 — 그 작업일 기간의 끝 다음날부터 다음 단계를 놓는다(휴일은 일수에서 뺌).
-    cursor = addDays(workableSpanEnd(step.code, cursor, span, holidays), 1);
+    // 순차 커서는 항상 앞으로만 — 지정 단계가 앞쪽에 놓여도 뒤 단계가 거꾸로 가지 않게 한다.
+    const next = addDays(workableSpanEnd(step.code, place, span, holidays), 1);
+    if (next > cursor) cursor = next;
   }
   return result;
 }
@@ -265,20 +273,25 @@ export function generateRepeatingFromTemplate(
   startDate: ISODate,
   holidays: Holiday[],
   repeatCount: number,
-  opts: { skipOptional?: boolean; floorLabel?: string; allowStartHoliday?: boolean } = {},
+  opts: { skipOptional?: boolean; floorLabel?: string; allowStartHoliday?: boolean; stepDates?: Record<string, ISODate> } = {},
   existing: ProcessInstance[] = [],
 ): ProcessInstance[] {
   const result: ProcessInstance[] = [];
   let cursor = startDate;
   let floor = opts.floorLabel;
   for (let i = 0; i < Math.max(1, repeatCount); i++) {
-    // 휴일 시작 허용은 맨 첫 사이클의 첫 단계에만 적용(이후 사이클은 정상적으로 휴일 회피).
+    // 휴일 시작 허용·단계별 지정 날짜는 맨 첫 사이클에만 적용(이후 반복 사이클은 순차 배치).
     const cycle = generateFromTemplate(
       template,
       blockId,
       cursor,
       holidays,
-      { ...opts, floorLabel: floor, allowStartHoliday: i === 0 ? opts.allowStartHoliday : false },
+      {
+        ...opts,
+        floorLabel: floor,
+        allowStartHoliday: i === 0 ? opts.allowStartHoliday : false,
+        stepDates: i === 0 ? opts.stepDates : undefined,
+      },
       [...existing, ...result],
     );
     result.push(...cycle);
@@ -970,173 +983,34 @@ export function moveCustomProcess(
 
   // 일수는 작업일 기준 — 중간에 낀 휴일은 빼고 그만큼 뒤로 늘려 점유 끝날을 잡는다.
   const endOf = (start: ISODate, p: ProcessInstance) => workableSpanEnd(p.typeCode, start, p.durationDays, holidays);
-  // 끝날이 정해졌을 때, 일수만큼 거꾸로 세어 시작일을 구한다(뒤 단계보다 먼저 끝나게 앞당길 때 사용).
-  const startForEnd = (p: ProcessInstance, end: ISODate): ISODate => {
-    let d = end;
-    let steps = Math.max(1, Math.floor(p.durationDays || 1)) - 1;
-    while (steps > 0) {
-      d = prevWorkableDate(p.typeCode, addDays(d, -1), holidays);
-      steps--;
-    }
-    return d;
-  };
   const rangesOverlap = (s1: ISODate, e1: ISODate, s2: ISODate, e2: ISODate) => s1 <= e2 && s2 <= e1;
 
-  type Slot = { start: ISODate; end: ISODate; slot: ProcessInstance['timeSlot'] };
-  const slotOf = (start: ISODate, p: ProcessInstance): Slot => ({ start, end: endOf(start, p), slot: p.timeSlot });
-
-  // 기준층 주공정(갱폼/철근/타설 등 정해진 타입)만 고정 장애물로 본다 — 구간공정 이동으로
-  // 기준층을 밀지는 않는다(기준층은 자체 도미노 엔진이 따로 있음).
-  const isBaseFloorMain = (p: ProcessInstance) =>
-    isKnownType(p.typeCode) && PROCESS_TYPE_MAP[p.typeCode]?.category === 'main';
-  const fixedObstacles: Slot[] = processes
-    .filter((p) => p.blockId === blockId && isBaseFloorMain(p))
-    .map((p) => slotOf(p.date, p));
-
-  const placed: Slot[] = []; // 이번에 자리 확정한 구간공정들(옮긴 공정 포함)
-  const collides = (start: ISODate, p: ProcessInstance) =>
-    [...fixedObstacles, ...placed].some(
-      (o) => slotsOverlap(p.timeSlot, o.slot) && rangesOverlap(start, endOf(start, p), o.start, o.end),
-    );
-  const firstFree = (from: ISODate, p: ProcessInstance): ISODate => {
-    let d = nextWorkableDate(p.typeCode, from, holidays);
-    let guard = 0;
-    while (collides(d, p) && guard++ < 400) {
-      d = nextWorkableDate(p.typeCode, addDays(d, 1), holidays);
-    }
-    return d;
-  };
-  // beforeExclusive 앞에서(그 날 이전에 끝나게) 겹치지 않는 가장 늦은 시작일을 찾는다.
-  const lastFreeBefore = (p: ProcessInstance, beforeExclusive: ISODate): ISODate => {
-    let end = prevWorkableDate(p.typeCode, addDays(beforeExclusive, -1), holidays);
-    let guard = 0;
-    while (guard++ < 400) {
-      const start = startForEnd(p, end);
-      if (!collides(start, p)) return start;
-      end = prevWorkableDate(p.typeCode, addDays(start, -1), holidays);
-    }
-    return startForEnd(p, prevWorkableDate(p.typeCode, addDays(beforeExclusive, -1), holidays));
-  };
-
-  // 같은 구간(cycle)의 단계들을 seq 순서로 정렬한다. seq는 코드에서 공통 접두어를 뗀 앞 숫자.
-  const cycleSteps = processes.filter(
-    (p) => p.blockId === blockId && p.cycleId === moved.cycleId && PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub',
-  );
-  const commonPrefix = (arr: string[]): string => {
-    if (arr.length === 0) return '';
-    let pre = arr[0];
-    for (const s of arr) {
-      while (!s.startsWith(pre)) pre = pre.slice(0, -1);
-      if (!pre) break;
-    }
-    return pre;
-  };
-  const prefix = commonPrefix(cycleSteps.map((p) => p.typeCode));
-  const seqOf = (p: ProcessInstance): number => {
-    const n = parseInt(p.typeCode.slice(prefix.length), 10);
-    return Number.isFinite(n) ? n : 0;
-  };
-  const cycle = [...cycleSteps].sort((a, b) => seqOf(a) - seqOf(b) || a.date.localeCompare(b.date));
-  const k = cycle.findIndex((p) => p.id === processId);
-
-  const newDates = new Map<string, ISODate>();
-
-  // 1) 옮긴 공정을 놓은 자리에(기준층만 피함). allowHoliday면 놓은 날이 휴일이어도 그 날에
-  //    그대로 둔다 — 겹침(기준층 주공정)만 피하되 휴일은 건너뛰지 않고 하루씩만 뒤로 민다.
-  const firstFreeAllowHoliday = (from: ISODate, p: ProcessInstance): ISODate => {
-    let d = from;
-    let guard = 0;
-    while (collides(d, p) && guard++ < 400) d = addDays(d, 1);
-    return d;
-  };
-  const movedStart = allowHoliday ? firstFreeAllowHoliday(newDate, moved) : firstFree(newDate, moved);
-  newDates.set(moved.id, movedStart);
-  placed.push(slotOf(movedStart, moved));
-
-  // 2) 옮긴 공정보다 seq가 뒤인 단계들 — 앞에서부터 순서대로 뒤로 놓는다. 각자 원래 날짜가
-  //    앞 단계 끝보다 뒤면 그 간격을 유지하고, 앞이면(뒤섞임) 뒤로 밀어 순서를 바로잡는다.
-  let cursorEnd = endOf(movedStart, moved);
-  for (let i = k + 1; i < cycle.length; i++) {
-    const s = cycle[i];
-    // 앞 단계와 오전/오후로 반대면 그 마지막 날을 공유(같은 날)할 수 있게 minStart를 그 날로
-    // 둔다 — firstFree가 슬롯 겹침(종일끼리 등)이면 collides로 다음 날로 밀고, 오전+오후처럼
-    // 안 겹치면 같은 날에 나란히 놓는다.
-    const minStart = nextWorkableDate(s.typeCode, cursorEnd, holidays);
-    const from = s.date > minStart ? s.date : minStart;
-    const start = firstFree(from, s);
-    newDates.set(s.id, start);
-    placed.push(slotOf(start, s));
-    cursorEnd = endOf(start, s);
-  }
-
-  // 3) 옮긴 공정보다 seq가 앞인 단계들 — 뒤에서부터 거꾸로, 각자 다음(더 뒤) 단계 시작 전에
-  //    끝나게 놓는다. 이미 앞에서 안 겹치게 끝나면 그대로 두고, 아니면 앞으로 당겨 자리를 낸다.
-  let anchorStart = movedStart;
-  for (let i = k - 1; i >= 0; i--) {
-    const s = cycle[i];
-    // 다음(더 뒤) 단계와 오전/오후로 반대면(!collides) 그 시작일(anchorStart)에 "겹쳐" 끝나도
-    // 됨 — 같은 날을 공유(오전 앞단계 + 오후 뒷단계). 종일끼리 등 겹치면 collides가 true라
-    // 아래 else로 가서 그 앞으로 당겨진다. (<= 라서 같은 날까지 허용, 그 뒤로 넘어가면 밀림)
-    if (endOf(s.date, s) <= anchorStart && !collides(s.date, s)) {
-      newDates.set(s.id, s.date);
-      placed.push(slotOf(s.date, s));
-      anchorStart = s.date;
-    } else {
-      const start = lastFreeBefore(s, anchorStart);
-      newDates.set(s.id, start);
-      placed.push(slotOf(start, s));
-      anchorStart = start;
-    }
-  }
-
-  // 4) 다른 "구간공정"(다른 cycle의 custom)만 재배치된 이 구간과 겹치면 뒤로 밀어낸다.
-  //  - 기준층 보조공정(먹메김·박리제 등)은 밀지 않는다 — 구간공정은 윗줄, 보조공정은 아랫줄에
-  //    따로 그려져서 같은 날이어도 안 겹쳐 보인다. 밀면 오히려 자리가 뒤바뀐 것처럼 보여
-  //    사용자가 "안 밀리게 해달라"고 확정함. 그래서 같은 날 공존시킨다.
-  //  - 기준층 주공정(갱폼/철근/타설)도 자체 도미노 엔진이 따로 있어 여기서 밀지 않는다(고정).
-  const others = processes
-    .filter(
-      (p) =>
-        p.blockId === blockId &&
-        p.cycleId !== moved.cycleId &&
-        !isBaseFloorMain(p) &&
-        PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub',
-    )
-    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-  for (const o of others) {
-    const start = firstFree(o.date, o);
-    newDates.set(o.id, start);
-    placed.push(slotOf(start, o));
-  }
-
-  // 5) 날짜 반영. 변경 흔적(고스트)은 사용자가 옮긴 공정 하나만 남긴다.
-  const updated = processes.map((p) => {
-    const nd = newDates.get(p.id);
-    return nd && nd !== p.date ? { ...p, date: nd } : p;
-  });
+  // 구간공정은 순서를 강제하지 않고 자유롭게 겹칠 수 있다("2안") — 옮긴 공정만 놓은 자리로
+  // 이동하고, 나머지 공정(같은 구간이든 다른 공사든)은 밀지 않는다. 사용자가 직접 드롭
+  // (allowHoliday)이면 휴일이어도 그 날에 그대로, 자동 경로면 다음 작업일로만 스냅한다.
+  const movedStart = allowHoliday ? newDate : nextWorkableDate(moved.typeCode, newDate, holidays);
+  const updated = processes.map((p) => (p.id === processId ? { ...p, date: movedStart } : p));
+  const nextProcesses = withArrivals(updated, [processId]);
   const records: ChangeRecord[] =
     movedStart !== moved.date
       ? [{ id: crypto.randomUUID(), processId, previousDate: moved.date, newDate: movedStart, reason }]
       : [];
 
-  const nextProcesses = withArrivals(updated, [...newDates.keys()]);
-  const cyclePushed = cycle.filter((s) => s.id !== moved.id && newDates.get(s.id) !== s.date).length;
+  // 겹침 감지: 옮긴 공정이 같은 동의 다른 "주공정/구간공정"과 실제로 겹치나? 오전/오후로
+  // 정확히 나뉜(slotsOverlap=false) 경우는 공존이라 경고 안 하고, 종일끼리 등 시간대가 겹치는
+  // 경우만 "주의" 문구를 띄운다(막지는 않는다 — 겹침 자체는 허용). 보조공정은 아랫줄이라 제외.
+  const movedEnd = endOf(movedStart, moved);
+  const overlapping = processes.filter((p) => {
+    if (p.id === processId || p.blockId !== blockId) return false;
+    if (PROCESS_TYPE_MAP[p.typeCode]?.category === 'sub') return false;
+    return slotsOverlap(moved.timeSlot, p.timeSlot) && rangesOverlap(movedStart, movedEnd, p.date, endOf(p.date, p));
+  });
+  const notice =
+    overlapping.length > 0
+      ? `⚠ 주의: 같은 날 ${[...new Set(overlapping.map(processLabel))].join(', ')}과(와) 겹칩니다. (오전/오후로 나누면 나란히 쓸 수 있어요)`
+      : undefined;
 
-  // 반영 전 경고 대상: 이번 이동으로 밀려난 "다른 구간공정(다른 cycle)"만. 기준층 보조공정은
-  // 위에서 밀지 않고 같은 날 공존시키므로 경고하지 않는다.
-  const pushedOthers = others.filter((o) => newDates.get(o.id) !== o.date);
-  const pushedOtherSections = [...new Set(pushedOthers.map((o) => processLabel(o)))];
-
-  const parts: string[] = [];
-  if (cyclePushed > 0) parts.push(`같은 구간 ${cyclePushed}개 단계가 순서에 맞춰 함께 이동했어요.`);
-  if (pushedOthers.length > 0) parts.push(`뒤에 있던 다른 공사 공정 ${pushedOthers.length}개도 함께 밀렸어요.`);
-  const notice = parts.length ? parts.join(' ') : undefined;
-  return {
-    processes: nextProcesses,
-    changeHistory: [...changeHistory, ...records],
-    notice,
-    pushedOtherSections: pushedOtherSections.length ? pushedOtherSections : undefined,
-  };
+  return { processes: nextProcesses, changeHistory: [...changeHistory, ...records], notice };
 }
 
 /**
