@@ -82,6 +82,7 @@ interface DailyReportModalProps {
   notes: Record<string, string>;
   onAddDirectLabor: (date: ISODate, category: string, workContent: string, headcount: number, manager?: string) => void;
   onSetFixedLabor: (date: ISODate, category: string, headcount: number, workContent: string) => void;
+  onUpdateDirectLabor: (id: string, headcount: number, workContent: string) => void;
   onRemoveDirectLabor: (id: string) => void;
   onClose: () => void;
 }
@@ -95,6 +96,7 @@ export default function DailyReportModal({
   notes,
   onAddDirectLabor,
   onSetFixedLabor,
+  onUpdateDirectLabor,
   onRemoveDirectLabor,
   onClose,
 }: DailyReportModalProps) {
@@ -361,26 +363,43 @@ export default function DailyReportModal({
             })}
           </div>
 
-          {/* 선택 추가된 항목들 — 같은 구분을 여러 번 추가하면 입력 순서대로 번호를 붙인다. */}
+          {/* 선택 추가된 항목들 — 고정 5개와 "똑같은 입력 행" 형태(구분 + 인원칸 + 작업내용칸)로
+              그 자리에서 편집 가능. 다른 점은 삭제 버튼이 붙는 것뿐(선택 항목은 지울 수 있으므로).
+              같은 구분을 여러 번 추가하면 입력 순서대로 번호를 붙인다. */}
           {optionalDayLabor.length > 0 && (
             <div className="flex flex-col gap-1">
               {optionalDayLabor.map((d) => {
                 const seq = optionalLaborSeq.seq.get(d.id) ?? 1;
                 const total = optionalLaborSeq.totals.get(d.category) ?? 1;
+                const catLabel = total > 1 ? `${d.category} ${seq}` : d.category;
                 return (
                   <div
                     key={d.id}
-                    className="text-sm border border-zinc-200 rounded px-2 py-1 flex items-center justify-between print:text-base print:border-zinc-400"
+                    className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1 print:text-base print:border-zinc-400"
                   >
-                    <span>
-                      <span className="text-xs text-zinc-500 print:text-sm">
-                        [{d.category}
-                        {total > 1 ? ` ${seq}` : ''}]
-                      </span>{' '}
-                      {d.workContent} · {d.headcount}명
-                      {d.manager && <span className="text-xs text-zinc-500 print:text-sm"> · 관리자 {d.manager}</span>}
-                    </span>
-                    <button className="text-xs text-red-600 print:hidden" onClick={() => onRemoveDirectLabor(d.id)}>
+                    <span className="w-16 shrink-0 font-medium text-zinc-700 print:w-20">{catLabel}</span>
+                    <input
+                      className="w-14 shrink-0 border border-zinc-300 rounded px-1.5 py-0.5 text-xs print:hidden"
+                      value={d.headcount || ''}
+                      onChange={(e) => onUpdateDirectLabor(d.id, Math.max(0, Number(e.target.value) || 0), d.workContent)}
+                      placeholder="인원"
+                      type="number"
+                      min="0"
+                    />
+                    <span className="text-xs text-zinc-400 shrink-0 print:hidden">명</span>
+                    <span className="hidden print:inline">{d.headcount}명</span>
+                    <input
+                      className="flex-1 border border-zinc-300 rounded px-2 py-0.5 text-xs print:hidden"
+                      value={d.workContent}
+                      onChange={(e) => onUpdateDirectLabor(d.id, d.headcount, e.target.value)}
+                      placeholder="작업 내용"
+                    />
+                    <span className="hidden print:inline">{d.workContent}</span>
+                    <button
+                      className="text-xs text-red-600 shrink-0 hover:text-red-700 print:hidden"
+                      onClick={() => onRemoveDirectLabor(d.id)}
+                      title="이 항목 삭제"
+                    >
                       삭제
                     </button>
                   </div>

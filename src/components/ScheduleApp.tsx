@@ -1006,6 +1006,11 @@ export default function ScheduleApp() {
     setDirectLabor((cur) => cur.filter((d) => d.id !== id));
   }
 
+  // 선택 추가한 직영 항목을 id로 그 자리에서 수정(인원·작업내용) — 고정 5개처럼 입력칸으로 편집.
+  function handleUpdateDirectLabor(id: string, headcount: number, workContent: string) {
+    setDirectLabor((cur) => cur.map((d) => (d.id === id ? { ...d, headcount, workContent } : d)));
+  }
+
   function proceedAnyway() {
     setDropStage('reason');
   }
@@ -1996,6 +2001,7 @@ export default function ScheduleApp() {
           notes={notes}
           onAddDirectLabor={handleAddDirectLabor}
           onSetFixedLabor={handleSetFixedLabor}
+          onUpdateDirectLabor={handleUpdateDirectLabor}
           onRemoveDirectLabor={handleRemoveDirectLabor}
           onClose={() => setReportDate(null)}
         />
