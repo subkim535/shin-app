@@ -237,23 +237,23 @@ export default function DailyReportModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 print:bg-white print:p-0">
-      <div className="print-area bg-white rounded-lg shadow-lg w-full max-w-xl max-h-[85vh] overflow-y-auto p-4 flex flex-col gap-4 print:max-w-none print:shadow-none print:rounded-none print:text-black">
+      <div className="print-area bg-white rounded-lg shadow-lg w-full max-w-3xl max-h-[85vh] overflow-y-auto p-5 flex flex-col gap-4 print:max-w-none print:shadow-none print:rounded-none print:text-black">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">{date.slice(5)} 작업일보</h2>
+          <h2 className="text-2xl font-bold">{date.slice(5)} 작업일보</h2>
           <div className="flex gap-2 print:hidden">
-            <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={downloadExcel} data-testid="download-excel">
+            <button className="text-lg px-2 py-1 rounded border border-zinc-300" onClick={downloadExcel} data-testid="download-excel">
               엑셀 다운로드
             </button>
-            <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={() => window.print()} data-testid="print-report">
+            <button className="text-lg px-2 py-1 rounded border border-zinc-300" onClick={() => window.print()} data-testid="print-report">
               인쇄 / PDF 저장
             </button>
-            <button className="text-sm px-2 py-1 rounded border border-zinc-300" onClick={onClose}>
+            <button className="text-lg px-2 py-1 rounded border border-zinc-300" onClick={onClose}>
               닫기
             </button>
           </div>
         </div>
 
-        <div className="text-sm grid grid-cols-2 gap-1 print:text-base">
+        <div className="text-lg grid grid-cols-2 gap-1 print:text-base">
           <div>
             <span className="text-zinc-500">현장명</span> {siteInfo.name}
           </div>
@@ -267,13 +267,13 @@ export default function DailyReportModal({
         </div>
 
         <section className="flex flex-col gap-1">
-          <h3 className="text-sm font-semibold text-zinc-700 print:text-base">작업내용</h3>
-          {dayProcesses.length === 0 && <p className="text-xs text-zinc-400">이 날짜에 예정된 공정이 없습니다.</p>}
+          <h3 className="text-xl font-bold text-zinc-700 print:text-base">작업내용</h3>
+          {dayProcesses.length === 0 && <p className="text-base text-zinc-400">이 날짜에 예정된 공정이 없습니다.</p>}
           <div className="flex flex-col gap-1.5">
             {groupedDayProcesses.map((g) => (
               <div key={g.label} className="flex items-start gap-2 print:border-b print:border-zinc-300 print:pb-1">
                 <span
-                  className={`shrink-0 w-20 rounded px-2 py-0.5 text-center text-xs font-semibold ${g.color.bg} ${g.color.text} print:border print:border-zinc-500 print:bg-white print:text-black`}
+                  className={`shrink-0 w-24 rounded px-2 py-1 text-center text-base font-semibold ${g.color.bg} ${g.color.text} print:border print:border-zinc-500 print:bg-white print:text-black`}
                 >
                   {g.label}
                 </span>
@@ -281,11 +281,11 @@ export default function DailyReportModal({
                   {g.items.map((it, i) => (
                     <span
                       key={i}
-                      className="inline-flex items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-700 print:bg-white print:border print:border-zinc-300 print:text-sm"
+                      className="inline-flex items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.5 text-base text-zinc-700 print:bg-white print:border print:border-zinc-300 print:text-lg"
                     >
                       {it.timeSlot && (
                         <span
-                          className={`rounded px-1 text-[10px] font-semibold print:border print:border-current ${
+                          className={`rounded px-1 text-sm font-semibold print:border print:border-current ${
                             it.timeSlot === 'morning' ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700'
                           }`}
                         >
@@ -303,13 +303,13 @@ export default function DailyReportModal({
         </section>
 
         <section className="flex flex-col gap-1">
-          <h3 className="text-sm font-semibold text-zinc-700 print:text-base">특이사항</h3>
-          {dayNotes.length === 0 && <p className="text-xs text-zinc-400">이 날짜에 등록된 특이사항이 없습니다.</p>}
+          <h3 className="text-xl font-bold text-zinc-700 print:text-base">특이사항</h3>
+          {dayNotes.length === 0 && <p className="text-base text-zinc-400">이 날짜에 등록된 특이사항이 없습니다.</p>}
           <div className="flex flex-col gap-1">
             {dayNotes.map((n) => (
               <div
                 key={n.blockId}
-                className="text-sm border border-zinc-200 rounded px-2 py-1 print:text-base print:border-zinc-400"
+                className="text-lg border border-zinc-200 rounded px-2 py-1 print:text-base print:border-zinc-400"
               >
                 <strong>{n.blockName}</strong> {n.text}
               </div>
@@ -319,10 +319,10 @@ export default function DailyReportModal({
 
         <section className="flex flex-col gap-1">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-zinc-700 print:text-base">직영 작업</h3>
+            <h3 className="text-xl font-bold text-zinc-700 print:text-base">직영 작업</h3>
             {previousLabor.length > 0 && (
               <button
-                className="text-xs px-2 py-0.5 rounded border border-zinc-300 print:hidden"
+                className="text-base px-2 py-0.5 rounded border border-zinc-300 print:hidden"
                 onClick={loadPreviousDirectLabor}
                 title={`${previousLaborDate} 작업 내용을 불러옵니다`}
               >
@@ -330,7 +330,7 @@ export default function DailyReportModal({
               </button>
             )}
           </div>
-          <p className="text-xs text-zinc-500 print:hidden">
+          <p className="text-base text-zinc-500 print:hidden">
             아래 5개(관리자/공사/직영·용역/안전/안전시설)는 매일 반드시 입력하는 항목이고, 그 외는 필요할 때만 선택해서 추가합니다.
           </p>
 
@@ -339,20 +339,20 @@ export default function DailyReportModal({
             {FIXED_LABOR_CATEGORIES.map((cat) => {
               const entry = fixedLaborByCategory.get(cat);
               return (
-                <div key={cat} className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1 print:text-base print:border-zinc-400">
-                  <span className="w-16 shrink-0 font-medium text-zinc-700 print:w-20">{cat}</span>
+                <div key={cat} className="flex items-center gap-2 text-lg border border-zinc-200 rounded px-2 py-1 print:text-base print:border-zinc-400">
+                  <span className="w-24 shrink-0 font-medium text-zinc-700 print:w-24">{cat}</span>
                   <input
-                    className="w-14 shrink-0 border border-zinc-300 rounded px-1.5 py-0.5 text-xs print:hidden"
+                    className="w-16 shrink-0 border border-zinc-300 rounded px-1.5 py-1 text-base print:hidden"
                     value={entry?.headcount || ''}
                     onChange={(e) => onSetFixedLabor(date, cat, Math.max(0, Number(e.target.value) || 0), entry?.workContent ?? '')}
                     placeholder="인원"
                     type="number"
                     min="0"
                   />
-                  <span className="text-xs text-zinc-400 shrink-0 print:hidden">명</span>
+                  <span className="text-base text-zinc-400 shrink-0 print:hidden">명</span>
                   <span className="hidden print:inline">{entry?.headcount ?? 0}명</span>
                   <input
-                    className="flex-1 border border-zinc-300 rounded px-2 py-0.5 text-xs print:hidden"
+                    className="flex-1 border border-zinc-300 rounded px-2 py-0.5 text-base print:hidden"
                     value={entry?.workContent ?? ''}
                     onChange={(e) => onSetFixedLabor(date, cat, entry?.headcount ?? 0, e.target.value)}
                     placeholder="작업 내용"
@@ -375,28 +375,28 @@ export default function DailyReportModal({
                 return (
                   <div
                     key={d.id}
-                    className="flex items-center gap-2 text-sm border border-zinc-200 rounded px-2 py-1 print:text-base print:border-zinc-400"
+                    className="flex items-center gap-2 text-lg border border-zinc-200 rounded px-2 py-1 print:text-base print:border-zinc-400"
                   >
-                    <span className="w-16 shrink-0 font-medium text-zinc-700 print:w-20">{catLabel}</span>
+                    <span className="w-24 shrink-0 font-medium text-zinc-700 print:w-24">{catLabel}</span>
                     <input
-                      className="w-14 shrink-0 border border-zinc-300 rounded px-1.5 py-0.5 text-xs print:hidden"
+                      className="w-16 shrink-0 border border-zinc-300 rounded px-1.5 py-1 text-base print:hidden"
                       value={d.headcount || ''}
                       onChange={(e) => onUpdateDirectLabor(d.id, Math.max(0, Number(e.target.value) || 0), d.workContent)}
                       placeholder="인원"
                       type="number"
                       min="0"
                     />
-                    <span className="text-xs text-zinc-400 shrink-0 print:hidden">명</span>
+                    <span className="text-base text-zinc-400 shrink-0 print:hidden">명</span>
                     <span className="hidden print:inline">{d.headcount}명</span>
                     <input
-                      className="flex-1 border border-zinc-300 rounded px-2 py-0.5 text-xs print:hidden"
+                      className="flex-1 border border-zinc-300 rounded px-2 py-0.5 text-base print:hidden"
                       value={d.workContent}
                       onChange={(e) => onUpdateDirectLabor(d.id, d.headcount, e.target.value)}
                       placeholder="작업 내용"
                     />
                     <span className="hidden print:inline">{d.workContent}</span>
                     <button
-                      className="text-xs text-red-600 shrink-0 hover:text-red-700 print:hidden"
+                      className="text-base text-red-600 shrink-0 hover:text-red-700 print:hidden"
                       onClick={() => onRemoveDirectLabor(d.id)}
                       title="이 항목 삭제"
                     >
@@ -410,7 +410,7 @@ export default function DailyReportModal({
 
           <div className="flex items-center gap-2 mt-1 print:hidden">
             <select
-              className="border border-zinc-300 rounded px-2 py-1 text-sm w-28 shrink-0"
+              className="border border-zinc-300 rounded px-2 py-1 text-lg w-32 shrink-0"
               value={newCategory}
               onChange={(e) => setNewCategory(e.target.value)}
             >
@@ -421,20 +421,20 @@ export default function DailyReportModal({
               ))}
             </select>
             <input
-              className="border border-zinc-300 rounded px-2 py-1 text-sm flex-1"
+              className="border border-zinc-300 rounded px-2 py-1 text-lg flex-1"
               value={newContent}
               onChange={(e) => setNewContent(e.target.value)}
               placeholder="작업 내용 (예: 자재 정리)"
             />
             <input
-              className="border border-zinc-300 rounded px-2 py-1 text-sm w-20"
+              className="border border-zinc-300 rounded px-2 py-1 text-lg w-20"
               value={newHeadcount}
               onChange={(e) => setNewHeadcount(e.target.value)}
               placeholder="인원"
               type="number"
               min="1"
             />
-            <button className="px-3 py-1 rounded bg-indigo-600 text-white text-sm" onClick={submitNewDirectLabor}>
+            <button className="px-3 py-1 rounded bg-indigo-600 text-white text-lg" onClick={submitNewDirectLabor}>
               추가
             </button>
           </div>

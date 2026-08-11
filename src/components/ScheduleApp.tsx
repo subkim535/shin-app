@@ -1102,16 +1102,15 @@ export default function ScheduleApp() {
     if (!pendingHeaderShift) return;
     const reason = (presetReason ?? headerReasonInput).trim() || '사유 미입력';
     const next = shiftAllFrom(processes, pendingHeaderShift.fromDate, pendingHeaderShift.deltaDays, holidays);
+    setProcesses(recomputeConflicts(next));
+    // 일자 전체 순연은 "전체 공정 순연"이라 조건(휴일 규칙)에 맞춰 무조건 밀린다 — 겹침이
+    // 생겨도 막지 않는다(주요공정도 겹침 허용). 다만 휴일 규칙 때문에 같은 날로 몰려 실제로
+    // 겹치는 게 생기면 정보성으로만 알려준다.
     const collisions = findMainCollisions(next);
     if (collisions.length > 0) {
       const list = collisions.map((c) => `${blockNames[c.blockId] ?? c.blockId} ${c.date} ${c.labels.join('/')}`).join(', ');
-      setWarning(`이렇게 순연하면 주요공정끼리 겹치게 되어 처리할 수 없습니다: ${list}`);
-      setPendingHeaderShift(null);
-      setHeaderShiftStage('idle');
-      setHeaderReasonInput('');
-      return;
+      setWarning(`⚠ 순연 완료 — 다만 같은 날 겹치는 주요공정이 있어요: ${list}. (오전/오후로 나누면 나란히 쓸 수 있어요)`);
     }
-    setProcesses(recomputeConflicts(next));
     setDateShiftHistory((h) => [
       ...h,
       {
