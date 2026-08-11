@@ -13,7 +13,7 @@ const HEADER_W = 108;
 const CELL_W = 200;
 const REMARK_W = 152;
 const HEADER_H = 54;
-const ROW_MAIN_H = 60;
+const ROW_MAIN_H = 72;
 const ROW_SUB_H = 38;
 const ROW_NOTE_H = 42;
 const BAND_H = 26; // 동마다 공정 위에 붙는 "공사 구분 띠" 행 높이
@@ -618,7 +618,7 @@ export default function GanttChart({
     // 에선 잘려서 칸 안에서 스크롤해야 한다. 동별로 한 칸에 들어가는 주공정 칩의 최대 개수를
     // 세어, 그만큼 그 동의 주공정 행 높이를 늘려 다 보이게 한다. (칩 1개는 기본 높이가 감당)
     // 간략 보기는 칩을 크게(스티커처럼) 그리므로 한 개가 차지하는 높이도 더 크게 잡는다.
-    const MAIN_CHIP_H = compact ? 60 : 54; // 칩 한 개가 차지하는 높이(컨트롤이 좁은 칸에서 줄바꿈되는 것 포함)
+    const MAIN_CHIP_H = compact ? 60 : 62; // 칩 한 개가 차지하는 높이(컨트롤이 좁은 칸에서 줄바꿈되는 것 포함)
     const mainContentExtra: number[] = [];
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
@@ -787,7 +787,7 @@ export default function GanttChart({
           className={[
             big
               ? 'flex-1 min-w-0 text-left rounded-md px-2 py-1.5 text-2xl leading-tight truncate opacity-60'
-              : 'flex-1 min-w-0 text-left rounded px-1.5 py-0.5 text-sm leading-tight truncate opacity-60',
+              : 'flex-1 min-w-0 text-left rounded px-1.5 py-1 text-lg leading-tight truncate opacity-60',
             `${color.bg} ${color.text}`,
             selected ? 'ring-2 ring-indigo-600 opacity-90' : '',
           ].join(' ')}
@@ -848,7 +848,7 @@ export default function GanttChart({
           className={[
             big
               ? 'text-left rounded-md px-2 py-1.5 text-2xl leading-tight relative flex-1 min-w-[130px]'
-              : 'text-left rounded px-1 py-0.5 text-base leading-tight relative flex-1 min-w-[74px]',
+              : 'text-left rounded px-1.5 py-1 text-xl leading-tight relative flex-1 min-w-[84px]',
             `font-semibold ${color.bg} ${color.text}`,
             'cursor-grab active:cursor-grabbing',
             selected ? 'ring-2 ring-indigo-600' : overdue ? 'ring-2 ring-red-500' : '',
@@ -881,7 +881,7 @@ export default function GanttChart({
             className={[
               big
                 ? 'inline-flex items-center justify-center w-6 h-6 mr-1.5 rounded border align-middle shrink-0 text-lg leading-none font-bold'
-                : 'inline-flex items-center justify-center w-3.5 h-3.5 mr-1 rounded-sm border align-middle shrink-0 text-xs leading-none font-bold',
+                : 'inline-flex items-center justify-center w-4 h-4 mr-1 rounded-sm border align-middle shrink-0 text-sm leading-none font-bold',
               p.actualDone
                 ? 'bg-emerald-600 border-emerald-700 text-white'
                 : p.inProgress
