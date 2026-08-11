@@ -1146,7 +1146,10 @@ export default function ScheduleApp() {
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 relative">
-              <h1 className="text-xl font-semibold">{siteInfo.name} — 전체 공정표</h1>
+              <h1 className="text-5xl font-bold leading-none">
+                {siteInfo.name}
+                <span className="text-base font-semibold text-zinc-400 ml-2">— 전체 공정표</span>
+              </h1>
               <button
                 type="button"
                 onClick={() => setChangelogOpen((v) => !v)}
@@ -1195,16 +1198,16 @@ export default function ScheduleApp() {
             {!loaded && !syncError && <p className="text-xs text-zinc-400 mt-0.5">불러오는 중…</p>}
             {syncError && <p className="text-xs text-red-600 mt-0.5">동기화 오류: {syncError}</p>}
           </div>
-          <div className="flex gap-2 text-sm">
+          <div className="flex flex-wrap gap-2 text-base">
             <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setViewMode((m) => (m === 'monthly' ? 'overview' : 'monthly'))}
               data-testid="view-mode-toggle"
             >
               {viewMode === 'monthly' ? '전체공정표 보기' : '월간공정표 보기'}
             </button>
             <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={handleUndo}
               title="되돌리기 (Ctrl+Z)"
               data-testid="undo-button"
@@ -1212,7 +1215,7 @@ export default function ScheduleApp() {
               ↩ 되돌리기
             </button>
             <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={handleRedo}
               title="앞으로 되돌리기 (Ctrl+Shift+Z)"
               data-testid="redo-button"
@@ -1220,14 +1223,14 @@ export default function ScheduleApp() {
               앞으로 되돌리기 ↪
             </button>
             <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setHistoryOpen(true)}
               data-testid="history-button"
             >
               변경이력
             </button>
             <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 flex items-center gap-1"
+              className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 flex items-center gap-1"
               onClick={() => setStatusOpen(true)}
               data-testid="status-button"
               title="진척 현황과 지연 공정 보기"
@@ -1240,20 +1243,20 @@ export default function ScheduleApp() {
               )}
             </button>
             <button
-              className="px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40"
+              className="px-4 py-2.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40"
               onClick={() => setTemplateGenOpen(true)}
               disabled={blocks.length === 0}
             >
               구간 공정 생성
             </button>
             <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setTeamViewOpen(true)}
             >
               투입인원
             </button>
             <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
+              className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100 disabled:opacity-40"
               onClick={() => openExcelExport('all')}
               disabled={blocks.length === 0}
               data-testid="excel-export-button"
@@ -1261,7 +1264,7 @@ export default function ScheduleApp() {
               엑셀 내보내기
             </button>
             <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setSettingsOpen(true)}
             >
               설정
@@ -1269,21 +1272,21 @@ export default function ScheduleApp() {
           </div>
         </div>
         {viewMode === 'monthly' && (
-          <div className="flex items-center justify-end gap-1 text-sm">
+          <div className="flex items-center justify-end gap-1 text-base">
             <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setViewStartDate((d) => addDays(d, -7))}
             >
               ← 이전 주
             </button>
             <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setViewStartDate(mondayOfWeek(todayISO()))}
             >
               오늘
             </button>
             <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setViewStartDate((d) => addDays(d, 7))}
             >
               다음 주 →
@@ -1320,7 +1323,7 @@ export default function ScheduleApp() {
               className="ml-1 px-2 py-1.5 rounded border border-zinc-300 text-sm w-32"
             />
             <button
-              className="px-3 py-1.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
+              className="px-4 py-2.5 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={handleSearch}
               data-testid="block-search-button"
             >
