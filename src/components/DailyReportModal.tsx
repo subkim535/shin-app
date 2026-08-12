@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { ISODate } from '@/lib/domain/dateUtils';
 import { downloadDailyReportExcel } from '@/lib/export/dailyReportExcel';
 import { FILL_HEX, SUB_FILL } from '@/lib/export/scheduleExcel';
-import { PROCESS_COLOR, PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
+import { PROCESS_COLOR, PROCESS_TYPE_MAP, customProcessArgb } from '@/lib/domain/processTypes';
 import { isKnownType, processLabel } from '@/lib/domain/schedule';
 import { Block, DirectLaborEntry, ProcessInstance, SiteInfo } from '@/lib/domain/types';
 
@@ -146,6 +146,36 @@ export default function DailyReportModal({
         .sort((a, b) => a.blockName.localeCompare(b.blockName) || a.floor.localeCompare(b.floor)),
     }));
   }, [dayProcesses, floorByCycle, blockNames]);
+  // 엑셀(간트형)용 — 동을 행, 그날의 오전/오후를 열로 놓는다. 주공정만(보조공정 제외),
+  // 칸 내용은 "층 공종 인원명", 색은 공종별 색. 그날 일이 있는 동만 담는다.
+  const dailyGrid = useMemo(() => {
+    const toCell = (p: ProcessInstance) => {
+      const floor = floorNumberLabel(floorByCycle.get(p.cycleId));
+      const hc = p.crew?.headcount ? ` ${p.crew.headcount}명` : '';
+      const colorHex = FILL_HEX[p.typeCode] ?? (p.customLabel ? customProcessArgb(p.customLabel) : SUB_FILL);
+      return { text: `${floor ? floor + ' ' : ''}${processLabel(p)}${hc}`, colorHex };
+    };
+    const rows: {
+      blockName: string;
+      blockInfo?: string;
+      morning: { text: string; colorHex: string }[];
+      afternoon: { text: string; colorHex: string }[];
+      full: { text: string; colorHex: string }[];
+    }[] = [];
+    for (const b of blocks) {
+      const procs = dayProcesses.filter((p) => p.blockId === b.id && PROCESS_TYPE_MAP[p.typeCode]?.category !== 'sub');
+      if (procs.length === 0) continue;
+      rows.push({
+        blockName: b.name,
+        blockInfo: b.info,
+        morning: procs.filter((p) => p.timeSlot === 'morning').map(toCell),
+        afternoon: procs.filter((p) => p.timeSlot === 'afternoon').map(toCell),
+        full: procs.filter((p) => p.timeSlot !== 'morning' && p.timeSlot !== 'afternoon').map(toCell),
+      });
+    }
+    return rows;
+  }, [blocks, dayProcesses, floorByCycle]);
+
   const dayDirectLabor = useMemo(() => directLabor.filter((d) => d.date === date), [directLabor, date]);
   // 그리드의 "특이사항" 행에 동별로 적어둔 메모 중, 이 날짜에 실제로 내용이 있는 것만 모은다.
   const dayNotes = useMemo(
@@ -228,7 +258,7 @@ export default function DailyReportModal({
       totalHeadcount,
       crewHeadcount,
       directHeadcount,
-      grouped: groupedDayProcesses,
+      dailyGrid,
       notes: dayNotes,
       labor: dayDirectLabor.map((d) => ({
         category: d.category,
