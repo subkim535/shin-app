@@ -6,13 +6,13 @@ import { PROCESS_COLOR, PROCESS_TYPE_MAP, customProcessColor } from '@/lib/domai
 import { isBlockedForType, isWorkersDay, processLabel, workableSpanEnd } from '@/lib/domain/schedule';
 import { Block, ChangeRecord, Holiday, ProcessInstance } from '@/lib/domain/types';
 
-const HEADER_W = 108;
+const HEADER_W = 128;
 // 주공정 칩(예: "16F 갱폼" + ⚠ + 종일/오전/오후 + 더보기)이 한 줄에 다 들어가도록 폭을
 // 넉넉히 잡는다. 좁으면 층수 붙은 갱폼 칩만 2줄로 접혀 높이가 들쭉날쭉해 거슬린다.
 // (칸 폭은 균일해야 변경이력 고스트/화살표의 픽셀 위치 계산이 맞으므로 전체를 함께 넓힌다.)
 const CELL_W = 200;
 const REMARK_W = 210;
-const HEADER_H = 54;
+const HEADER_H = 62;
 const ROW_MAIN_H = 72;
 const ROW_SUB_H = 34;
 const ROW_NOTE_H = 42;
@@ -260,7 +260,11 @@ export default function GanttChart({
     }
     const dates = new Set<string>();
     for (const [key, count] of counts) {
-      if (count >= 3) dates.add(key.split('__')[0]);
+      // 철근(W_철근·S_철근이 '철' 그룹으로 합쳐짐)은 두 종류라 자연히 개수가 많으므로 4개부터
+      // 강조하고(최대 3개까지는 정상), 그 외 공종(갱폼·AL)은 예전처럼 3개부터 강조한다.
+      const group = key.split('__')[1];
+      const threshold = group === '철' ? 4 : 3;
+      if (count >= threshold) dates.add(key.split('__')[0]);
     }
     return dates;
   }, [processes]);
@@ -1019,7 +1023,7 @@ export default function GanttChart({
       >
         {/* 좌상단 코너 */}
         <div
-          className="sticky top-0 left-0 z-30 bg-zinc-100 border-b border-r border-zinc-200 flex items-center justify-center font-medium text-base"
+          className="sticky top-0 left-0 z-30 bg-zinc-100 border-b border-r border-zinc-200 flex items-center justify-center font-medium text-xl"
           style={{ gridColumn: 1, gridRow: 1 }}
         >
           동/구간
@@ -1045,7 +1049,7 @@ export default function GanttChart({
               }
               data-heavy-collision={heavyCollision || undefined}
               className={[
-                'sticky top-0 z-20 border-b border-l border-zinc-200 flex flex-col items-center justify-center text-base cursor-grab active:cursor-grabbing',
+                'sticky top-0 z-20 border-b border-l border-zinc-200 flex flex-col items-center justify-center text-lg cursor-grab active:cursor-grabbing',
                 heavyCollision ? 'bg-red-100 text-red-700' : isToday ? 'bg-indigo-50' : 'bg-zinc-50',
                 isToday ? 'border-b-2 border-b-indigo-900' : '',
                 holiday && !isToday && !heavyCollision ? 'bg-red-50 text-red-500' : '',
@@ -1055,14 +1059,14 @@ export default function GanttChart({
               style={{ gridColumn: colIndex + 2, gridRow: 1 }}
             >
               <div>{formatMonthDay(d)}</div>
-              <div className="text-sm">{weekdayLabelKo(d)}</div>
+              <div className="text-base">{weekdayLabelKo(d)}</div>
             </div>
           );
         })}
 
         {/* 비고 헤더 */}
         <div
-          className="sticky top-0 right-0 z-30 bg-zinc-100 border-b border-l border-zinc-200 flex items-center justify-center font-medium text-base"
+          className="sticky top-0 right-0 z-30 bg-zinc-100 border-b border-l border-zinc-200 flex items-center justify-center font-medium text-xl"
           style={{ gridColumn: dates.length + 2, gridRow: 1 }}
         >
           비고
@@ -1086,7 +1090,7 @@ export default function GanttChart({
               ].join(' ')}
               style={{ gridColumn: 1, gridRow: `${rowIndex * 4 + 2} / span 4` }}
             >
-              <span className="text-lg">{block.name}</span>
+              <span className="text-2xl">{block.name}</span>
               {block.info && <span className="text-xs text-zinc-400 font-normal">{block.info}</span>}
               {blockEndByBlock.get(block.id) && (
                 <span

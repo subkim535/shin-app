@@ -126,7 +126,7 @@ function Modal({ children, draggable }: { children: React.ReactNode; draggable?:
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
       <div
-        className="bg-white rounded-lg shadow-lg p-5 w-full max-w-lg flex flex-col gap-3 text-lg"
+        className="bg-white rounded-lg shadow-lg p-5 w-full max-w-xl flex flex-col gap-3 text-xl"
         style={draggable ? { transform: `translate(${offset.x}px, ${offset.y}px)` } : undefined}
       >
         {draggable && (
@@ -1178,7 +1178,7 @@ export default function ScheduleApp() {
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 relative">
-              <h1 className="text-5xl font-bold leading-none">
+              <h1 className="text-6xl font-bold leading-none">
                 {siteInfo.name}
                 <span className="text-base font-semibold text-zinc-400 ml-2">— 전체 공정표</span>
               </h1>
@@ -1232,7 +1232,7 @@ export default function ScheduleApp() {
           </div>
         </div>
         {/* 상단 버튼 줄 — 제목과 겹치지 않게 아래에 전체 폭으로 펼쳐 왼→오 순서로 나열 */}
-        <div className="flex flex-wrap gap-2 text-lg">
+        <div className="flex flex-wrap gap-2 text-xl">
             <button
               className="px-3 py-2 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setViewMode((m) => (m === 'monthly' ? 'overview' : 'monthly'))}
@@ -1317,7 +1317,7 @@ export default function ScheduleApp() {
             </button>
           </div>
         {viewMode === 'monthly' && (
-          <div className="flex items-center flex-wrap gap-1 text-lg">
+          <div className="flex items-center flex-wrap gap-1 text-xl">
             <button
               className="px-3 py-2 rounded border border-zinc-300 bg-white hover:bg-zinc-100"
               onClick={() => setViewStartDate((d) => addDays(d, -7))}

@@ -28,12 +28,13 @@ export const CONFLICT_GROUP: Record<string, string> = {
   AL: 'AL',
 };
 
-// 주요공정 배경색: 갱폼 주황 / 철근 파랑 / AL 진노랑 / 타설 빨강. 보조공정·특이사항은 흰 바탕 유지.
+// 주요공정 배경색: 갱폼 주황 / 철근 파랑 / AL 연한녹색 / 타설 빨강. 보조공정·특이사항은 흰 바탕 유지.
+// (AL이 갱폼(주황)과 색이 비슷해 헷갈린다는 피드백으로 AL을 연한녹색으로 바꿈.)
 export const PROCESS_COLOR: Record<string, { bg: string; text: string }> = {
   GANGFORM: { bg: 'bg-orange-300', text: 'text-orange-950' },
   W_REBAR: { bg: 'bg-blue-300', text: 'text-blue-950' },
   S_REBAR: { bg: 'bg-blue-300', text: 'text-blue-950' },
-  AL: { bg: 'bg-amber-500', text: 'text-white' },
+  AL: { bg: 'bg-green-300', text: 'text-green-950' },
   POUR: { bg: 'bg-red-400', text: 'text-white' },
 };
 

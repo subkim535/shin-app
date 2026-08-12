@@ -9,7 +9,7 @@ export const FILL_HEX: Record<string, string> = {
   GANGFORM: 'FFFDBA74', // orange-300
   W_REBAR: 'FF93C5FD', // blue-300
   S_REBAR: 'FF93C5FD',
-  AL: 'FFF59E0B', // amber-500
+  AL: 'FF86EFAC', // green-300 (연한녹색 — 갱폼 주황과 구분)
   POUR: 'FFF87171', // red-400
 };
 export const SUB_FILL = 'FFE4E4E7'; // zinc-200 — 보조공정/커스텀공정
