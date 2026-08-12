@@ -1117,6 +1117,11 @@ export function findMainCollisions(processes: ProcessInstance[]): { blockId: str
 /**
  * 전체 일정 순연: fromDate 이후(포함) 모든 동의 공정을 deltaDays만큼 이동하고,
  * 타설·갱폼처럼 휴일 규칙이 있는 공정은 다시 규칙을 적용한다.
+ *
+ * 균일 이동만 하면 휴일 회피로 뒤 공정과 같은 날에 겹치는 일이 생긴다. 그래서 이동 후
+ * 동마다 앞→뒤 순서로 훑어, 앞 공정과 실제로 겹치는(오전/오후로 안 나뉜) 주공정은 앞 공정
+ * 끝난 다음 작업일로 밀어낸다(뒤 공정도 연쇄로 따라 밀림). 겹치지 않으면 그대로 둬 원래
+ * 간격을 유지한다. 밀린 주공정에 붙은 보조공정도 같은 양만큼 따라 이동한다.
  */
 export function shiftAllFrom(
   processes: ProcessInstance[],
@@ -1130,8 +1135,52 @@ export function shiftAllFrom(
     const finalDate = PROCESS_TYPE_MAP[p.typeCode] ? nextWorkableDate(p.typeCode, target, holidays) : target;
     return { ...p, date: finalDate };
   });
-  const movedIds = shifted.filter((p) => p.date !== processes.find((o) => o.id === p.id)?.date).map((p) => p.id);
-  return reindexAllCellGroups(withArrivals(shifted, movedIds));
+
+  // ── 연쇄 밀기(cascade): 동마다 주공정을 날짜순으로 훑어 실제 겹침을 뒤로 해소한다. ──
+  const isSub = (p: ProcessInstance) => PROCESS_TYPE_MAP[p.typeCode]?.category === 'sub';
+  const byBlock = new Map<string, ProcessInstance[]>();
+  for (const p of shifted) {
+    if (!byBlock.has(p.blockId)) byBlock.set(p.blockId, []);
+    byBlock.get(p.blockId)!.push(p);
+  }
+  const extraShift = new Map<string, number>(); // 주공정 id → 추가로 더 민 일수
+  for (const list of byBlock.values()) {
+    const mains = list
+      .filter((p) => !isSub(p) && p.date >= fromDate)
+      .sort((a, b) => a.date.localeCompare(b.date) || (a.cellOrder ?? 0) - (b.cellOrder ?? 0));
+    let prevEnd: ISODate | null = null;
+    let prevSlot: ProcessInstance['timeSlot'] = undefined;
+    for (const m of mains) {
+      let start = m.date;
+      if (prevEnd && start <= prevEnd && slotsOverlap(m.timeSlot, prevSlot)) {
+        // 앞 공정과 겹침 → 앞 공정 끝난 다음 작업일로 밀기(휴일 규칙 있는 공정은 회피 반영).
+        start = nextWorkableDate(m.typeCode, addDays(prevEnd, 1), holidays);
+      }
+      const delta = diffDays(m.date, start);
+      if (delta > 0) extraShift.set(m.id, delta);
+      const end = workableSpanEnd(m.typeCode, start, m.durationDays, holidays);
+      if (!prevEnd || end >= prevEnd) {
+        prevEnd = end;
+        prevSlot = m.timeSlot;
+      }
+    }
+  }
+
+  const cascaded =
+    extraShift.size === 0
+      ? shifted
+      : shifted.map((p) => {
+          if (extraShift.has(p.id)) return { ...p, date: addDays(p.date, extraShift.get(p.id)!) };
+          // 밀린 주공정에 붙은 보조공정은 같은 양만큼 따라간다.
+          if (p.linkedMainProcessId && extraShift.has(p.linkedMainProcessId)) {
+            return { ...p, date: addDays(p.date, extraShift.get(p.linkedMainProcessId)!) };
+          }
+          return p;
+        });
+
+  const origDate = new Map(processes.map((o) => [o.id, o.date]));
+  const movedIds = cascaded.filter((p) => p.date !== origDate.get(p.id)).map((p) => p.id);
+  return reindexAllCellGroups(withArrivals(cascaded, movedIds));
 }
 
 const arrivalStore = new Map<string, number>();
