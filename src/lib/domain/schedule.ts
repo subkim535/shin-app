@@ -399,9 +399,10 @@ function rebuildCycleFrom(
   preserveDurationDays: number | undefined,
   // 맨 앞(사용자가 직접 놓은) 단계를 휴일이어도 그 날에 그대로 둘지. 수동 드롭일 때만 true.
   allowHolidayFirst: boolean = false,
-  // 연속된 두 주공정이 오전/오후로 나뉘면 같은 날에 공존시킬지. 사용자 규칙상 "앞으로 당길
-  // 때만 1일 2공종"이라, 앞당김 이동에서만 true로 넘긴다(뒤로 순연·자동 밀림은 1일 1공정).
-  allowSameDayShare: boolean = false,
+  // 이번 재배치가 "앞으로 당기는" 이동인지. 앞당길 때는 (1) 연속 오전/오후 주공정을 같은 날에
+  // 공존(1일 2공종)시키고, (2) 사용자가 벌려둔 간격(extraDays)을 유지하지 않고 바짝 따라오게 한다
+  // — 앞당기는데 타설만 원래 간격 때문에 뒤처져 보이던 문제를 없앤다. 뒤로 순연·자동 밀림은 false.
+  forwardPull: boolean = false,
 ): { processes: ProcessInstance[]; firstDate: ISODate; sundaySkipped?: boolean } {
   const seqIndex = MAIN_SEQUENCE_CODES.indexOf(fromTypeCode);
   const laterMainCodes = MAIN_SEQUENCE_CODES.slice(seqIndex + 1);
@@ -509,7 +510,9 @@ function rebuildCycleFrom(
     // (= 사용자가 일부러 늘린 몫만) 새 날짜에도 그대로 얹어준다.
     const nextCode = sequenceCodes[i + 1];
     let extraDays = 0;
-    if (nextCode) {
+    // 앞으로 당기는 이동에선 원래 간격(extraDays)을 유지하지 않는다 — 그래야 타설처럼 뒤에서
+    // 벌어져 있던 공정도 앞 공정을 바짝 따라온다(뒤로 순연은 예전처럼 간격 유지).
+    if (nextCode && !forwardPull) {
       const cur = originalByCode.get(code);
       const next = originalByCode.get(nextCode);
       if (cur && next) {
@@ -527,7 +530,7 @@ function rebuildCycleFrom(
     const nextSlot = nextCode ? originalByCode.get(nextCode)?.timeSlot : undefined;
     const opposite =
       (curSlot === 'morning' && nextSlot === 'afternoon') || (curSlot === 'afternoon' && nextSlot === 'morning');
-    const shareNext = allowSameDayShare && opposite && !arrivedViaShare;
+    const shareNext = forwardPull && opposite && !arrivedViaShare;
     if (shareNext) {
       cursor = date; // 다음 단계는 같은 날 반대 반나절로 공존
     } else {
