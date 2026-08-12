@@ -399,6 +399,9 @@ function rebuildCycleFrom(
   preserveDurationDays: number | undefined,
   // 맨 앞(사용자가 직접 놓은) 단계를 휴일이어도 그 날에 그대로 둘지. 수동 드롭일 때만 true.
   allowHolidayFirst: boolean = false,
+  // 연속된 두 주공정이 오전/오후로 나뉘면 같은 날에 공존시킬지. 사용자 규칙상 "앞으로 당길
+  // 때만 1일 2공종"이라, 앞당김 이동에서만 true로 넘긴다(뒤로 순연·자동 밀림은 1일 1공정).
+  allowSameDayShare: boolean = false,
 ): { processes: ProcessInstance[]; firstDate: ISODate; sundaySkipped?: boolean } {
   const seqIndex = MAIN_SEQUENCE_CODES.indexOf(fromTypeCode);
   const laterMainCodes = MAIN_SEQUENCE_CODES.slice(seqIndex + 1);
@@ -524,7 +527,7 @@ function rebuildCycleFrom(
     const nextSlot = nextCode ? originalByCode.get(nextCode)?.timeSlot : undefined;
     const opposite =
       (curSlot === 'morning' && nextSlot === 'afternoon') || (curSlot === 'afternoon' && nextSlot === 'morning');
-    const shareNext = opposite && !arrivedViaShare;
+    const shareNext = allowSameDayShare && opposite && !arrivedViaShare;
     if (shareNext) {
       cursor = date; // 다음 단계는 같은 날 반대 반나절로 공존
     } else {
@@ -723,8 +726,10 @@ export function moveMainProcess(
 
   // 휴일 허용은 "옮긴 공정 자신이 맨 앞 앵커인 일반 이동"에만 적용한다. 전체 앞당김
   // (shiftedWholeCycle)은 앵커가 갱폼으로 자동 계산돼서 사용자가 콕 찍은 날이 아니므로 제외.
+  // "1일 2공종(오전/오후 공존)"은 앞으로 당기는 이동일 때만 허용한다(뒤로 순연은 1일 1공정).
+  const isForwardPull = newDate < oldDate;
   const rebuild = rebuildCycleFrom(
-    processes, blockId, cycleId, anchorCode, anchorId, anchorDate, holidays, gapDays, anchorDuration, allowHoliday && !shiftedWholeCycle,
+    processes, blockId, cycleId, anchorCode, anchorId, anchorDate, holidays, gapDays, anchorDuration, allowHoliday && !shiftedWholeCycle, isForwardPull,
   );
 
   const cascade = cascadePushLaterCycles(rebuild.processes, blockId, cycleId, originalOrder, holidays, gapDays);
