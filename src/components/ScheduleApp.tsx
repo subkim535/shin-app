@@ -1201,7 +1201,8 @@ export default function ScheduleApp() {
     // 일자 전체 순연은 "전체 공정 순연"이라 조건(휴일 규칙)에 맞춰 무조건 밀린다 — 겹침이
     // 생겨도 막지 않는다(주요공정도 겹침 허용). 다만 휴일 규칙 때문에 같은 날로 몰려 실제로
     // 겹치는 게 생기면 정보성으로만 알려준다.
-    const collisions = findMainCollisions(next);
+    // 순연은 fromDate 이후만 건드리므로, 그 이전에 원래 있던 겹침(순연과 무관)은 알리지 않는다.
+    const collisions = findMainCollisions(next).filter((c) => c.date >= pendingHeaderShift.fromDate);
     if (collisions.length > 0) {
       const list = collisions.map((c) => `${blockNames[c.blockId] ?? c.blockId} ${c.date} ${c.labels.join('/')}`).join(', ');
       setWarning(`⚠ 순연 완료 — 다만 같은 날 겹치는 주요공정이 있어요: ${list}. (오전/오후로 나누면 나란히 쓸 수 있어요)`);
