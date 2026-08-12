@@ -452,6 +452,9 @@ function rebuildCycleFrom(
   // 사용자가 직접 드롭한 자리(맨 앞 단계)가 하필 일요일이라 다음 날로 밀린 경우만 따로
   // 표시해준다 — 다른 휴일 때문에 밀리는 건 이미 당연한 동작이라 굳이 알릴 필요 없다.
   let sundaySkipped = false;
+  // 이 단계가 "앞 단계와 같은 날 반대 반나절로 공존"으로 놓였는지 — 그렇다면 그 위에 또
+  // 다음 단계를 붙이지 않는다(한 날에 오전/오후 둘까지만 공존).
+  let arrivedViaShare = false;
   sequenceCodes.forEach((code, i) => {
     const stepDef = PROCESS_TYPE_MAP[code];
     // 맨 앞 단계(i===0)는 사용자가 직접 놓은 자리 — allowHolidayFirst면 휴일이어도 그 날에
@@ -513,8 +516,22 @@ function rebuildCycleFrom(
         if (Number.isFinite(excess) && excess > 0) extraDays = excess;
       }
     }
-    // 일수는 작업일 기준으로 점유(휴일은 빼고 뒤로 늘림) → 그 끝에서 간격만큼 뒤가 다음 커서.
-    cursor = addDays(workableSpanEnd(code, date, span, holidays), gapDays + extraDays);
+    // 연속된 두 주공정의 반나절이 서로 반대(앞=오전, 뒤=오후 또는 그 반대)면 다음 단계를
+    // 같은 날에 놓아 오전/오후로 공존시킨다 — 사용자가 반나절로 나눠 붙여둔 배치가 이동·순연
+    // 때 풀려서 다시 하루씩 벌어지지 않게 한다. 단 이미 공존으로 들어온 단계 위엔 또 붙이지
+    // 않는다(한 날 오전/오후 둘까지).
+    const curSlot = origMain?.timeSlot;
+    const nextSlot = nextCode ? originalByCode.get(nextCode)?.timeSlot : undefined;
+    const opposite =
+      (curSlot === 'morning' && nextSlot === 'afternoon') || (curSlot === 'afternoon' && nextSlot === 'morning');
+    const shareNext = opposite && !arrivedViaShare;
+    if (shareNext) {
+      cursor = date; // 다음 단계는 같은 날 반대 반나절로 공존
+    } else {
+      // 일수는 작업일 기준으로 점유(휴일은 빼고 뒤로 늘림) → 그 끝에서 간격만큼 뒤가 다음 커서.
+      cursor = addDays(workableSpanEnd(code, date, span, holidays), gapDays + extraDays);
+    }
+    arrivedViaShare = shareNext;
   });
 
   return { processes: [...kept, ...rebuilt], firstDate, sundaySkipped };
