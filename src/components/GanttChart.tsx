@@ -1108,7 +1108,7 @@ export default function GanttChart({
         {blocks.map((block, rowIndex) => (
           <div
             key={`remark-${block.id}`}
-            className="sticky right-0 z-10 bg-zinc-50 border-b-2 border-l border-zinc-200 border-b-zinc-900 px-1 py-1"
+            className="sticky right-0 z-20 bg-zinc-50 border-b-2 border-l border-zinc-200 border-b-zinc-900 px-1 py-1"
             style={{ gridColumn: dates.length + 2, gridRow: `${rowIndex * 4 + 2} / span 4` }}
           >
             <textarea
