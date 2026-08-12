@@ -94,6 +94,10 @@ interface PendingDrop {
   date: ISODate;
   kind: 'main' | 'sub' | 'custom';
   collisionCount: number;
+  // 지상층 주공정을 같은 사이클의 인접 단계가 이미 있는 날에 놓을 때, 그 인접 단계 id·이름.
+  // 있으면 "같은 날(오전/오후)로 둘지, 따로 밀지" 선택창(sameday-choice)을 띄운다.
+  sameDayWithId?: string;
+  sameDayWithLabel?: string;
 }
 
 interface PendingHeaderShift {
@@ -477,7 +481,7 @@ export default function ScheduleApp() {
   const [postponePrompt, setPostponePrompt] = useState<{ date: ISODate; days: string } | null>(null);
 
   const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null);
-  const [dropStage, setDropStage] = useState<'idle' | 'threeplus-picker' | 'reason' | 'othermove-confirm'>('idle');
+  const [dropStage, setDropStage] = useState<'idle' | 'threeplus-picker' | 'reason' | 'othermove-confirm' | 'sameday-choice'>('idle');
   const [reasonInput, setReasonInput] = useState('');
   // 구간공정 이동이 "다른 공사"까지 밀 때, 실제 반영 전에 확인받기 위해 계산해둔 결과를 잠시 보관.
   const [pendingCustomMove, setPendingCustomMove] = useState<MoveResult | null>(null);
@@ -779,6 +783,34 @@ export default function ScheduleApp() {
     const preview = previewMainMove(processes, processId, date);
     if (preview.blockedReason) {
       setWarning(preview.blockedReason);
+      return;
+    }
+    // 같은 사이클의 "바로 앞/뒤 단계"가 이미 그 날짜에 있으면(예: S_철근 자리로 타설을 끌어옴)
+    // 곧바로 밀지 않고 "같은 날(오전/오후로 나눠) vs 따로 밀기"를 고르게 한다.
+    const draggedSeq = PROCESS_TYPE_MAP[proc.typeCode]?.mainSequence;
+    const adjacent =
+      draggedSeq != null
+        ? processes.find(
+            (p) =>
+              p.id !== processId &&
+              p.blockId === blockId &&
+              p.date === date &&
+              p.cycleId === proc.cycleId &&
+              PROCESS_TYPE_MAP[p.typeCode]?.mainSequence != null &&
+              Math.abs((PROCESS_TYPE_MAP[p.typeCode]!.mainSequence ?? 0) - draggedSeq) === 1,
+          )
+        : undefined;
+    if (adjacent) {
+      setPendingDrop({
+        processId,
+        blockId,
+        date,
+        kind: 'main',
+        collisionCount: preview.collisionCount,
+        sameDayWithId: adjacent.id,
+        sameDayWithLabel: processLabel(adjacent),
+      });
+      setDropStage('sameday-choice');
       return;
     }
     // 같은 동의 이후 층과 겹치는 경우는 여기서 미리 막지 않는다 — moveMainProcess가
@@ -1091,6 +1123,40 @@ export default function ScheduleApp() {
       if (result.sundaySkipped) {
         setWarning(`일요일로는 옮길 수 없어 ${result.date}(으)로 자동 순연되었습니다.`);
       }
+    }
+    resetDropFlow();
+  }
+
+  // "sameday-choice"에서 "같은 날에"를 고르면: 옮긴 공정과 그 자리 인접 공정을 오전/오후로
+  // 나눠(앞 순서=오전, 뒤 순서=오후) 같은 날에 나란히 둔다. 앞으로 당기는 이동이라 엔진이
+  // 둘을 같은 날에 공존시킨다(#123·#125·#126).
+  function confirmSameDay() {
+    if (!pendingDrop || !pendingDrop.sameDayWithId) {
+      resetDropFlow();
+      return;
+    }
+    const dragged = processes.find((p) => p.id === pendingDrop.processId);
+    const target = processes.find((p) => p.id === pendingDrop.sameDayWithId);
+    if (!dragged || !target) {
+      resetDropFlow();
+      return;
+    }
+    const dSeq = PROCESS_TYPE_MAP[dragged.typeCode]?.mainSequence ?? 0;
+    const tSeq = PROCESS_TYPE_MAP[target.typeCode]?.mainSequence ?? 0;
+    const draggedSlot: 'morning' | 'afternoon' = dSeq < tSeq ? 'morning' : 'afternoon';
+    const targetSlot: 'morning' | 'afternoon' = dSeq < tSeq ? 'afternoon' : 'morning';
+    const withSlots = processes.map((p) =>
+      p.id === dragged.id ? { ...p, timeSlot: draggedSlot } : p.id === target.id ? { ...p, timeSlot: targetSlot } : p,
+    );
+    const result = moveMainProcess(
+      withSlots, changeHistory, pendingDrop.processId, pendingDrop.date, '같은 날 배치 (오전/오후)', holidays, processGapDays, true,
+    );
+    if (result.blockedReason) {
+      setWarning(result.blockedReason);
+    } else {
+      setProcesses(recomputeConflicts(result.processes));
+      setChangeHistory(result.changeHistory);
+      if (result.notice) setWarning(result.notice);
     }
     resetDropFlow();
   }
@@ -1541,15 +1607,44 @@ export default function ScheduleApp() {
         </Modal>
       )}
 
+      {dropStage === 'sameday-choice' && pendingDrop && pendingProcess && pendingDrop.sameDayWithId && (
+        <Modal>
+          <p className="text-2xl">
+            <strong>{blockNames[pendingDrop.blockId]}</strong> {processLabel(pendingProcess)}을(를){' '}
+            <strong>{pendingDrop.sameDayWithLabel}</strong> 있는 날({pendingDrop.date})에 놓았습니다.
+          </p>
+          <p className="text-xl text-zinc-600">같은 날에 오전/오후로 나눠 나란히 둘까요, 아니면 따로 밀까요?</p>
+          <div className="flex justify-end gap-2 text-2xl flex-wrap">
+            <button className="px-4 py-2 rounded border border-zinc-300" onClick={resetDropFlow}>
+              취소
+            </button>
+            <button
+              className="px-4 py-2 rounded border border-zinc-300"
+              onClick={() => setDropStage('reason')}
+              data-testid="sameday-apart"
+            >
+              따로 (밀기)
+            </button>
+            <button
+              className="px-4 py-2 rounded bg-indigo-600 text-white"
+              onClick={confirmSameDay}
+              data-testid="sameday-together"
+            >
+              같은 날에 (오전/오후)
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {dropStage === 'reason' && pendingDrop && pendingProcess && (
         <Modal>
-          <p className="text-sm">
+          <p className="text-2xl">
             <strong>{blockNames[pendingDrop.blockId]}</strong> {processLabel(pendingProcess)} ({pendingProcess.date}) →{' '}
             {pendingDrop.date}로 이동
           </p>
           <input
             autoFocus
-            className="border border-zinc-300 rounded px-2 py-1 text-sm"
+            className="border border-zinc-300 rounded px-3 py-2 text-2xl"
             value={reasonInput}
             onChange={(e) => setReasonInput(e.target.value)}
             onKeyDown={(e) => {
@@ -1558,12 +1653,12 @@ export default function ScheduleApp() {
             placeholder="이동 사유를 간단히 적어주세요 (예: 우천으로 순연)"
             data-testid="reason-input"
           />
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1.5">
             {REASON_PRESETS.map((preset) => (
               <button
                 key={preset}
                 type="button"
-                className="text-xs px-2 py-1 rounded-full border border-zinc-300 bg-zinc-50 hover:bg-zinc-100"
+                className="text-xl px-3 py-1.5 rounded-full border border-zinc-300 bg-zinc-50 hover:bg-zinc-100"
                 onClick={() => confirmReason(preset)}
                 data-testid="reason-preset"
               >
@@ -1571,11 +1666,11 @@ export default function ScheduleApp() {
               </button>
             ))}
           </div>
-          <div className="flex justify-end gap-2 text-sm">
-            <button className="px-3 py-1 rounded border border-zinc-300" onClick={resetDropFlow}>
+          <div className="flex justify-end gap-2 text-2xl">
+            <button className="px-4 py-2 rounded border border-zinc-300" onClick={resetDropFlow}>
               취소
             </button>
-            <button className="px-3 py-1 rounded bg-indigo-600 text-white" onClick={() => confirmReason()} data-testid="confirm-move">
+            <button className="px-4 py-2 rounded bg-indigo-600 text-white" onClick={() => confirmReason()} data-testid="confirm-move">
               확인
             </button>
           </div>
