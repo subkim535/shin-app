@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { ISODate } from '@/lib/domain/dateUtils';
 import { downloadDailyReportExcel } from '@/lib/export/dailyReportExcel';
 import { FILL_HEX, SUB_FILL } from '@/lib/export/scheduleExcel';
-import { PROCESS_COLOR } from '@/lib/domain/processTypes';
+import { PROCESS_COLOR, PROCESS_TYPE_MAP } from '@/lib/domain/processTypes';
 import { isKnownType, processLabel } from '@/lib/domain/schedule';
 import { Block, DirectLaborEntry, ProcessInstance, SiteInfo } from '@/lib/domain/types';
 
@@ -121,14 +121,18 @@ export default function DailyReportModal({
   // 동별 나열 대신 공종별로 묶어서 "타설: 11동,16층 / 12동,17층" 형태로 보여준다.
   // 오전/오후로 반나절 나눈 공정은 태그를 붙여서 구분한다.
   const groupedDayProcesses = useMemo(() => {
-    const map = new Map<string, { blockName: string; floor: string; timeSlot?: 'morning' | 'afternoon' }[]>();
+    const map = new Map<string, { blockName: string; floor: string; timeSlot?: 'morning' | 'afternoon'; headcount?: number }[]>();
     for (const p of dayProcesses) {
+      // 작업일보 "주요작업내용"에는 주공정만 싣는다 — 박리제·전기·설비·먹매김·철근검측 같은
+      // 보조공정은 제외한다(커스텀 구간공정 단계는 PROCESS_TYPE_MAP에 없어 주공정으로 취급).
+      if (PROCESS_TYPE_MAP[p.typeCode]?.category === 'sub') continue;
       const key = isKnownType(p.typeCode) ? workGroupKey(p.typeCode) : processLabel(p);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push({
         blockName: blockNames[p.blockId] ?? '',
         floor: floorNumberLabel(floorByCycle.get(p.cycleId)),
         timeSlot: p.timeSlot === 'morning' || p.timeSlot === 'afternoon' ? p.timeSlot : undefined,
+        headcount: p.crew?.headcount,
       });
     }
     const orderedKeys = WORK_GROUP_ORDER.filter((k) => map.has(k));
@@ -267,15 +271,18 @@ export default function DailyReportModal({
         </div>
 
         <section className="flex flex-col gap-1">
-          <h3 className="text-xl font-bold text-zinc-700 print:text-base">작업내용</h3>
-          {dayProcesses.length === 0 && <p className="text-base text-zinc-400">이 날짜에 예정된 공정이 없습니다.</p>}
+          <h3 className="text-xl font-bold text-zinc-700 print:text-base">주요작업내용 <span className="text-base font-normal text-zinc-400">(장비있으면 장비 포함)</span></h3>
+          {groupedDayProcesses.length === 0 && <p className="text-base text-zinc-400">이 날짜에 예정된 주요공정이 없습니다.</p>}
           <div className="flex flex-col gap-1.5">
-            {groupedDayProcesses.map((g) => (
+            {groupedDayProcesses.map((g) => {
+              const groupHeadcount = g.items.reduce((s, it) => s + (it.headcount ?? 0), 0);
+              return (
               <div key={g.label} className="flex items-start gap-2 print:border-b print:border-zinc-300 print:pb-1">
                 <span
-                  className={`shrink-0 w-24 rounded px-2 py-1 text-center text-base font-semibold ${g.color.bg} ${g.color.text} print:border print:border-zinc-500 print:bg-white print:text-black`}
+                  className={`shrink-0 w-28 rounded px-2 py-1 text-center text-base font-semibold ${g.color.bg} ${g.color.text} print:border print:border-zinc-500 print:bg-white print:text-black`}
                 >
                   {g.label}
+                  {groupHeadcount > 0 && <span className="ml-1 text-sm font-normal">{groupHeadcount}명</span>}
                 </span>
                 <div className="flex flex-1 flex-wrap gap-1">
                   {g.items.map((it, i) => (
@@ -294,11 +301,13 @@ export default function DailyReportModal({
                       )}
                       {it.blockName}
                       {it.floor ? ` ${it.floor}` : ''}
+                      {it.headcount ? <span className="ml-1 font-semibold text-indigo-700">{it.headcount}명</span> : ''}
                     </span>
                   ))}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
